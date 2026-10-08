@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute } from 'vue-router'
 import PageLayout from '@/components/PageLayout/PageLayout.vue'
 import SettingAccountPanel from './components/SettingAccountPanel.vue'
 import SettingDownloadPanel from './components/SettingDownloadPanel.vue'
@@ -10,8 +11,9 @@ import SettingPathPanel from './components/SettingPathPanel.vue'
 import SettingScrapePanel from './components/SettingScrapePanel.vue'
 import SettingTranslatePanel from './components/SettingTranslatePanel.vue'
 
-/** 当前分组：value 与 SettingGroupKey 对应，account 为暂未接入的预留分组 */
-const active = ref('path')
+/** 当前分组：value 与 SettingGroupKey 对应；支持 `?group=account` 直接定位到某个分组 */
+const route = useRoute()
+const active = ref(typeof route.query.group === 'string' ? route.query.group : 'path')
 </script>
 
 <template>

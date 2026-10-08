@@ -28,6 +28,8 @@ src/
 ├── common/                  # 主进程与渲染进程共享的纯类型与纯函数（不含运行时依赖）
 │   └── types/
 │       ├── setting/         # 设置类型：shared / path / scrape / network / translate / naming / download / file / index
+│       ├── file/            # 文件类型：error / path / entry / connection / request / transfer / result / index
+│       ├── plugin/          # 插件类型：asset / movie / manifest / env / define / normalize / error / result / index
 │       ├── log.ts           # 日志类型与查询条件
 │       └── task.ts          # 任务类型与统计
 ├── main/
@@ -35,12 +37,15 @@ src/
 │   └── src/
 │       ├── db/              # 数据库：schema / client / repo / IPC
 │       ├── modules/appWindow/ # 窗口域：窗口控制与最大化状态推送
+│       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
+│       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
 │       ├── modules/setting/ # 设置域：落盘实现 + IPC
+│       ├── utils/           # 主进程通用工具：secretCodec（safeStorage 编解码，插件与文件域共用）
 │       └── registerIpc.ts   # 汇总注册各域 IPC
 ├── preload/
 │   ├── index.ts             # contextBridge 暴露 electron 与 preload
 │   ├── index.d.ts           # window 全局类型声明
-│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / setting）
+│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / setting / file / plugin）
 └── renderer/
     ├── index.html
     └── src/
@@ -73,8 +78,9 @@ src/
 
 ## 依赖归类规则
 
-- `dependencies`：主进程/预加载在运行时真正 require、需要随包发布的包。当前为 `@electron-toolkit/preload`、`@electron-toolkit/utils`、`axios`、`better-sqlite3`、`drizzle-orm`、`electron-updater`。
-- `devDependencies`：只在渲染进程被 Vite 打包的包（`vue`、`vue-router`、`pinia`、`tdesign-vue-next`、`tdesign-icons-vue-next`、`dayjs`、`es-toolkit`、`@vueuse/core`、`unocss` 等）与全部构建/校验工具。这类包的内容会进入渲染产物，不需要作为 Electron 运行时依赖打包。
+- `dependencies`：主进程/预加载在运行时真正 require、需要随包发布的包。当前为 `@awo00/smb2`、`@electron-toolkit/preload`、`@electron-toolkit/utils`、`axios`、`better-sqlite3`、`drizzle-orm`、`electron-updater`。
+- `devDependencies`（渲染进程）：只在渲染进程被 Vite 打包的包（`vue`、`vue-router`、`pinia`、`tdesign-vue-next`、`tdesign-icons-vue-next`、`dayjs`、`es-toolkit`、`@vueuse/core`、`unocss` 等）与全部构建/校验工具。这类包的内容会进入渲染产物，不需要作为 Electron 运行时依赖打包。
+- `devDependencies`（主进程 bundle）：被 Vite 打进主进程产物的纯 JS 包也归 `devDependencies`，例如文件模块用的 `webdav`（ESM-only，`externalizeDepsPlugin` 只外部化 `dependencies`，放进 `dependencies` 反而会让主进程去 require 一个 ESM 包）与插件模块用的 `cheerio`。判断方法：这个包是「构建期被 Vite 打进去」还是「运行期由 Electron require 进来」。
 - 新增依赖时先判断「谁在运行时 require 它」，再决定归类。
 
 ## 注意事项

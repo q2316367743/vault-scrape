@@ -10,6 +10,7 @@
 | 界面 | Vue 3 + TDesign Vue Next + tdesign-icons-vue-next + UnoCSS + less |
 | 状态与路由 | pinia + vue-router（hash 模式） |
 | 数据 | better-sqlite3 + drizzle-orm（迁移由 drizzle-kit 生成） |
+| 文件访问 | 本机磁盘 + WebDAV（webdav）+ SMB（@awo00/smb2），主进程统一 `FileClient` 接口 |
 | 工具库 | es-toolkit、@vueuse/core、dayjs、axios |
 
 ## 目录结构
@@ -36,7 +37,7 @@ yarn build:mac          # 打包（build:win / build:linux 同理）
 
 ## 文档
 
-技术文档索引见 [docs/README.md](./docs/README.md)，包含工程结构、SQLite 存储、设置存储与设置项清单、渲染层外壳与主题、基础页面六个主题。
+技术文档索引见 [docs/README.md](./docs/README.md)，包含工程结构、SQLite 存储、设置存储与设置项清单、文件模块、刮削插件模块、渲染层外壳与主题、基础页面与存储管理页面等主题。
 
 ## 注意事项
 

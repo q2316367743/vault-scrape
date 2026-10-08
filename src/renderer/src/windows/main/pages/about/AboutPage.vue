@@ -34,7 +34,6 @@ const rows = [
 
 <style scoped lang="less">
 .about-card {
-  max-width: 720px;
   border-radius: var(--td-radius-large);
 }
 

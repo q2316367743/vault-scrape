@@ -59,7 +59,7 @@ export interface SideMenuItem {
 
 `SideMenuNode.vue` 负责渲染单个节点：用 `isSelfActive(item)` / `hasActiveDescendant(item)` 判断选中与展开态，`expanded` 的初始值取「是否有后代处于选中」，点击有子项的节点则折叠/展开（`max-height` 过渡动画），否则 `router.push`。选中态使用 `inset 3px 0 0 var(--fluent-item-selected-border)` 的左侧色条 + `--fluent-item-selected` 背景，悬停使用 `--fluent-item-hover`，聚焦环使用 `--fluent-focus-ring`。
 
-当前菜单项与图标：概览 `DashboardIcon`、工作台 `DesktopIcon`、工具 `ToolsIcon`、设置 `SettingIcon`、日志 `SystemLogIcon`、关于 `InfoCircleIcon`。
+当前菜单项与图标：概览 `DashboardIcon`、工作台 `DesktopIcon`、存储 `HardDiskStorageIcon`、插件 `ExtensionIcon`、工具 `ToolsIcon`、设置 `SettingIcon`、日志 `SystemLogIcon`、关于 `InfoCircleIcon`。
 
 折叠态由 `collapsed` 经显式 props `AppSide → SideMenu → SideMenuNode` 下钻（通用组件不 import 全局状态）：节点隐藏标签与箭头、图标居中，并用 `<t-tooltip placement="right" :disabled="!collapsed">` 在悬停时补回标签，有子项的节点在折叠态下点击不展开。
 

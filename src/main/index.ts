@@ -4,6 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { appendLog } from '$/db/repo/logRepo'
 import { bindWindowState } from '$/modules/appWindow/appWindowIpc'
+import { disposeFileClients } from '$/modules/file/fileClientManager'
 import { registerIpc } from '$/registerIpc'
 
 /**
@@ -92,6 +93,11 @@ app.whenReady().then(() => {
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+// 退出前释放文件模块的连接（WebDAV/SMB 会话、句柄）
+app.on('before-quit', () => {
+  void disposeFileClients()
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common

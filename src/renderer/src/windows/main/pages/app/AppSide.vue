@@ -2,6 +2,8 @@
 import {
   DashboardIcon,
   DesktopIcon,
+  ExtensionIcon,
+  HardDiskStorageIcon,
   InfoCircleIcon,
   SettingIcon,
   SystemLogIcon,
@@ -11,10 +13,12 @@ import SideMenu from '@/components/menu/SideMenu.vue'
 import type { SideMenuItem } from '@/components/menu/types'
 import { collapsed } from '@/global/AppState'
 
-/** 一级菜单：与 router.ts 的六个页面一一对应 */
+/** 一级菜单：与 router.ts 的八个页面一一对应 */
 const menuItems: SideMenuItem[] = [
   { label: '概览', icon: DashboardIcon, to: '/overview' },
   { label: '工作台', icon: DesktopIcon, to: '/workspace' },
+  { label: '存储', icon: HardDiskStorageIcon, to: '/storage' },
+  { label: '插件', icon: ExtensionIcon, to: '/plugin' },
   { label: '工具', icon: ToolsIcon, to: '/tools' },
   { label: '设置', icon: SettingIcon, to: '/setting' },
   { label: '日志', icon: SystemLogIcon, to: '/log' },

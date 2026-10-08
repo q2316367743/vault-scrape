@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 六个一级页面：name 同时作为侧栏菜单文案 */
+/** 八个一级页面：name 同时作为侧栏菜单文案 */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/overview' },
   {
@@ -12,6 +12,16 @@ const routes: RouteRecordRaw[] = [
     path: '/workspace',
     name: '工作台',
     component: () => import('@/windows/main/pages/workspace/WorkspacePage.vue')
+  },
+  {
+    path: '/storage',
+    name: '存储',
+    component: () => import('@/windows/main/pages/storage/StoragePage.vue')
+  },
+  {
+    path: '/plugin',
+    name: '插件',
+    component: () => import('@/windows/main/pages/plugin/PluginPage.vue')
   },
   {
     path: '/tools',

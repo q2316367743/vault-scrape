@@ -1,3 +1,5 @@
 export { appWindowApi } from './appWindow'
 export { dbApi } from './db'
+export { fileApi } from './file'
+export { pluginApi } from './plugin'
 export { settingApi } from './setting'
