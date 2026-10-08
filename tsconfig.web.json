@@ -4,15 +4,21 @@
     "src/renderer/src/env.d.ts",
     "src/renderer/src/**/*",
     "src/renderer/src/**/*.vue",
-    "src/preload/*.d.ts"
+    "src/common/**/*.ts",
+    "src/preload/*.d.ts",
+    "src/renderer/components.d.ts"
   ],
   "compilerOptions": {
     "composite": true,
     "baseUrl": ".",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "jsx": "preserve",
+    "jsxImportSource": "vue",
     "paths": {
-      "@renderer/*": [
-        "src/renderer/src/*"
-      ]
+      "@/*": ["src/renderer/src/*"],
+      "@common/*": ["src/common/*"]
     }
   }
 }

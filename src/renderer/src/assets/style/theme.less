@@ -1,0 +1,130 @@
+/**
+ * 主题变量：亮色一套 TDesign Token + Fluent Design 辅助变量，深色只覆盖随明暗变化的部分。
+ * 这里是全项目唯一的裸色值定义处，业务样式一律引用变量。
+ *
+ * 明暗切换靠 `<html theme-mode>`：亮色块为 `:root`（不写属性或写 light 都命中），
+ * 深色块为 `:root[theme-mode='dark']`，特异性更高，属性一挂上就整片生效。
+ * 不引入 tdesign 官方的 es/style/index.css：它的选择器特异性会盖过本文件，且会给当前未定义的
+ * 组件内部 Token 补上取值、改变既有亮色观感。
+ */
+:root {
+  /* 品牌色（Fluent 蓝阶梯） */
+  --td-brand-color: #0f6cbd;
+  --td-brand-color-hover: #115ea3;
+  --td-brand-color-active: #0c3b5e;
+  --td-brand-color-focus: #cfe4fa;
+  --td-brand-color-light: #e5f0fb;
+  --td-brand-color-light-hover: #d3e6f8;
+  --td-brand-color-light-active: #c1dcf5;
+
+  /* 语义色 */
+  --td-error-color: #d13438;
+  --td-warning-color: #bc4b09;
+  --td-success-color: #0e7a0d;
+
+  /* 文本 */
+  --td-text-color-primary: #1b1b1f;
+  --td-text-color-secondary: #616161;
+  --td-text-color-placeholder: #8a8a8a;
+  --td-text-color-disabled: #bdbdbd;
+  --td-text-color-anti: #ffffff;
+
+  /* 背景与容器 */
+  --td-bg-color-page: #f3f3f3;
+  --td-bg-color-container: #ffffff;
+  --td-bg-color-container-hover: #f5f5f5;
+  --td-bg-color-container-active: #ebebeb;
+  --td-bg-color-secondarycontainer: #fafafa;
+  --td-bg-color-component: #ffffff;
+  --td-bg-color-component-hover: #f5f5f5;
+  --td-bg-color-component-disabled: #f5f5f5;
+  --td-bg-color-elevated: #ffffff;
+
+  /* 描边 */
+  --td-component-border: #e0e0e0;
+  --td-component-stroke: #ebebeb;
+
+  /* 滚动条（customer.less 依据它给 thumb 上色） */
+  --td-scrollbar-color: rgba(0, 0, 0, 0.1);
+
+  /* 圆角 */
+  --td-radius-small: 2px;
+  --td-radius-default: 4px;
+  --td-radius-medium: 6px;
+  --td-radius-large: 8px;
+
+  /* 字体 */
+  --td-font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+
+  /* Fluent 辅助变量 */
+  /* 叠在系统亚克力之上的内容面板填充；真正的模糊由主进程窗口材质提供 */
+  --fluent-acrylic-bg: rgba(252, 252, 252, 0.72);
+  --fluent-card-border: rgba(0, 0, 0, 0.06);
+  --fluent-sidebar-border: rgba(0, 0, 0, 0.08);
+  --fluent-item-hover: rgba(0, 0, 0, 0.04);
+  --fluent-item-selected: rgba(15, 108, 189, 0.1);
+  --fluent-item-selected-border: #0f6cbd;
+  --fluent-focus-ring: rgba(15, 108, 189, 0.6);
+  --fluent-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --fluent-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.1);
+  --fluent-elevation-3: 0 4px 12px rgba(0, 0, 0, 0.12);
+  --fluent-radius-smooth: 4px;
+  --fluent-transition-fast: 120ms ease;
+  --fluent-transition-normal: 200ms ease;
+}
+
+/**
+ * 深色主题：只覆盖随明暗变化的取值，圆角、字体等沿用上面的 `:root`。
+ * 色值取自 Fluent 深色调色板（Foreground1-3 `#ffffff`/`#d6d6d6`/`#adadad`、Disabled `#5c5c5c`、
+ * Background1-3 `#292929`/`#1f1f1f`/`#141414`、Stroke2-3 `#525252`/`#3d3d3d`），
+ * 品牌色沿用 Fluent 深色的交互阶梯（默认 `#115ea3`、悬停 `#0f6cbd`、按下 `#0c3b5e`，强调色 `#479ef5`）。
+ * 语义色刻意不覆盖：TDesign 官方深色 Token 里 error / warning / success 与亮色同值，
+ * 它们多作前景或标签底色，跟着变浅反而会丢掉「危险 = 红」的稳定性。
+ */
+:root[theme-mode='dark'] {
+  /* 品牌色 */
+  --td-brand-color: #115ea3;
+  --td-brand-color-hover: #0f6cbd;
+  --td-brand-color-active: #0c3b5e;
+  --td-brand-color-focus: rgba(71, 158, 245, 0.24);
+  --td-brand-color-light: rgba(71, 158, 245, 0.16);
+  --td-brand-color-light-hover: rgba(71, 158, 245, 0.24);
+  --td-brand-color-light-active: rgba(71, 158, 245, 0.32);
+
+  /* 文本 */
+  --td-text-color-primary: #ffffff;
+  --td-text-color-secondary: #d6d6d6;
+  --td-text-color-placeholder: #adadad;
+  --td-text-color-disabled: #5c5c5c;
+  --td-text-color-anti: #ffffff;
+
+  /* 背景与容器：page 最暗、container 最亮，层级关系与亮色一致 */
+  --td-bg-color-page: #141414;
+  --td-bg-color-container: #292929;
+  --td-bg-color-container-hover: #3d3d3d;
+  --td-bg-color-container-active: #1f1f1f;
+  --td-bg-color-secondarycontainer: #1f1f1f;
+  --td-bg-color-component: #1f1f1f;
+  --td-bg-color-component-hover: #333333;
+  --td-bg-color-component-disabled: #141414;
+  --td-bg-color-elevated: #333333;
+
+  /* 描边 */
+  --td-component-border: #525252;
+  --td-component-stroke: #3d3d3d;
+
+  /* 滚动条 */
+  --td-scrollbar-color: rgba(255, 255, 255, 0.1);
+
+  /* Fluent 辅助变量：叠层填充改深底半透明，选中态改用深色强调蓝 */
+  --fluent-acrylic-bg: rgba(32, 32, 32, 0.72);
+  --fluent-card-border: rgba(255, 255, 255, 0.08);
+  --fluent-sidebar-border: rgba(255, 255, 255, 0.1);
+  --fluent-item-hover: rgba(255, 255, 255, 0.06);
+  --fluent-item-selected: rgba(71, 158, 245, 0.16);
+  --fluent-item-selected-border: #479ef5;
+  --fluent-focus-ring: rgba(71, 158, 245, 0.7);
+  --fluent-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.28);
+  --fluent-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.36);
+  --fluent-elevation-3: 0 4px 12px rgba(0, 0, 0, 0.44);
+}

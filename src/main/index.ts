@@ -1,21 +1,53 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, type BrowserWindowConstructorOptions } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+import { appendLog } from '$/db/repo/logRepo'
+import { bindWindowState } from '$/modules/appWindow/appWindowIpc'
+import { registerIpc } from '$/registerIpc'
+
+/**
+ * 平台差异化的窗口外观：亚克力材质 + 自定义标题栏。
+ *
+ * 显式标注返回类型是为了让三个分支里的字面量按 BrowserWindowConstructorOptions 收窄，
+ * 否则条件返回的对象字面量会被推宽成 string，无法通过 typecheck。
+ */
+function platformWindowOptions(): BrowserWindowConstructorOptions {
+  if (process.platform === 'darwin') {
+    // macOS：隐藏标题栏但保留系统红黄绿灯；vibrancy 是亚克力在 macOS 的对应物
+    return {
+      titleBarStyle: 'hidden',
+      trafficLightPosition: { x: 12, y: 14 },
+      vibrancy: 'under-window',
+      visualEffectState: 'active'
+    }
+  }
+  if (process.platform === 'win32') {
+    // Windows 11 系统亚克力；Windows 10 会忽略该材质，退化为 CSS 半透明分层
+    return { frame: false, backgroundMaterial: 'acrylic' }
+  }
+  // Linux 无系统材质：无边框 + 渲染层纯 CSS 半透明
+  return { frame: false }
+}
 
 function createWindow(): void {
   // Create the browser window.
   const mainWindow = new BrowserWindow({
-    width: 900,
-    height: 670,
+    width: 1200,
+    height: 800,
+    minWidth: 960,
+    minHeight: 640,
     show: false,
     autoHideMenuBar: true,
     ...(process.platform === 'linux' ? { icon } : {}),
+    ...platformWindowOptions(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false
     }
   })
+
+  bindWindowState(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -49,8 +81,9 @@ app.whenReady().then(() => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
+  // 注册全部 IPC 域（内部会初始化数据库），再落一条启动日志便于验证链路
+  registerIpc()
+  appendLog({ level: 'info', scope: 'app', message: 'vault-scrape 启动' })
 
   createWindow()
 
@@ -69,6 +102,3 @@ app.on('window-all-closed', () => {
     app.quit()
   }
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.

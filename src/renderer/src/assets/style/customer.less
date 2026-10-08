@@ -1,0 +1,65 @@
+/**
+ * 全局基础样式与跨页面共享的工具类。
+ */
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--td-font-family);
+  font-size: 14px;
+  color: var(--td-text-color-primary);
+  /* 窗口底色由系统材质提供，页面铺底色会盖住模糊 */
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--td-scrollbar-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/**
+ * 设置页共享布局：
+ * 设置行统一为 t-list-item + meta（左）+ action（右），右侧控件区固定宽度。
+ */
+.setting-list {
+  background: transparent;
+}
+
+.setting-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 420px;
+  max-width: 100%;
+}
+
+/* 控件占满剩余宽度，按钮、开关保持自身宽度 */
+.setting-field > :not(.t-button):not(.t-switch) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* 纯开关行不撑开宽度，开关贴右显示 */
+.setting-field:has(> .t-switch) {
+  width: auto;
+}

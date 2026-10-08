@@ -1,0 +1,34 @@
+/**
+ * TDesign 组件外观微调：统一圆角、弱化边框与阴影，贴合 Fluent Design。
+ * 只覆盖外观，不改变组件结构与交互。
+ */
+.t-button {
+  border-radius: var(--fluent-radius-smooth);
+}
+
+.t-card {
+  border: 1px solid var(--fluent-card-border);
+  border-radius: var(--td-radius-large);
+  box-shadow: var(--fluent-elevation-1);
+}
+
+.t-tag {
+  border-radius: var(--fluent-radius-smooth);
+}
+
+.t-input,
+.t-input-number,
+.t-select-input,
+.t-textarea {
+  border-radius: var(--fluent-radius-smooth);
+}
+
+.t-list-item {
+  transition: background var(--fluent-transition-fast);
+}
+
+.t-table {
+  th {
+    background: var(--td-bg-color-secondarycontainer);
+  }
+}

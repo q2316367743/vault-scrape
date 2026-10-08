@@ -1,8 +1,15 @@
 import { contextBridge } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { appWindowApi } from '~/modules/appWindow/appWindow'
+import { dbApi } from '~/modules/db/db'
+import { settingApi } from '~/modules/setting/setting'
 
-// Custom APIs for renderer
-const api = {}
+// 业务桥：渲染层只通过这些 API 访问主进程能力
+const preload = {
+  appWindow: appWindowApi,
+  db: dbApi,
+  setting: settingApi
+}
 
 // Use `contextBridge` APIs to expose Electron APIs to
 // renderer only if context isolation is enabled, otherwise
@@ -10,7 +17,7 @@ const api = {}
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
-    contextBridge.exposeInMainWorld('api', api)
+    contextBridge.exposeInMainWorld('preload', preload)
   } catch (error) {
     console.error(error)
   }
@@ -18,5 +25,5 @@ if (process.contextIsolated) {
   // @ts-ignore (define in dts)
   window.electron = electronAPI
   // @ts-ignore (define in dts)
-  window.api = api
+  window.preload = preload
 }

@@ -1,16 +1,48 @@
 import { resolve } from 'path'
-import { defineConfig } from 'electron-vite'
+import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import vue from '@vitejs/plugin-vue'
+import vueJsx from '@vitejs/plugin-vue-jsx'
+import UnoCSS from 'unocss/vite'
+import Components from 'unplugin-vue-components/vite'
+import { TDesignResolver } from 'unplugin-vue-components/resolvers'
+
+// main / preload 共用同一套别名：$ = 主进程源码，~ = 预加载源码（IPC 契约所在处）
+const nodeAlias = {
+  $: resolve('src/main/src'),
+  '~': resolve('src/preload/src'),
+  '@resources': resolve('resources'),
+  '@common': resolve('src/common')
+}
 
 export default defineConfig({
-  main: {},
-  preload: {},
+  main: {
+    resolve: { alias: nodeAlias },
+    plugins: [externalizeDepsPlugin()]
+  },
+  preload: {
+    resolve: { alias: nodeAlias },
+    plugins: [externalizeDepsPlugin()]
+  },
   renderer: {
+    base: './',
     resolve: {
       alias: {
-        '@renderer': resolve('src/renderer/src')
+        '@': resolve('src/renderer/src'),
+        '@common': resolve('src/common')
       }
     },
-    plugins: [vue()]
+    server: {
+      port: 7743
+    },
+    plugins: [
+      vue(),
+      vueJsx(),
+      UnoCSS(),
+      // tdesign 组件按需引入：模板里用到的组件在编译期转成显式导入
+      Components({
+        resolvers: [TDesignResolver({ library: 'vue-next' })],
+        dts: 'src/renderer/components.d.ts'
+      })
+    ]
   }
 })
