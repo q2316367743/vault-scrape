@@ -13,13 +13,13 @@ import SideMenu from '@/components/menu/SideMenu.vue'
 import type { SideMenuItem } from '@/components/menu/types'
 import { collapsed } from '@/global/AppState'
 
-/** 一级菜单：与 router.ts 的八个页面一一对应 */
+/** 一级菜单：与 router.ts 的八个页面一一对应；工具项按前缀匹配，子页（/tools/search）也保持高亮 */
 const menuItems: SideMenuItem[] = [
   { label: '概览', icon: DashboardIcon, to: '/overview' },
   { label: '工作台', icon: DesktopIcon, to: '/workspace' },
   { label: '存储', icon: HardDiskStorageIcon, to: '/storage' },
   { label: '插件', icon: ExtensionIcon, to: '/plugin' },
-  { label: '工具', icon: ToolsIcon, to: '/tools' },
+  { label: '工具', icon: ToolsIcon, to: '/tools', match: 'prefix' },
   { label: '设置', icon: SettingIcon, to: '/setting' },
   { label: '日志', icon: SystemLogIcon, to: '/log' },
   { label: '关于', icon: InfoCircleIcon, to: '/about' }

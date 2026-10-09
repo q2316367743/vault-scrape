@@ -9,7 +9,7 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { pluginApi } from '@/api'
 import { useSettingDownloadStore } from '@/windows/main/store'
 import type { PluginAsset, PluginMovieDetail } from '@common/types/plugin'
-import { toAssetRows } from '../pluginUtils'
+import { toAssetRows } from '../toolUtils'
 
 export type MoviePreviewTask = 'detail' | 'covers' | 'extras' | ''
 

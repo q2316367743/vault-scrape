@@ -1,24 +1,22 @@
 <script setup lang="ts">
 /**
- * 插件详情：概览信息 + 测试面板；内置插件额外挂载数据源面板。
+ * 插件详情：概览信息 + 配置区块（环境变量）；内置插件额外挂载数据源面板。
  *
  * 契约：组件本身不直接调用 API，启停/删除/编辑都通过事件上抛给页面处理；
- * 环境变量统一在「设置 → 账号设置」填写，这里只做提示与跳转。
+ * 配置保存后由 PluginConfigPanel 上抛最新摘要，页面据此刷新列表状态。
  */
 import { computed } from 'vue'
-import { useRouter } from 'vue-router'
 import type { PluginSummary } from '@common/types/plugin'
 import OfflinePackPanel from './OfflinePackPanel.vue'
-import PluginTestPanel from './PluginTestPanel.vue'
+import PluginConfigPanel from './PluginConfigPanel.vue'
 
 const props = defineProps<{ plugin: PluginSummary }>()
 const emit = defineEmits<{
   edit: [plugin: PluginSummary]
   remove: [plugin: PluginSummary]
   enabled: [value: boolean]
+  changed: [plugin: PluginSummary]
 }>()
-
-const router = useRouter()
 
 /** 内置插件没有源码文件，不能编辑、不能删除 */
 const isBuiltin = computed(() => props.plugin.source === 'builtin')
@@ -28,10 +26,6 @@ const sourceText = computed(() =>
 
 function onToggle(value: unknown): void {
   emit('enabled', value === true)
-}
-
-function goAccount(): void {
-  void router.push({ name: '设置', query: { group: 'account' } })
 }
 </script>
 
@@ -76,11 +70,6 @@ function goAccount(): void {
       message="必填环境变量尚未填写完整，调用该插件会被拒绝"
     />
 
-    <div v-if="plugin.hasEnv" class="env-hint">
-      <span class="hint-text">该插件声明的环境变量在「设置 → 账号设置」中统一填写</span>
-      <t-button size="small" variant="outline" @click="goAccount">去填写</t-button>
-    </div>
-
     <dl class="detail-meta">
       <div class="meta-item">
         <dt>作者</dt>
@@ -104,9 +93,14 @@ function goAccount(): void {
       </div>
     </dl>
 
-    <offline-pack-panel v-if="isBuiltin" />
+    <!-- 只有声明了环境变量的插件才需要配置区块（内置插件、无变量的脚本插件都不显示空区域） -->
+    <plugin-config-panel
+      v-if="plugin.hasEnv"
+      :plugin="plugin"
+      @saved="emit('changed', $event)"
+    />
 
-    <plugin-test-panel :plugin="plugin" />
+    <offline-pack-panel v-if="isBuiltin" />
   </div>
 </template>
 
@@ -189,21 +183,5 @@ function goAccount(): void {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.env-hint {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 8px 12px;
-  border: 1px solid var(--td-border-level-1-color);
-  border-radius: 6px;
-  background: var(--td-bg-color-container);
-}
-
-.hint-text {
-  font-size: 12px;
-  color: var(--td-text-color-secondary);
 }
 </style>

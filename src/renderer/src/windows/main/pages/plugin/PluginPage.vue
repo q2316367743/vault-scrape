@@ -1,8 +1,51 @@
+<template>
+  <page-layout
+    title="插件"
+    description="导入本机 JS 刮削插件：启停、配置环境变量与源码编辑。"
+    :padded="false"
+  >
+    <template #extra>
+      <t-button variant="outline" :loading="loading" @click="refresh">
+        <template #icon><refresh-icon /></template>
+        刷新
+      </t-button>
+      <t-button theme="primary" @click="onImport">
+        <template #icon><add-icon /></template>
+        导入插件
+      </t-button>
+    </template>
+
+    <div class="plugin-body">
+      <plugin-list
+        :plugins="plugins"
+        :active-id="activeId"
+        :loading="loading"
+        @select="select"
+        @reorder="onReorder"
+      />
+      <plugin-detail
+        v-if="active"
+        :plugin="active"
+        @edit="onEdit"
+        @remove="onRemove"
+        @enabled="onEnabled"
+        @changed="onChanged"
+      />
+      <t-empty
+        v-else
+        class="plugin-empty"
+        description="左侧还没有可管理的插件，先导入一个本机 .js 脚本"
+      />
+    </div>
+  </page-layout>
+</template>
+
 <script setup lang="ts">
 /**
- * 插件页：左侧插件列表，右侧详情（概览 + 测试；环境变量在设置页统一填写）。
+ * 插件页：左侧插件列表，右侧详情（概览 + 配置 + 内置数据源）。
  *
- * 契约：页面只通过 `@/api` 间接访问主进程；导入重名走命令式确认弹窗覆盖。
+ * 契约：页面只通过 `@/api` 间接访问主进程；导入重名走命令式确认弹窗覆盖；
+ * 配置保存后由详情上抛最新摘要，这里就地更新列表状态，不整表刷新。
  */
 import { onMounted } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
@@ -22,10 +65,12 @@ const {
   refresh,
   select,
   setEnabled,
+  reorder,
   remove,
   importPlugins,
   readCode,
-  saveCode
+  saveCode,
+  applySummary
 } = usePlugins()
 
 onMounted(() => void refresh())
@@ -86,42 +131,15 @@ function onEnabled(value: boolean): void {
   if (!plugin) return
   void setEnabled(plugin, value)
 }
+
+function onChanged(plugin: PluginSummary): void {
+  applySummary(plugin)
+}
+
+function onReorder(ids: string[]): void {
+  void reorder(ids)
+}
 </script>
-
-<template>
-  <page-layout
-    title="插件"
-    description="导入本机 JS 刮削插件：启停、测试与源码编辑。"
-    :padded="false"
-  >
-    <template #extra>
-      <t-button variant="outline" :loading="loading" @click="refresh">
-        <template #icon><refresh-icon /></template>
-        刷新
-      </t-button>
-      <t-button theme="primary" @click="onImport">
-        <template #icon><add-icon /></template>
-        导入插件
-      </t-button>
-    </template>
-
-    <div class="plugin-body">
-      <plugin-list :plugins="plugins" :active-id="activeId" :loading="loading" @select="select" />
-      <plugin-detail
-        v-if="active"
-        :plugin="active"
-        @edit="onEdit"
-        @remove="onRemove"
-        @enabled="onEnabled"
-      />
-      <t-empty
-        v-else
-        class="plugin-empty"
-        description="左侧还没有可管理的插件，先导入一个本机 .js 脚本"
-      />
-    </div>
-  </page-layout>
-</template>
 
 <style scoped lang="less">
 // 左栏自带分隔线，主从两栏之间不再留缝

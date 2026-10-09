@@ -284,6 +284,27 @@ export function setPluginEnabled(id: string, enabled: boolean): StoredPlugin {
   return next
 }
 
+/**
+ * 按传入的 ID 顺序重排索引（只调整顺序，不新增、不删除）。
+ *
+ * 契约：未出现在 `ids` 里的插件保持原有相对顺序、排在末尾；顺序没变化时不写盘。
+ */
+export function reorderPlugins(ids: string[]): StoredPlugin[] {
+  const store = readStore()
+  const remaining = new Map(store.plugins.map((item) => [item.id, item]))
+  const ordered: StoredPlugin[] = []
+  for (const id of ids) {
+    const stored = remaining.get(id)
+    if (!stored) continue
+    remaining.delete(id)
+    ordered.push(stored)
+  }
+  ordered.push(...remaining.values())
+  const changed = ordered.some((item, index) => store.plugins[index]?.id !== item.id)
+  if (changed) writeStore({ version: STORE_VERSION, plugins: ordered })
+  return ordered.map((item) => ({ ...item }))
+}
+
 /** 删除插件：索引与源码文件一并清理；源码已不存在时也算删除成功 */
 export function removePlugin(id: string): boolean {
   const store = readStore()
@@ -315,7 +336,7 @@ export function readPluginEnvValues(id: string): PluginEnvValue {
       () =>
         new PluginError(
           'envMissing',
-          `已保存的环境变量无法解密，请在设置 → 账号设置中重新填写（${stored.name} · ${key}）`
+          `已保存的环境变量无法解密，请在插件页的配置区块中重新填写（${stored.name} · ${key}）`
         )
     )
   }

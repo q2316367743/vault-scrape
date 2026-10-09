@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 八个一级页面：name 同时作为侧栏菜单文案 */
+/** 八个一级页面（name 同时作为侧栏菜单文案）+ 工具子页 */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/overview' },
   {
@@ -27,6 +27,11 @@ const routes: RouteRecordRaw[] = [
     path: '/tools',
     name: '工具',
     component: () => import('@/windows/main/pages/tools/ToolsPage.vue')
+  },
+  {
+    path: '/tools/search',
+    name: '搜索',
+    component: () => import('@/windows/main/pages/tools/ToolSearchPage.vue')
   },
   {
     path: '/setting',

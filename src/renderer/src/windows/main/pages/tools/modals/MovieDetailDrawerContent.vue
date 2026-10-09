@@ -5,7 +5,7 @@
  * 契约：只读试跑，不落盘、不改插件状态；取数一律走 pluginApi，失败只提示不抛出。
  */
 import { computed, onMounted, toRef } from 'vue'
-import { describeHeaders } from '../pluginUtils'
+import { describeHeaders } from '../toolUtils'
 import { useMoviePreview } from '../composables/useMoviePreview'
 
 const props = defineProps<{

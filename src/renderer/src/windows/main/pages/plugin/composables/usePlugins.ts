@@ -50,6 +50,27 @@ export function usePlugins() {
     applySummary(result.data)
   }
 
+  /**
+   * 按拖拽结果重排插件顺序。
+   *
+   * 先就地重排本地列表（拖拽已经改过 DOM，数据跟上才不会闪回），落盘失败时再拉一次真列表还原。
+   */
+  async function reorder(ids: string[]): Promise<void> {
+    const previous = plugins.value
+    const byId = new Map(previous.map((item) => [item.id, item]))
+    const next = ids
+      .map((id) => byId.get(id))
+      .filter((item): item is PluginSummary => item !== undefined)
+    if (next.length === previous.length) plugins.value = next
+    const result = await pluginApi.reorder(ids)
+    if (!result.ok) {
+      MessagePlugin.error(result.message)
+      await refresh()
+      return
+    }
+    plugins.value = result.data
+  }
+
   async function remove(plugin: PluginSummary): Promise<void> {
     const result = await pluginApi.remove(plugin.id)
     if (!result.ok) {
@@ -99,9 +120,11 @@ export function usePlugins() {
     refresh,
     select,
     setEnabled,
+    reorder,
     remove,
     importPlugins,
     readCode,
-    saveCode
+    saveCode,
+    applySummary
   }
 }

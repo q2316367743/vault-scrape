@@ -1,5 +1,5 @@
 <template>
-  <div class="plugin-test">
+  <div class="tool-search">
     <div class="test-row">
       <t-input
         v-model="test.keyword.value"
@@ -83,20 +83,21 @@
       </t-list>
     </section>
 
-    <t-empty v-else description="填写关键字或影片 ID 开始测试，详情会在抽屉里打开" />
+    <t-empty v-else description="填写关键字或影片 ID 开始搜索，详情会在抽屉里打开" />
   </div>
 </template>
 <script setup lang="ts">
 /**
- * 插件测试面板：搜索候选，点击候选或直接填影片 ID 都能在影片详情抽屉里查看详情。
+ * 搜索工具：按关键字搜索候选，点击候选或直接填影片 ID 都能在影片详情抽屉里查看详情。
  *
- * 契约：测试只读，不落盘、不改插件状态；详情 / 封面 / 花絮都在抽屉里按需拉取。
+ * 契约：搜索只读，不落盘、不改插件状态；详情 / 封面 / 花絮都在抽屉里按需拉取。
+ * 使用哪个插件由页面顶部的选择器决定，这里只接收选中的插件。
  */
 import { computed, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { CalendarIcon, PlayCircleIcon, TagIcon, UserIcon } from 'tdesign-icons-vue-next'
 import type { PluginMovieCandidate, PluginSummary } from '@common/types/plugin'
-import { usePluginTest } from '../composables/usePluginTest'
+import { useToolSearch } from '../composables/useToolSearch'
 import { openMovieDetailDrawer } from '../modals/MovieDetailDrawer'
 
 /** 列表里每个候选最多直接显示几个演员标签，多出来的折成 +N */
@@ -108,7 +109,7 @@ const props = defineProps<{
 }>()
 
 const current = computed(() => props.plugin)
-const test = usePluginTest(current)
+const test = useToolSearch(current)
 
 const movieId = ref('')
 
@@ -144,7 +145,7 @@ function openCandidate(candidate: PluginMovieCandidate): void {
 }
 </script>
 <style scoped>
-.plugin-test {
+.tool-search {
   display: flex;
   flex-direction: column;
   gap: 12px;

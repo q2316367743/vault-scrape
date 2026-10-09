@@ -1,6 +1,6 @@
 # 刮削插件模块
 
-站点适配逻辑（搜索、详情、封面、花絮）从主程序剥离为**本机 JS 脚本**：用户可导入、编辑、启停、测试，插件只负责「产出数据与下载配置」，真正的下载与落盘由后续调度器实现。插件声明的环境变量统一在**设置 → 账号设置**填写。
+站点适配逻辑（搜索、详情、封面、花絮）从主程序剥离为**本机 JS 脚本**：用户可导入、编辑、启停、测试，插件只负责「产出数据与下载配置」，真正的下载与落盘由后续调度器实现。插件声明的环境变量统一在**插件页右栏的配置区块**填写。
 
 ## 1. 为什么是 JS 脚本而不是 WASM
 
@@ -35,7 +35,7 @@ definePlugin({
 - `meta.id` 必须是 kebab-case（`/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/`），同时是源码文件名 `<id>.js`；
 - 四个方法缺一不可，缺失即 `invalidPlugin`，源码不会落盘；
 - 脚本「以 `definePlugin(...)` 结尾」和「没有返回值但调用过 definePlugin」两种写法都支持（宿主同时记录调用槽与顶层完成值）；
-- 四个方法的第二个参数都是 `env`：插件自己声明、用户在设置页填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节。
+- 四个方法的第二个参数都是 `env`：插件自己声明、用户在插件页配置区块填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节。
 
 ### 2.1 返回类型（`@common/types/plugin`）
 
@@ -111,7 +111,7 @@ interface PluginAsset {
 | `still` | 剧照 | `download.downloadStill` | 花絮 |
 | `trailer` | 预告片 | `download.downloadTrailer` | 花絮 |
 
-插件页的影片详情抽屉会按当前下载设置给每一行标注「会下载 / 当前不下载」，便于在真正下载前核对防盗链信息是否齐全。
+工具箱搜索页的影片详情抽屉会按当前下载设置给每一行标注「会下载 / 当前不下载」，便于在真正下载前核对防盗链信息是否齐全。
 
 ### 2.3 安装即执行：在沙箱里读取环境变量声明
 
@@ -121,7 +121,7 @@ interface PluginAsset {
 2. 在 `node:vm` 沙箱里**执行一次顶层代码**（超时 5 秒），拿到 `definePlugin(...)` 的返回值；
 3. 校验 `meta` 与四个方法，缺失即 `invalidPlugin`；
 4. 读取 `env` 数组并归一化（丢弃非法项、截断超量、去重），把结果缓存进 `plugins.json` 的 `envFields`；
-5. 只有以上全部通过才写盘；声明表随之出现在「设置 → 账号设置」，由用户填写取值。
+5. 只有以上全部通过才写盘；声明表随之出现在插件页右栏的配置区块，由用户填写取值。
 
 因此**安装插件不需要联网、也不会调用四个方法**：顶层代码里除了 `definePlugin(...)` 之外最好不要做别的事（不要在顶层发请求、不要在顶层读环境变量——那时用户还没填）。插件列表渲染直接用缓存里的 `envFields`，不重新编译；源码被外部编辑后按 mtime 自动重编译并刷新声明。
 
@@ -129,14 +129,14 @@ interface PluginAsset {
 
 ### 2.4 插件来源：文件插件与内置插件
 
-`PluginSummary.source` 区分两种来源，列表 / 详情 / 测试面板共用：
+`PluginSummary.source` 区分两种来源，插件列表 / 插件详情 / 工具箱的搜索页共用：
 
 | `source` | 说明 | 源码文件 | 编辑 / 删除 |
 | --- | --- | --- | --- |
 | `file` | 用户导入或保存的 JS 脚本，落盘在 `~/.vault-scrape/plugin/<id>.js` | 有 | 允许 |
 | `builtin` | 宿主内置实现（当前只有 `r18-offline`「R18 离线数据包」），`plugins.json` 里有记录但**没有源码文件** | 无 | 禁止：`plugin:readCode` → `notFound`，`plugin:saveCode` / 同名导入覆盖 / 删除 → `unsupported` |
 
-内置插件与文件插件共用同一套入口：出现在列表里、可启停、可被测试面板试跑、走同一个 `plugin:invoke`；区别只是宿主在命中内置 id 时**直接调用其实现**（不编译、不校验环境变量）并跳过源码读写。内置插件由主进程在启动 / 列表 / 调用前幂等补齐进索引，元信息没变就不写盘。契约与细节见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)。
+内置插件与文件插件共用同一套入口：出现在列表里、可启停、可被工具箱的搜索工具调用、走同一个 `plugin:invoke`；区别只是宿主在命中内置 id 时**直接调用其实现**（不编译、不校验环境变量）并跳过源码读写。内置插件不声明环境变量（`env: []`），因此详情里不出现配置区块。内置插件由主进程在启动 / 列表 / 调用前幂等补齐进索引，元信息没变就不写盘。契约与细节见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)。
 
 ## 3. 插件上下文 `ctx`
 
@@ -199,6 +199,7 @@ interface PluginResponse {
 | 插件源码 | `~/.vault-scrape/plugin/<id>.js` |
 
 - 单个源码文件上限 1 MB；
+- 清单里 `plugins` 数组的顺序就是插件列表的展示顺序：插件页拖拽排序后经 `plugin:reorder` 以完整 id 列表写回 `plugins.json`，顺序未变化时不写盘；
 - 内置插件在清单里以 `builtin: true` 记录（`toPluginSummary` 据此给出 `source` 与空的 `filePath`），没有 `<id>.js`，store 层同时拒绝覆盖与删除；
 - 环境变量一律按敏感值处理：先 `safeStorage` 加密再写入清单（`plugins.json` 的 `envValues` 存 `safe:` 前缀密文），系统钥匙串不可用时回落 `plain:` + base64 并写 `warn` 日志。编解码统一在 `src/main/src/utils/secretCodec.ts`，与文件模块的连接密码共用；
 - **环境变量明文永不跨 IPC**：`plugin:getEnv` 只返回声明表 `fields` 与「是否已填写」掩码 `filled`，不回读任何取值；
@@ -218,6 +219,7 @@ interface PluginResponse {
 | `plugin:import` | `{ overwrite }` | `PluginImportResult`（主进程弹出系统文件选择框，多选 `.js`） |
 | `plugin:remove` | `{ id }` | `boolean` |
 | `plugin:setEnabled` | `{ id, enabled }` | `PluginSummary` |
+| `plugin:reorder` | `{ ids }` | `PluginSummary[]`（按传入顺序重排；未出现的 id 保持原有相对顺序追加到末尾） |
 | `plugin:getEnv` | `{ id }` | `PluginEnvSnapshot`（`fields` + `filled`，无明文） |
 | `plugin:saveEnv` | `{ id, draft }` | `PluginSummary` |
 | `plugin:invoke` | `{ id, method, keyword?, movieId? }` | `PluginMovieCandidate[]` / `PluginMovieDetail` / `PluginAsset[]` |
@@ -241,7 +243,7 @@ interface PluginEnvField {
 - 取值最终以第二个参数 `env`（`Record<string, string>`）传给插件方法；
 - 最多 50 项，非法项直接丢弃（插件仍可加载，只是少了变量）；
 - 没有类型概念：账号类参数（站点地址、Cookie、Token…）都是文本，统一渲染成**多行文本域**；
-- 填写入口在**设置 → 账号设置**：按插件分卡片，一插件一个「保存」，已保存的值不回显（占位提示「已保存，留空表示保持不变」）；
+- 填写入口在**插件页右栏的配置区块**（`pages/plugin/components/PluginConfigPanel.vue`）：按选中插件渲染多行文本域，一个插件一个「保存」，已保存的值不回显（占位提示「已保存，留空表示保持不变」）；只有在插件声明了环境变量（`hasEnv`）时才渲染这个区块，内置插件与没写 `env` 的脚本插件都不会看到空区域；
 - `required` 的项未填写时 `envReady` 为 false，界面显示「待填写变量」；此时调用直接失败：`envMissing`，提示缺失项的名称。
 
 ## 8. 错误码
@@ -275,16 +277,16 @@ interface PluginEnvField {
 | 位置 | 职责 |
 | --- | --- |
 | `src/common/types/plugin/` | 三端共享的纯类型与纯函数（契约、归一化、环境变量声明校验、错误码、信封） |
-| `src/main/src/modules/plugin/pluginStore.ts` | `plugins.json` 落盘、源码读写、safeStorage 加解密接入 |
+| `src/main/src/modules/plugin/pluginStore.ts` | `plugins.json` 落盘（含顺序重排）、源码读写、safeStorage 加解密接入 |
 | `src/main/src/modules/plugin/pluginRuntime.ts` | vm 沙箱编译、方法调用与超时 |
 | `src/main/src/modules/plugin/pluginHost.ts` | `ctx` 构造：共享 http 客户端请求（超时 / 重试 / 限速）、cheerio 注入、日志桥（环境变量不经 ctx） |
-| `src/main/src/modules/plugin/pluginRegistry.ts` | 内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/环境变量/调用入口 |
+| `src/main/src/modules/plugin/pluginRegistry.ts` | 内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/排序/环境变量/调用入口 |
 | `src/main/src/modules/plugin/pluginIpc.ts` | IPC 注册与信封转换（唯一转换点），系统文件选择框 |
 | `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义与实现（当前仅 `r18-offline`，见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)） |
 | `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
 | `src/preload/src/modules/plugin/` | 通道常量与 `pluginApi` 桥 |
-| `src/renderer/src/windows/main/pages/plugin/` | 插件页：列表、详情（概览 + 测试）、测试面板（搜索 + 影片 ID 两个入口）、影片详情抽屉（`modals/MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `composables/useMoviePreview.ts`）、源码编辑器弹窗 |
-| `src/renderer/src/windows/main/pages/setting/components/SettingAccountPanel.vue` | 账号设置：按插件渲染环境变量多行文本域并保存 |
+| `src/renderer/src/windows/main/pages/plugin/` | 插件页：列表（`PluginList.vue`，透明左栏，sortablejs 拖拽重排、整行可拖）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`） |
+| `src/renderer/src/windows/main/pages/tools/` | 工具箱：索引页（`ToolsPage.vue` + `toolRegistry.ts`）、搜索工具页（`ToolSearchPage.vue`：选插件 + 两个入口）、影片详情抽屉（`modals/MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `composables/useMoviePreview.ts`） |
 
 ## 10. 完整示例插件
 

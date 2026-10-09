@@ -61,6 +61,8 @@ export interface SideMenuItem {
 
 当前菜单项与图标：概览 `DashboardIcon`、工作台 `DesktopIcon`、存储 `HardDiskStorageIcon`、插件 `ExtensionIcon`、工具 `ToolsIcon`、设置 `SettingIcon`、日志 `SystemLogIcon`、关于 `InfoCircleIcon`。
 
+「工具」项写成 `{ to: '/tools', match: 'prefix' }`：进入工具箱的子页（如搜索工具 `/tools/search`）时它保持高亮；其余一级页面用默认的 `exact` 全等匹配。
+
 折叠态由 `collapsed` 经显式 props `AppSide → SideMenu → SideMenuNode` 下钻（通用组件不 import 全局状态）：节点隐藏标签与箭头、图标居中，并用 `<t-tooltip placement="right" :disabled="!collapsed">` 在悬停时补回标签，有子项的节点在折叠态下点击不展开。
 
 ## 页面容器

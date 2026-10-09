@@ -2,7 +2,6 @@
 import { ref } from 'vue'
 import { useRoute } from 'vue-router'
 import PageLayout from '@/components/PageLayout/PageLayout.vue'
-import SettingAccountPanel from './components/SettingAccountPanel.vue'
 import SettingDownloadPanel from './components/SettingDownloadPanel.vue'
 import SettingFilePanel from './components/SettingFilePanel.vue'
 import SettingNamingPanel from './components/SettingNamingPanel.vue'
@@ -11,7 +10,7 @@ import SettingPathPanel from './components/SettingPathPanel.vue'
 import SettingScrapePanel from './components/SettingScrapePanel.vue'
 import SettingTranslatePanel from './components/SettingTranslatePanel.vue'
 
-/** 当前分组：value 与 SettingGroupKey 对应；支持 `?group=account` 直接定位到某个分组 */
+/** 当前分组：value 与 SettingGroupKey 对应；支持 `?group=network` 直接定位到某个分组 */
 const route = useRoute()
 const active = ref(typeof route.query.group === 'string' ? route.query.group : 'path')
 </script>
@@ -39,9 +38,6 @@ const active = ref(typeof route.query.group === 'string' ? route.query.group : '
       </t-tab-panel>
       <t-tab-panel value="file" label="文件行为">
         <setting-file-panel />
-      </t-tab-panel>
-      <t-tab-panel value="account" label="账号设置">
-        <setting-account-panel />
       </t-tab-panel>
     </t-tabs>
   </page-layout>

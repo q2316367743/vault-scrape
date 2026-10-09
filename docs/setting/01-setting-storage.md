@@ -36,7 +36,7 @@ interface SettingSchema {
 }
 ```
 
-字段与默认值见 [02-setting-items.md](./02-setting-items.md)。账号设置尚未接入，因此不在 `SettingSchema` 中。
+字段与默认值见 [02-setting-items.md](./02-setting-items.md)。站点账号参数不在设置里：由插件声明为环境变量，存在插件自己的索引文件中，因此设置页也没有账号分组。
 
 落盘路径：`~/.vault-scrape/setting/settings.json`，内容形如：
 

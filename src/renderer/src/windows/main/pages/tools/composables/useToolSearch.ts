@@ -1,14 +1,14 @@
 /**
- * 插件测试面板状态：搜索候选，具体的影片详情交给影片详情抽屉。
+ * 搜索工具状态：按关键字搜索候选，具体的影片详情交给影片详情抽屉。
  *
- * 契约：测试只读，不落盘、不改插件状态；失败只提示，不抛出。
+ * 契约：搜索只读，不落盘、不改插件状态；失败只提示，不抛出。
  */
 import { ref, type Ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { pluginApi } from '@/api'
 import type { PluginMovieCandidate, PluginSummary } from '@common/types/plugin'
 
-export function usePluginTest(active: Ref<PluginSummary | null>) {
+export function useToolSearch(active: Ref<PluginSummary | null>) {
   const keyword = ref('')
   const searching = ref(false)
   const candidates = ref<PluginMovieCandidate[]>([])

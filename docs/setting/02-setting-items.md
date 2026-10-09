@@ -2,7 +2,7 @@
 
 本文档按功能域列出全部设置项、默认值与落盘键。定义文件在 `src/common/types/setting/`，界面在 `src/renderer/src/windows/main/pages/setting/components/`。
 
-落盘键与分组（`SettingGroupKey`）：`path` / `scrape` / `network` / `translate` / `naming` / `download` / `file`。需求口径中的「账号设置」不落在这里——站点账号参数由插件声明，见第 8 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
+落盘键与分组（`SettingGroupKey`）：`path` / `scrape` / `network` / `translate` / `naming` / `download` / `file`。站点账号参数不在设置页，由插件在 `env` 里声明、在插件页的配置区块填写，见第 8 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 
 ## 1. 目录与路径（`path`）
 
@@ -108,11 +108,11 @@
 | `scrapeSymlinkDir` | 刮削软链接目录 | `false` |
 | `saveLogToFile` | 保存日志到文件 | `false` |
 
-## 8. 账号设置
+## 8. 站点账号参数（不在设置页）
 
-站点账号参数**不并入 `settings.json`**：刮削源由插件决定，账号类参数（站点地址、Cookie、API Key 等）改为由插件在自己的 `env` 表里声明，值落在 `~/.vault-scrape/plugin/plugins.json`；环境变量一律按敏感处理，由 `safeStorage` 加密保存且明文永不跨 IPC。
+站点账号参数**不并入 `settings.json`**：刮削源由插件决定，账号类参数（站点地址、Cookie、API Key 等）由插件在自己的 `env` 表里声明，值落在 `~/.vault-scrape/plugin/plugins.json`；环境变量一律按敏感处理，由 `safeStorage` 加密保存且明文永不跨 IPC。
 
-因此类型层不包含 `account` 分组，设置页的「账号设置」面板是插件的环境变量填写入口：按插件分卡片，每个变量一行**多行文本域**（`t-textarea`），已保存的值不回显（提示「已保存，留空表示保持不变」），保存以插件为单位。插件未声明 `env`、或插件加载失败时该面板显示空态。插件的环境变量声明、加密口径与完整界面说明见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
+因此类型层不包含 `account` 分组，设置页也没有「账号设置」标签：填写入口是**插件页右栏的配置区块**（`pages/plugin/components/PluginConfigPanel.vue`）——选中哪个插件就填哪个插件的变量，每个变量一行**多行文本域**（`t-textarea`），已保存的值不回显（提示「已保存，留空表示保持不变」），保存以插件为单位。插件未声明 `env`（含内置插件）时详情页根本不渲染这个区块，声明了但一项都无需填时区块内显示空态。插件的环境变量声明、加密口径与完整界面说明见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 
 ## 归一化规则
 

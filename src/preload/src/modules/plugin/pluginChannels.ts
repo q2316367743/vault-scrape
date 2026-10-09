@@ -9,6 +9,7 @@ export const PluginChannels = {
   import: 'plugin:import',
   remove: 'plugin:remove',
   setEnabled: 'plugin:setEnabled',
+  reorder: 'plugin:reorder',
   getEnv: 'plugin:getEnv',
   saveEnv: 'plugin:saveEnv',
   invoke: 'plugin:invoke'

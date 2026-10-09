@@ -1,5 +1,5 @@
 /**
- * 插件页面用到的小工具：资源类型归属与「当前下载设置是否会下载」判定。
+ * 工具箱页面用到的小工具：资源类型归属与「当前下载设置是否会下载」判定。
  *
  * 映射口径与 `@common/types/plugin/asset.ts` 的注释保持一致：
  * thumb→downloadThumb、poster→downloadPoster、fanart→downloadFanart、

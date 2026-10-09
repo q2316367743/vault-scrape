@@ -30,6 +30,7 @@ import {
   readPluginCode,
   readPluginEnv,
   removePluginById,
+  reorderPlugins,
   saveEnv,
   savePluginCode,
   setEnabled
@@ -85,6 +86,13 @@ function readEnvDraft(payload: unknown): PluginEnvDraft {
   return { values }
 }
 
+/** 渲染层提交的插件顺序：只保留字符串项，其余丢弃 */
+function readIds(payload: unknown): string[] {
+  const raw = payloadOf(payload).ids
+  if (!Array.isArray(raw)) throw new PluginError('invalidArgument', '缺少插件顺序列表')
+  return raw.filter((item): item is string => typeof item === 'string')
+}
+
 /** 弹出系统文件选择框并批量导入；用户取消时返回空结果 */
 async function importFromDialog(overwrite: boolean): Promise<PluginImportResult> {
   const result = await dialog.showOpenDialog({
@@ -125,6 +133,10 @@ export function registerPluginIpc(): void {
     const id = readId(payload)
     return handle<PluginSummary>(() => setEnabled(id, readBoolean(source, 'enabled', false)))
   })
+
+  ipcMain.handle(PluginChannels.reorder, (_event, payload: unknown) =>
+    handle<PluginSummary[]>(() => reorderPlugins(readIds(payload)))
+  )
 
   ipcMain.handle(PluginChannels.getEnv, (_event, payload: unknown) =>
     handle(() => readPluginEnv(readId(payload)))

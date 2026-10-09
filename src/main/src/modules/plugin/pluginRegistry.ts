@@ -46,6 +46,7 @@ import {
   readPluginSource,
   readEnvFilled,
   removePlugin,
+  reorderPlugins as reorderStoredPlugins,
   savePluginEnv,
   setPluginEnabled,
   toPluginSummary,
@@ -137,6 +138,13 @@ function loadSummary(stored: StoredPlugin): PluginSummary {
 export function listPluginSummaries(): PluginSummary[] {
   ensureBuiltinPlugins()
   return listStoredPlugins().map((stored) => loadSummary(stored))
+}
+
+/** 按渲染层给出的 ID 顺序重排插件；返回重排后的完整摘要列表 */
+export function reorderPlugins(ids: string[]): PluginSummary[] {
+  ensureBuiltinPlugins()
+  reorderStoredPlugins(ids)
+  return listPluginSummaries()
 }
 
 export function readPluginCode(id: string): string {

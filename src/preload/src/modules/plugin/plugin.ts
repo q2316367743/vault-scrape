@@ -35,6 +35,9 @@ export const pluginApi = {
   setEnabled: (id: string, enabled: boolean): Promise<PluginResult<PluginSummary>> =>
     ipcRenderer.invoke(PluginChannels.setEnabled, { id, enabled }),
 
+  reorder: (ids: string[]): Promise<PluginResult<PluginSummary[]>> =>
+    ipcRenderer.invoke(PluginChannels.reorder, { ids }),
+
   getEnv: (id: string): Promise<PluginResult<PluginEnvSnapshot>> =>
     ipcRenderer.invoke(PluginChannels.getEnv, { id }),
 
