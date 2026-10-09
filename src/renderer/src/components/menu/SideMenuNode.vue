@@ -37,7 +37,8 @@ function onNodeClick(): void {
 </script>
 
 <template>
-  <div class="menu-node">
+  <t-divider v-if="item.type === 'divider'" size="8px" />
+  <div v-else class="menu-node">
     <t-tooltip :content="item.label" placement="right" :disabled="!collapsed">
       <button
         class="menu-item"

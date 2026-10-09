@@ -54,7 +54,7 @@ src/
     └── src/
         ├── api/             # 渲染层唯一 API 出口（页面不直接读 window.preload）
         ├── assets/style/    # 全局样式：theme / tdesign-cover / customer
-        ├── components/      # 跨页面通用组件（menu / PageLayout / DirectoryPickerField）
+        ├── components/      # 跨页面通用组件（menu / PageLayout / SubPageLayout / DirectoryPickerField）
         ├── global/          # 全局状态
         ├── hooks/           # 通用 hooks
         └── windows/main/    # 主窗口：入口、App.vue、router、store、pages

@@ -2,6 +2,7 @@
   <div class="page-layout">
     <header class="page-header">
       <div class="page-heading">
+        <slot name="leading" />
         <h2 class="page-title">{{ title }}</h2>
         <span v-if="description" class="page-description">{{ description }}</span>
       </div>
@@ -48,7 +49,7 @@ withDefaults(
 
 .page-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
   min-width: 0;
 }

@@ -38,7 +38,7 @@ useOfflineUpdateNotice()
 
 .main-container {
   overflow: hidden;
-  background: var(--fluent-acrylic-bg);
+  background: var(--td-bg-color-container);
   border: 1px solid var(--fluent-card-border);
   border-radius: var(--td-radius-medium);
 }

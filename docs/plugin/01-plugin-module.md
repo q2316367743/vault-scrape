@@ -300,7 +300,7 @@ interface PluginEnvField {
 | `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
 | `src/preload/src/modules/plugin/` | 通道常量与 `pluginApi` 桥 |
 | `src/renderer/src/windows/main/pages/plugin/` | 插件页：列表（`PluginList.vue`，透明左栏，sortablejs 拖拽重排、整行可拖）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`） |
-| `src/renderer/src/windows/main/pages/tools/` | 工具箱：索引页（`ToolsPage.vue` + `toolRegistry.ts`）、搜索工具页（`ToolSearchPage.vue`：选插件 + 两个入口）、影片详情抽屉（`modals/MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `composables/useMoviePreview.ts`） |
+| `src/renderer/src/windows/main/pages/tools/` | 工具箱：索引页在根（`ToolsPage.vue` + `toolRegistry.ts`），子路由各自成目录——搜索工具在 `search/`（`ToolSearchPage.vue` 用 `SubPageLayout`：标题左侧返回图标 + 选插件 + 两个入口），影片详情抽屉在 `search/modals/`（`MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `search/composables/useMoviePreview.ts`） |
 
 ## 10. 完整示例插件
 

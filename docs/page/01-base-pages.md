@@ -4,7 +4,7 @@
 
 七个基础页面覆盖「看状态、干活、调试、配置、查日志、看版本、管插件」七件事，另有[存储管理页面](./02-storage-page.md)承载文件模块的界面。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC，插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），工作台是结构化占位，等刮削流程落地后填充。
 
-页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。
+页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
 ## 路由
 
@@ -18,7 +18,7 @@
 | `/storage` | `pages/storage/StoragePage.vue` | 存储 |
 | `/plugin` | `pages/plugin/PluginPage.vue` | 插件 |
 | `/tools` | `pages/tools/ToolsPage.vue` | 工具 |
-| `/tools/search` | `pages/tools/ToolSearchPage.vue` | 搜索 |
+| `/tools/search` | `pages/tools/search/ToolSearchPage.vue` | 搜索 |
 | `/setting` | `pages/setting/SettingPage.vue` | 设置 |
 | `/log` | `pages/log/LogPage.vue` | 日志 |
 | `/about` | `pages/about/AboutPage.vue` | 关于 |
@@ -48,7 +48,7 @@
 - 状态在 `composables/usePlugins.ts`（列表、选中持久化到 localStorage、启停、排序、导入、删除、源码读写、`applySummary` 就地更新单条摘要）里。搜索与影片详情原来挂在插件页，现已整体迁到工具箱，见下文「工具」。
 - 环境变量在插件页右栏的**配置区块**（`components/PluginConfigPanel.vue`）填写：只在插件声明了环境变量（`hasEnv`）时渲染，内置插件与没写 `env` 的脚本插件都不会出现空区域；选中插件后按声明表渲染多行文本域，保存以插件为单位；环境变量一律按敏感处理，明文永不回传，文本域留空表示保持已保存的值。保存成功后用主进程返回的 `PluginSummary` 上抛（`PluginDetail` 的 `changed` → 页面的 `applySummary`），列表上的「待填写变量」标签即时更新，不整表刷新。
 - 安装（导入 / 保存源码）时会在沙箱里执行一次脚本，读取 `env` 声明并写入索引，不联网、不调用四个方法；声明表即配置区块的数据源。
-- 影片详情是命令式抽屉（现位于 `pages/tools/`）：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
+- 影片详情是命令式抽屉（现位于 `pages/tools/search/`）：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
 - 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，保存时主进程先编译校验再落盘）。
 - 导入支持在系统文件选择框里一次多选多个 `.js`；同名（`meta.id`）只保留最新——先比 `meta.version`，版本相同再比源文件 mtime，批内与本机已安装的旧版本都不落盘，只用 `MessagePlugin.info` 提示「已跳过 N 个旧版本插件」；仅当版本相同且未覆盖时弹 `DialogPlugin.confirm`，确认后带 `overwrite: true` 重试；导入的系统文件选择框由主进程弹出。
 - 契约、沙箱白名单、超时、存储与错误码见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
@@ -60,8 +60,8 @@
 ## 工具
 
 - 工具箱是**索引页**：`ToolsPage.vue` 按 `toolRegistry.ts` 的 `ToolEntry[]` 渲染入口卡片（图标 + 名称 + 说明），点击进入各自的工具页路由；新增工具时先在注册表登记、再在 `router.ts` 注册路由。
-- 当前唯一工具是**搜索**（`/tools/search`，`ToolSearchPage.vue`）：顶部用 `t-select` 选择「使用哪个插件」（选项带「加载失败 / 待填写变量 / 已停用」状态后缀，加载失败的选项禁用），下面 `components/ToolSearchPanel.vue` 提供两个入口——关键字搜索（结果每行 = 单行省略的标题 + `t-tooltip` 悬停看全，下面是带图标的标签行：番号 / 发行日期 / 集数 / 演员，演员超过 3 个折成 `+N` 悬停看全，点行或「详情」按钮打开抽屉）与直接填影片 ID 点「查看详情」。页面用 `#extra` 提供「返回工具箱」「刷新」。
-- 搜索状态在 `composables/useToolSearch.ts`（关键字、候选列表、loading），影片详情在 `composables/useMoviePreview.ts`（按影片 ID 拉详情 / 封面 / 花絮，并按当前下载设置标注资产），资源类型与下载判定在 `toolUtils.ts`。
+- 当前唯一工具是**搜索**（`/tools/search`，`pages/tools/search/ToolSearchPage.vue`）：顶部用 `t-select` 选择「使用哪个插件」（选项带「加载失败 / 待填写变量 / 已停用」状态后缀，加载失败的选项禁用），下面 `components/ToolSearchPanel.vue` 提供两个入口——关键字搜索（结果每行 = 单行省略的标题 + `t-tooltip` 悬停看全，下面是带图标的标签行：番号 / 发行日期 / 集数 / 演员，演员超过 3 个折成 `+N` 悬停看全，点行或「详情」按钮打开抽屉）与直接填影片 ID 点「查看详情」。页面用 `SubPageLayout` 包裹：返回图标按钮在标题左侧、点它 `router.back()`，右上角 `#extra` 只放「刷新」。
+- 搜索状态在 `composables/useToolSearch.ts`（关键字、候选列表、loading），影片详情在 `composables/useMoviePreview.ts`（按影片 ID 拉详情 / 封面 / 花絮，并按当前下载设置标注资产），资源类型与下载判定在 `toolUtils.ts`（都在 `pages/tools/search/` 下）。
 - 选择器与插件页共享同一份「当前插件」（`usePlugins` 持久化到 localStorage 的 `vault-scrape:plugin-active`）：在插件页选中哪个插件，进搜索工具页就是哪个。
 - 未启用、必填变量未填的插件仍可被选中，调用由主进程以中文错误拒绝（渲染层不复制这套业务规则）；插件列表为空时页面提示先去「插件」页导入。
 

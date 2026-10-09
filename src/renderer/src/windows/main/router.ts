@@ -31,7 +31,7 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/tools/search',
     name: '搜索',
-    component: () => import('@/windows/main/pages/tools/ToolSearchPage.vue')
+    component: () => import('@/windows/main/pages/tools/search/ToolSearchPage.vue')
   },
   {
     path: '/setting',

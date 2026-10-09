@@ -20,6 +20,7 @@
 | `src/renderer/src/components/menu/SideMenu.vue` | 菜单列表容器 |
 | `src/renderer/src/components/menu/SideMenuNode.vue` | 单个菜单节点（递归） |
 | `src/renderer/src/components/PageLayout/PageLayout.vue` | 页面统一容器 |
+| `src/renderer/src/components/PageLayout/SubPageLayout.vue` | 子页面容器：标题左侧返回图标 + `router.back()` |
 | `src/renderer/src/global/AppState.ts` | 侧栏折叠状态等全局状态 |
 | `src/renderer/src/global/AppTheme.ts` | 主题模式（亮色 / 深色 / 跟随系统）状态与窗口材质同步 |
 | `src/renderer/src/hooks/{UseState.ts,UseLog.ts}` | 通用 hooks |
@@ -70,10 +71,13 @@ export interface SideMenuItem {
 `PageLayout.vue` 统一页面的标题区与内容区：
 
 - props：`title: string`、`description?: string`、`padded?: boolean`（默认 `true`）。
-- 结构：`.page-header`（高 56px，标题 + 描述，右侧 `#extra` 插槽）+ `.page-container`（`flex: 1; overflow: auto`，内容插槽，默认 `padding: 20px`）。
+- 结构：`.page-header`（高 56px，`#leading` 插槽 + 标题 + 描述，右侧 `#extra` 插槽）+ `.page-container`（`flex: 1; overflow: auto`，内容插槽，默认 `padding: 20px`）。
+- `#leading` 是可选插槽（标题之前、页头最左），不传时不渲染任何节点，一级页面的观感不变；子页面容器正是用它放返回按钮。
 - `:padded="false"` 给内容区加 `is-flush`：`padding: 0; overflow: hidden`，内容贴到页面边缘，滚动与内边距下放给页面内部。
 
 所有基础页面都用它包裹，保证标题位置、内边距与滚动行为一致。
+
+**子页面容器 `SubPageLayout.vue`**：props 与 `PageLayout` 完全一致（`title` / `description` / `padded`），转发内容插槽与 `#extra`，并额外在 `#leading` 里渲染一枚 `variant="text" shape="square"` 的 `ChevronLeftIcon` 图标按钮（`aria-label="返回"`，无 tooltip、无文字）。点击即 `router.back()` 回退浏览历史，不认目标路由——因此子页面不用自己写返回逻辑，也不要在 `#extra` 里再放返回按钮；直接以 URL 打开子页时返回按钮不产生跳转属既定语义。按钮 `align-self: center` 抵消页头的 baseline 对齐，`margin-right: -6px` 抵消按钮内边距，视觉上贴着标题。
 
 **左右分栏页面（插件页、存储页）的约定**：传 `:padded="false"`，左栏固定 300px、通高、内部自己滚动，只用 `border-right: 1px solid var(--fluent-sidebar-border)` 分隔，不做卡片（无圆角、无阴影、无四周边框）；两栏 `gap: 0`，右侧栏自己补 `padding: 20px`。这样左侧不再被容器的 20px 内边距挤掉一圈宽度。
 

@@ -14,4 +14,5 @@ export interface SideMenuItem {
   activePaths?: string[]
   /** 子菜单 */
   children?: SideMenuItem[]
+  type?: 'divider'
 }

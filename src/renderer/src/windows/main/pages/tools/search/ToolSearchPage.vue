@@ -8,9 +8,8 @@
  * - 加载失败的插件直接在选择器里禁用，避免选了必然报错。
  */
 import { computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ChevronLeftIcon, RefreshIcon } from 'tdesign-icons-vue-next'
-import PageLayout from '@/components/PageLayout/PageLayout.vue'
+import { RefreshIcon } from 'tdesign-icons-vue-next'
+import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import type { PluginSummary } from '@common/types/plugin'
 import { usePlugins } from '@/windows/main/pages/plugin/composables/usePlugins'
 import ToolSearchPanel from './components/ToolSearchPanel.vue'
@@ -21,7 +20,6 @@ interface PluginOption {
   disabled: boolean
 }
 
-const router = useRouter()
 const { plugins, loading, activeId, active, refresh, select } = usePlugins()
 
 function statusText(plugin: PluginSummary): string {
@@ -46,20 +44,12 @@ function onSelect(value: unknown): void {
   if (typeof value === 'string') select(value)
 }
 
-function goBack(): void {
-  void router.push('/tools')
-}
-
 onMounted(() => void refresh())
 </script>
 
 <template>
-  <page-layout title="搜索" description="选择插件后按关键字搜索影片，或按影片 ID 直查详情">
+  <sub-page-layout title="搜索" description="选择插件后按关键字搜索影片，或按影片 ID 直查详情">
     <template #extra>
-      <t-button variant="outline" @click="goBack">
-        <template #icon><chevron-left-icon /></template>
-        返回工具箱
-      </t-button>
       <t-button variant="outline" :loading="loading" @click="refresh">
         <template #icon><refresh-icon /></template>
         刷新
@@ -86,7 +76,7 @@ onMounted(() => void refresh())
         description="先到「插件」页导入本机 .js 脚本，再回来选择要使用的插件"
       />
     </div>
-  </page-layout>
+  </sub-page-layout>
 </template>
 
 <style scoped lang="less">
