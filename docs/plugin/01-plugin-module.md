@@ -19,7 +19,7 @@
 
 ## 2. 插件契约
 
-插件脚本是**纯 JS**（没有 `import` / `require` / TypeScript），顶层调用一次 `definePlugin(...)`：
+文件插件脚本是**纯 JS**（没有 `import` / `require` / TypeScript），顶层调用一次 `definePlugin(...)`（内置插件不走这条契约，见 2.4 节）：
 
 ```js
 definePlugin({
@@ -109,7 +109,7 @@ interface PluginAsset {
 | `still` | 剧照 | `download.downloadStill` | 花絮 |
 | `trailer` | 预告片 | `download.downloadTrailer` | 花絮 |
 
-插件页的测试面板会按当前下载设置给每一行标注「会下载 / 当前不下载」，便于在真正下载前核对防盗链信息是否齐全。
+插件页的影片详情抽屉会按当前下载设置给每一行标注「会下载 / 当前不下载」，便于在真正下载前核对防盗链信息是否齐全。
 
 ### 2.3 安装即执行：在沙箱里读取环境变量声明
 
@@ -124,6 +124,17 @@ interface PluginAsset {
 因此**安装插件不需要联网、也不会调用四个方法**：顶层代码里除了 `definePlugin(...)` 之外最好不要做别的事（不要在顶层发请求、不要在顶层读环境变量——那时用户还没填）。插件列表渲染直接用缓存里的 `envFields`，不重新编译；源码被外部编辑后按 mtime 自动重编译并刷新声明。
 
 > 兼容：早期示例把声明写成 `config: [...]` 仍然可用，但会写一条 `warn` 日志提醒改名为 `env`。
+
+### 2.4 插件来源：文件插件与内置插件
+
+`PluginSummary.source` 区分两种来源，列表 / 详情 / 测试面板共用：
+
+| `source` | 说明 | 源码文件 | 编辑 / 删除 |
+| --- | --- | --- | --- |
+| `file` | 用户导入或保存的 JS 脚本，落盘在 `~/.vault-scrape/plugin/<id>.js` | 有 | 允许 |
+| `builtin` | 宿主内置实现（当前只有 `r18-offline`「R18 离线数据包」），`plugins.json` 里有记录但**没有源码文件** | 无 | 禁止：`plugin:readCode` → `notFound`，`plugin:saveCode` / 同名导入覆盖 / 删除 → `unsupported` |
+
+内置插件与文件插件共用同一套入口：出现在列表里、可启停、可被测试面板试跑、走同一个 `plugin:invoke`；区别只是宿主在命中内置 id 时**直接调用其实现**（不编译、不校验环境变量）并跳过源码读写。内置插件由主进程在启动 / 列表 / 调用前幂等补齐进索引，元信息没变就不写盘。契约与细节见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)。
 
 ## 3. 插件上下文 `ctx`
 
@@ -185,6 +196,7 @@ interface PluginResponse {
 | 插件源码 | `~/.vault-scrape/plugin/<id>.js` |
 
 - 单个源码文件上限 1 MB；
+- 内置插件在清单里以 `builtin: true` 记录（`toPluginSummary` 据此给出 `source` 与空的 `filePath`），没有 `<id>.js`，store 层同时拒绝覆盖与删除；
 - 环境变量一律按敏感值处理：先 `safeStorage` 加密再写入清单（`plugins.json` 的 `envValues` 存 `safe:` 前缀密文），系统钥匙串不可用时回落 `plain:` + base64 并写 `warn` 日志。编解码统一在 `src/main/src/utils/secretCodec.ts`，与文件模块的连接密码共用；
 - **环境变量明文永不跨 IPC**：`plugin:getEnv` 只返回声明表 `fields` 与「是否已填写」掩码 `filled`，不回读任何取值；
 - 清单读取失败时回落空列表并写 `error` 日志，不影响应用启动；单个插件加载失败只体现在摘要的 `loadError` 上（列表标红），不阻塞其他插件。
@@ -242,6 +254,10 @@ interface PluginEnvField {
 | `timeout` | 顶层执行或方法调用超时 |
 | `invokeFailed` | 插件方法抛错（含已停用、请求失败） |
 | `envMissing` | 必填环境变量未填写 |
+| `offlineMissing` | 尚未安装离线数据包（内置插件专用） |
+| `offlineBusy` | 已有离线数据包任务在进行中 |
+| `offlineCorrupt` | 离线数据包已损坏，请重新导入 |
+| `offlineCheckFailed` | 检查离线数据包更新失败 |
 | `io` | 插件文件读写失败 |
 | `unknown` | 未归类错误 |
 
@@ -261,9 +277,10 @@ interface PluginEnvField {
 | `src/main/src/modules/plugin/pluginHost.ts` | `ctx` 构造：共享 http 客户端请求（超时 / 重试 / 限速）、cheerio 注入、日志桥（环境变量不经 ctx） |
 | `src/main/src/modules/plugin/pluginRegistry.ts` | 内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/环境变量/调用入口 |
 | `src/main/src/modules/plugin/pluginIpc.ts` | IPC 注册与信封转换（唯一转换点），系统文件选择框 |
+| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义与实现（当前仅 `r18-offline`，见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)） |
 | `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
 | `src/preload/src/modules/plugin/` | 通道常量与 `pluginApi` 桥 |
-| `src/renderer/src/windows/main/pages/plugin/` | 插件页：列表、详情（概览 + 测试）、测试面板、源码编辑器弹窗 |
+| `src/renderer/src/windows/main/pages/plugin/` | 插件页：列表、详情（概览 + 测试）、测试面板（搜索 + 影片 ID 两个入口）、影片详情抽屉（`modals/MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `composables/useMoviePreview.ts`）、源码编辑器弹窗 |
 | `src/renderer/src/windows/main/pages/setting/components/SettingAccountPanel.vue` | 账号设置：按插件渲染环境变量多行文本域并保存 |
 
 ## 10. 完整示例插件

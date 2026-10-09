@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { appendLog } from '$/db/repo/logRepo'
 import { bindWindowState } from '$/modules/appWindow/appWindowIpc'
 import { disposeFileClients } from '$/modules/file/fileClientManager'
+import { runOfflineStartupCheck } from '$/modules/offline/offlineCheck'
 import { registerIpc } from '$/registerIpc'
 
 /**
@@ -87,6 +88,9 @@ app.whenReady().then(() => {
   appendLog({ level: 'info', scope: 'app', message: 'vault-scrape 启动' })
 
   createWindow()
+
+  // 启动时的离线数据包自动检查：距上次成功检查超过 7 天才联网，且只提示、绝不自动下载
+  void runOfflineStartupCheck()
 
   app.on('activate', function () {
     // On macOS it's common to re-create a window in the app when the

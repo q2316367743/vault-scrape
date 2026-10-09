@@ -17,6 +17,10 @@ export type PluginErrorCode =
   | 'invokeFailed'
   | 'envMissing'
   | 'io'
+  | 'offlineMissing'
+  | 'offlineBusy'
+  | 'offlineCorrupt'
+  | 'offlineCheckFailed'
   | 'unknown'
 
 export const PLUGIN_ERROR_CODES: readonly PluginErrorCode[] = [
@@ -30,6 +34,10 @@ export const PLUGIN_ERROR_CODES: readonly PluginErrorCode[] = [
   'invokeFailed',
   'envMissing',
   'io',
+  'offlineMissing',
+  'offlineBusy',
+  'offlineCorrupt',
+  'offlineCheckFailed',
   'unknown'
 ]
 
@@ -44,6 +52,10 @@ export const PLUGIN_ERROR_MESSAGES: Readonly<Record<PluginErrorCode, string>> = 
   invokeFailed: '插件调用失败',
   envMissing: '插件缺少必填配置',
   io: '插件文件读写失败',
+  offlineMissing: '尚未安装离线数据包',
+  offlineBusy: '已有离线数据包任务在进行中',
+  offlineCorrupt: '离线数据包已损坏，请重新导入',
+  offlineCheckFailed: '检查离线数据包更新失败',
   unknown: '未知错误'
 }
 

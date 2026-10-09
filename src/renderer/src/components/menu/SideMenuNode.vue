@@ -90,7 +90,7 @@ function onNodeClick(): void {
 
   &.is-active {
     background: var(--fluent-item-selected);
-    box-shadow: inset 3px 0 0 var(--fluent-item-selected-border);
+    //box-shadow: inset 3px 0 0 var(--fluent-item-selected-border);
   }
 
   // 折叠态：只留居中图标，文字与箭头交给 t-tooltip 承载

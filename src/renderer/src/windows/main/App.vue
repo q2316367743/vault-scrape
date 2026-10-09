@@ -1,6 +1,10 @@
 <script setup lang="ts">
+import { useOfflineUpdateNotice } from './composables/useOfflineUpdateNotice'
 import AppTitleBar from './pages/app/AppTitleBar.vue'
 import AppSide from './pages/app/AppSide.vue'
+
+// 启动时若发现离线数据包有新版本，用一条提示告知（不自动下载）
+useOfflineUpdateNotice()
 </script>
 
 <template>

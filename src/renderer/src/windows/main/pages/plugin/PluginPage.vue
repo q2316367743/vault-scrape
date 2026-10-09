@@ -91,7 +91,8 @@ function onEnabled(value: boolean): void {
 <template>
   <page-layout
     title="插件"
-    description="导入本机 JS 刮削插件：启停、测试与源码编辑。环境变量在「设置 → 账号设置」填写；插件只产出「下载配置」，真正的下载由后续调度器负责。"
+    description="导入本机 JS 刮削插件：启停、测试与源码编辑。"
+    :padded="false"
   >
     <template #extra>
       <t-button variant="outline" :loading="loading" @click="refresh">
@@ -105,12 +106,7 @@ function onEnabled(value: boolean): void {
     </template>
 
     <div class="plugin-body">
-      <plugin-list
-        :plugins="plugins"
-        :active-id="activeId"
-        :loading="loading"
-        @select="select"
-      />
+      <plugin-list :plugins="plugins" :active-id="activeId" :loading="loading" @select="select" />
       <plugin-detail
         v-if="active"
         :plugin="active"
@@ -118,16 +114,25 @@ function onEnabled(value: boolean): void {
         @remove="onRemove"
         @enabled="onEnabled"
       />
-      <t-empty v-else description="左侧还没有可管理的插件，先导入一个本机 .js 脚本" />
+      <t-empty
+        v-else
+        class="plugin-empty"
+        description="左侧还没有可管理的插件，先导入一个本机 .js 脚本"
+      />
     </div>
   </page-layout>
 </template>
 
 <style scoped lang="less">
+// 左栏自带分隔线，主从两栏之间不再留缝
 .plugin-body {
   display: flex;
-  gap: 16px;
   height: 100%;
   min-height: 0;
+}
+
+.plugin-empty {
+  flex: 1;
+  padding: 20px;
 }
 </style>

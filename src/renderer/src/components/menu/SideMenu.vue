@@ -7,12 +7,7 @@ withDefaults(defineProps<{ items: SideMenuItem[]; collapsed?: boolean }>(), { co
 
 <template>
   <nav class="menu-list">
-    <side-menu-node
-      v-for="item in items"
-      :key="item.label"
-      :item="item"
-      :collapsed="collapsed"
-    />
+    <side-menu-node v-for="item in items" :key="item.label" :item="item" :collapsed="collapsed" />
   </nav>
 </template>
 

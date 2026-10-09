@@ -54,6 +54,15 @@
 
 时间一律使用整数毫秒，避免时区与字符串格式歧义。
 
+## 离线数据包库（r18.db）
+
+内置插件「R18 离线数据包」会另建一个**完全独立**的库，放在系统库边上：`~/.vault-scrape/db/r18.db`（导入期另有 `r18.db.import` / `r18.db.old`）。
+
+- 不写进 drizzle schema、不参与 `migrate()`：schema 版本由库内 `offline_meta.schema_version` 自管，列由上游转储的 `COPY` 头部动态生成（全部 TEXT 亲和）；
+- 查询用独立只读句柄（`readonly: true, fileMustExist: true`）打开，**绝不 ATTACH 系统库**；两个库之间没有外键与事务关系；
+- 这个库被删 / 损坏只影响离线刮削结果，系统数据与设置不受影响（这正是分库的目的）；
+- 细节（数据源、导入流水线、查询规则、错误码）见 [../plugin/02-builtin-offline-plugin.md](../plugin/02-builtin-offline-plugin.md)。
+
 ## API 契约
 
 主进程仓储（`src/main/src/db/repo/`）：
@@ -90,4 +99,5 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 - `db()` 在 `initDb()` 之前被调用会抛 `'[db] initDb() 未调用'`，这是有意的快速失败。
 - `better-sqlite3` 是原生模块，必须与 Electron ABI 匹配；`postinstall` 已配置 `electron-builder install-app-deps` 自动重编译，`electron-builder.yml` 的 `asarUnpack` 也必须包含 `node_modules/better-sqlite3`。
 - 新增一个数据域时的固定动作：schema → repo → 通道常量 → preload 封装 → 主进程 `registerDbIpc()` 注册 → 渲染层 `types` 声明与 `@/api` 出口。缺一步就会出现「类型能过但运行时 undefined」。
+- 例外：离线数据包库（`r18.db`）与插件 / 文件等模块自己的落盘一样，**不走**上面这条 drizzle 流程——它由主进程自己建表、自己管版本，只读查询。
 - 日志写入目前只暴露给主进程内部（`appendLog` 未开 IPC）。若将来需要渲染进程写日志，应新增 `db:logAppend` 通道，而不是让渲染进程直连数据库。

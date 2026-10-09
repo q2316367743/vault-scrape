@@ -1,12 +1,3 @@
-<script setup lang="ts">
-defineProps<{
-  /** 页面标题 */
-  title: string
-  /** 标题右侧的补充说明 */
-  description?: string
-}>()
-</script>
-
 <template>
   <div class="page-layout">
     <header class="page-header">
@@ -18,11 +9,25 @@ defineProps<{
         <slot name="extra" />
       </div>
     </header>
-    <div class="page-container">
+    <div class="page-container" :class="{ 'is-flush': !padded }">
       <slot />
     </div>
   </div>
 </template>
+
+<script setup lang="ts">
+withDefaults(
+  defineProps<{
+    /** 页面标题 */
+    title: string
+    /** 标题右侧的补充说明 */
+    description?: string
+    /** 内容区是否保留 20px 内边距；左右分栏页面传 false，改由分栏子组件自己贴边排布 */
+    padded?: boolean
+  }>(),
+  { padded: true }
+)
+</script>
 
 <style scoped lang="less">
 .page-layout {
@@ -71,5 +76,11 @@ defineProps<{
   min-height: 0;
   padding: 20px;
   overflow: auto;
+
+  // 左右分栏：内容贴到页面边缘，滚动与内边距交给分栏子组件
+  &.is-flush {
+    padding: 0;
+    overflow: hidden;
+  }
 }
 </style>

@@ -120,6 +120,8 @@ const {
   flex-direction: column;
   height: 100%;
   min-width: 0;
+  // 页面容器已去掉内边距，右侧浏览区自己补回来
+  padding: 20px;
 }
 
 .browser-placeholder {

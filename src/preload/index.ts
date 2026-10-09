@@ -3,6 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import { appWindowApi } from '~/modules/appWindow/appWindow'
 import { dbApi } from '~/modules/db/db'
 import { fileApi } from '~/modules/file/file'
+import { offlineApi } from '~/modules/offline/offline'
 import { pluginApi } from '~/modules/plugin/plugin'
 import { settingApi } from '~/modules/setting/setting'
 
@@ -11,6 +12,7 @@ const preload = {
   appWindow: appWindowApi,
   db: dbApi,
   file: fileApi,
+  offline: offlineApi,
   plugin: pluginApi,
   setting: settingApi
 }

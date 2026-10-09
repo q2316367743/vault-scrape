@@ -43,7 +43,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <page-layout title="存储" description="统一管理本地磁盘、WebDAV 与 SMB 数据源">
+  <page-layout title="存储" description="统一管理本地磁盘、WebDAV 与 SMB 数据源" :padded="false">
     <template #extra>
       <t-button size="small" variant="outline" :loading="loading" @click="refresh">
         <template #icon><refresh-icon /></template>
@@ -71,9 +71,9 @@ onMounted(refresh)
 </template>
 
 <style scoped lang="less">
+// 左栏自带分隔线，主从两栏之间不再留缝
 .storage-page {
   display: flex;
-  gap: 16px;
   height: 100%;
   min-height: 0;
 }

@@ -39,6 +39,8 @@ export interface StoredPlugin {
   author: string
   description: string
   enabled: boolean
+  /** 内置插件：随应用分发，无源码文件、不可编辑、不可删除 */
+  builtin: boolean
   /** 上次校验通过时的环境变量声明表，避免渲染列表时重新编译源码 */
   envFields: PluginEnvField[]
   /** 环境变量密文：key -> `safe:` / `plain:` 开头的编码串，未填写的项不存在 */
@@ -84,6 +86,7 @@ function normalizeStored(raw: unknown): StoredPlugin | null {
     author: readString(source, 'author', ''),
     description: readString(source, 'description', ''),
     enabled: readBoolean(source, 'enabled', true),
+    builtin: readBoolean(source, 'builtin', false),
     envFields,
     envValues: normalizeEnvValues(envFields, source.envValues),
     updatedAt: readNumber(source, 'updatedAt', 0)
@@ -184,6 +187,9 @@ export function writePluginSource(
 ): StoredPlugin {
   const store = readStore()
   const previous = store.plugins.find((item) => item.id === record.meta.id) ?? null
+  if (previous?.builtin === true) {
+    throw new PluginError('unsupported', `插件 ${record.meta.id} 是内置插件，不可覆盖`)
+  }
   if (previous && !options.overwrite) {
     throw new PluginError('duplicate', `插件 ${record.meta.id} 已存在，请确认是否覆盖`)
   }
@@ -195,12 +201,53 @@ export function writePluginSource(
     author: record.meta.author ?? '',
     description: record.meta.description ?? '',
     enabled: previous ? previous.enabled : true,
+    builtin: false,
     envFields,
     envValues: normalizeEnvValues(envFields, previous?.envValues),
     updatedAt: Date.now()
   }
   mkdirSync(pluginDir(), { recursive: true })
   writeFileSync(pluginSourcePath(next.id), source, 'utf-8')
+  const plugins = previous
+    ? store.plugins.map((item) => (item.id === next.id ? next : item))
+    : [...store.plugins, next]
+  writeStore({ version: STORE_VERSION, plugins })
+  return next
+}
+
+/**
+ * 幂等写入内置插件记录。
+ *
+ * 契约：只补元信息与来源标记，保留用户已保存的启停状态；内置插件没有源码文件，
+ * 因此只写索引。元信息无变化时不写盘。
+ */
+export function ensureBuiltinPlugin(record: PluginSourceRecord): StoredPlugin {
+  const store = readStore()
+  const previous = store.plugins.find((item) => item.id === record.meta.id) ?? null
+  if (previous && !previous.builtin) {
+    console.warn(`[plugin] 内置插件 ${record.meta.id} 与同 ID 的已安装插件冲突，已按内置插件接管索引`)
+  }
+  const envFields = record.envFields
+  const next: StoredPlugin = {
+    id: record.meta.id,
+    name: record.meta.name,
+    version: record.meta.version,
+    author: record.meta.author ?? '',
+    description: record.meta.description ?? '',
+    enabled: previous ? previous.enabled : true,
+    builtin: true,
+    envFields,
+    envValues: normalizeEnvValues(envFields, previous?.envValues),
+    updatedAt: Date.now()
+  }
+  const unchanged =
+    previous !== null &&
+    previous.builtin &&
+    previous.name === next.name &&
+    previous.version === next.version &&
+    previous.author === next.author &&
+    previous.description === next.description
+  if (unchanged) return previous
   const plugins = previous
     ? store.plugins.map((item) => (item.id === next.id ? next : item))
     : [...store.plugins, next]
@@ -242,6 +289,9 @@ export function removePlugin(id: string): boolean {
   const store = readStore()
   const stored = store.plugins.find((item) => item.id === id)
   if (!stored) return false
+  if (stored.builtin) {
+    throw new PluginError('unsupported', `插件 ${stored.name} 是内置插件，不可删除`)
+  }
   writeStore({
     version: STORE_VERSION,
     plugins: store.plugins.filter((item) => item.id !== id)
@@ -305,7 +355,8 @@ export function toPluginSummary(stored: StoredPlugin, loadError: string): Plugin
     author: stored.author,
     description: stored.description,
     enabled: stored.enabled,
-    filePath: pluginSourcePath(stored.id),
+    source: stored.builtin ? 'builtin' : 'file',
+    filePath: stored.builtin ? '' : pluginSourcePath(stored.id),
     hasEnv: stored.envFields.length > 0,
     envReady: isEnvReady(stored.envFields, filled),
     loadError

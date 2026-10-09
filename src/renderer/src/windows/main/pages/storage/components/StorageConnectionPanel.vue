@@ -84,16 +84,15 @@ const emit = defineEmits<{
 </template>
 
 <style scoped lang="less">
+// 贴边主从布局的左栏：只是一条右侧分隔线，不做卡片
 .connection-panel {
   display: flex;
   flex-direction: column;
   width: 300px;
   flex-shrink: 0;
   overflow: hidden;
-  border: 1px solid var(--fluent-card-border);
-  border-radius: var(--fluent-radius-smooth);
+  border-right: 1px solid var(--fluent-sidebar-border);
   background: var(--td-bg-color-container);
-  box-shadow: var(--fluent-elevation-1);
 }
 
 .panel-head {

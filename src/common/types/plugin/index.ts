@@ -25,6 +25,7 @@ export {
   type PluginImportFailure,
   type PluginImportResult,
   type PluginMeta,
+  type PluginSource,
   type PluginSummary
 } from './manifest'
 

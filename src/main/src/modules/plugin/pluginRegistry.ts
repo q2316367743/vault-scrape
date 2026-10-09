@@ -26,6 +26,7 @@ import {
 import type { LogLevel } from '@common/types/log'
 import { appendLog } from '$/db/repo/logRepo'
 import { loadSetting } from '$/modules/setting/settingStore'
+import { BUILTIN_PLUGINS, findBuiltinPlugin } from './builtinPlugins'
 import { createPluginContext, createPluginLogSink } from './pluginHost'
 import {
   PLUGIN_CALL_TIMEOUT_MS,
@@ -36,6 +37,7 @@ import {
 import {
   PLUGIN_SOURCE_LIMIT_BYTES,
   cachePluginEnvFields,
+  ensureBuiltinPlugin,
   getStoredPlugin,
   listStoredPlugins,
   pluginSourcePath,
@@ -76,8 +78,30 @@ function sourceMtime(id: string): number {
   }
 }
 
+let builtinsReady = false
+
+/** 幂等补齐内置插件索引记录；没有源码文件，因此只走索引 */
+function ensureBuiltinPlugins(): void {
+  if (builtinsReady) return
+  builtinsReady = true
+  for (const builtin of BUILTIN_PLUGINS) {
+    try {
+      ensureBuiltinPlugin({ meta: builtin.meta, envFields: builtin.env })
+    } catch (error) {
+      builtinsReady = false
+      console.error('[plugin] 内置插件索引写入失败', describePluginError(error).message)
+    }
+  }
+}
+
 function fieldsEqual(a: readonly PluginEnvField[], b: readonly PluginEnvField[]): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
+}
+
+/** 取插件记录：先确保内置插件已入索引，再查索引 */
+function storedPlugin(id: string): StoredPlugin | null {
+  ensureBuiltinPlugins()
+  return getStoredPlugin(id)
 }
 
 /**
@@ -98,28 +122,35 @@ function ensureCompiled(id: string): CompiledPlugin {
 
 /** 生成摘要；编译失败时把原因写进 `loadError` 而不抛出 */
 function loadSummary(stored: StoredPlugin): PluginSummary {
-  try {
-    ensureCompiled(stored.id)
-    loadErrors.delete(stored.id)
-  } catch (error) {
-    loadErrors.set(stored.id, describePluginError(error).message)
+  if (!stored.builtin) {
+    try {
+      ensureCompiled(stored.id)
+      loadErrors.delete(stored.id)
+    } catch (error) {
+      loadErrors.set(stored.id, describePluginError(error).message)
+    }
   }
   const fresh = getStoredPlugin(stored.id) ?? stored
   return toPluginSummary(fresh, loadErrors.get(stored.id) ?? '')
 }
 
 export function listPluginSummaries(): PluginSummary[] {
+  ensureBuiltinPlugins()
   return listStoredPlugins().map((stored) => loadSummary(stored))
 }
 
 export function readPluginCode(id: string): string {
+  if (storedPlugin(id)?.builtin) {
+    throw new PluginError('notFound', '内置插件没有可编辑的源码')
+  }
   return readPluginSource(id)
 }
 
 /** 保存源码：先编译校验通过才落盘，`meta.id` 必须与当前插件一致 */
 export function savePluginCode(id: string, code: string): PluginSummary {
-  const stored = getStoredPlugin(id)
+  const stored = storedPlugin(id)
   if (!stored) throw new PluginError('notFound', `插件 ${id} 不存在`)
+  if (stored.builtin) throw new PluginError('unsupported', `插件 ${stored.name} 是内置插件，不可编辑源码`)
   if (Buffer.byteLength(code, 'utf-8') > PLUGIN_SOURCE_LIMIT_BYTES) {
     throw new PluginError(
       'invalidPlugin',
@@ -203,6 +234,7 @@ export function importPluginFiles(
 }
 
 export function removePluginById(id: string): boolean {
+  ensureBuiltinPlugins()
   const removed = removePlugin(id)
   cache.delete(id)
   loadErrors.delete(id)
@@ -210,6 +242,7 @@ export function removePluginById(id: string): boolean {
 }
 
 export function setEnabled(id: string, enabled: boolean): PluginSummary {
+  ensureBuiltinPlugins()
   return loadSummary(setPluginEnabled(id, enabled))
 }
 
@@ -223,7 +256,7 @@ export function refreshPluginEnvFields(id: string): StoredPlugin | null {
       describePluginError(error).message
     )
   }
-  return getStoredPlugin(id)
+  return storedPlugin(id)
 }
 
 export function readPluginEnv(id: string): PluginEnvSnapshot {
@@ -261,21 +294,32 @@ export async function invokePlugin(
   method: PluginMethod,
   payload: PluginInvokePayload
 ): Promise<PluginInvokeData> {
-  const stored = getStoredPlugin(id)
+  const stored = storedPlugin(id)
   if (!stored) throw new PluginError('notFound', `插件 ${id} 不存在`)
   if (!stored.enabled) throw new PluginError('invokeFailed', `插件 ${stored.name} 已停用，请先启用`)
-  const compiled = ensureCompiled(id)
-  const env = readPluginEnvValues(id)
-  const missing = describeMissingEnv(compiled.env, readEnvFilledMask(compiled.env, env))
-  if (missing.length > 0) {
-    throw new PluginError('envMissing', `请先补全插件环境变量：${missing}`)
-  }
   const argument = (method === 'search' ? payload.keyword : payload.movieId)?.trim() ?? ''
   if (argument.length === 0) {
     throw new PluginError(
       'invalidArgument',
       method === 'search' ? '缺少搜索关键字 keyword' : '缺少影片 ID movieId'
     )
+  }
+  const builtin = findBuiltinPlugin(id)
+  if (builtin) {
+    const data = await invokeWithTimeout(() => builtin.invoke(method, argument), {
+      id,
+      method,
+      timeoutMs: callTimeoutMs(),
+      log: createPluginLogSink(id)
+    })
+    appendLog({ level: 'info', scope: `plugin:${id}`, message: `${method} 调用完成` })
+    return data
+  }
+  const compiled = ensureCompiled(id)
+  const env = readPluginEnvValues(id)
+  const missing = describeMissingEnv(compiled.env, readEnvFilledMask(compiled.env, env))
+  if (missing.length > 0) {
+    throw new PluginError('envMissing', `请先补全插件环境变量：${missing}`)
   }
   const ctx = createPluginContext(id)
   const task = (): Promise<PluginInvokeData> => {

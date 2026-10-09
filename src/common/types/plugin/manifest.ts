@@ -45,6 +45,13 @@ export interface PluginEnvField {
 /** 环境变量取值：插件方法拿到的 `env`，键值都是字符串 */
 export type PluginEnvValue = Record<string, string>
 
+/**
+ * 插件来源：
+ * - `file`：用户导入 / 编辑的 `.js` 脚本，落盘在 `~/.vault-scrape/plugin/<id>.js`；
+ * - `builtin`：随应用内置的原生实现（如 R18 离线数据包），索引里有记录（`builtin: true`）但没有源码文件，不可编辑、不可删除、不可被同名覆盖。
+ */
+export type PluginSource = 'file' | 'builtin'
+
 /** 渲染层可见的插件摘要（不含源码与环境变量明文） */
 export interface PluginSummary {
   id: string
@@ -53,7 +60,9 @@ export interface PluginSummary {
   author: string
   description: string
   enabled: boolean
-  /** 插件源码在本机的绝对路径 */
+  /** 插件来源：内置插件不可编辑源码、不可删除 */
+  source: PluginSource
+  /** 插件源码在本机的绝对路径；内置插件为空串 */
   filePath: string
   /** 是否声明了环境变量 */
   hasEnv: boolean

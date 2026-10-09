@@ -1,12 +1,14 @@
 <script setup lang="ts">
 /**
- * 插件详情：概览信息 + 测试面板。
+ * 插件详情：概览信息 + 测试面板；内置插件额外挂载数据源面板。
  *
  * 契约：组件本身不直接调用 API，启停/删除/编辑都通过事件上抛给页面处理；
  * 环境变量统一在「设置 → 账号设置」填写，这里只做提示与跳转。
  */
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import type { PluginSummary } from '@common/types/plugin'
+import OfflinePackPanel from './OfflinePackPanel.vue'
 import PluginTestPanel from './PluginTestPanel.vue'
 
 const props = defineProps<{ plugin: PluginSummary }>()
@@ -17,6 +19,12 @@ const emit = defineEmits<{
 }>()
 
 const router = useRouter()
+
+/** 内置插件没有源码文件，不能编辑、不能删除 */
+const isBuiltin = computed(() => props.plugin.source === 'builtin')
+const sourceText = computed(() =>
+  isBuiltin.value ? '内置实现（无源码文件）' : props.plugin.filePath
+)
 
 function onToggle(value: unknown): void {
   emit('enabled', value === true)
@@ -35,15 +43,22 @@ function goAccount(): void {
         <span class="title-sub">{{ plugin.id }} · v{{ plugin.version }}</span>
       </div>
       <div class="detail-actions">
+        <t-tag v-if="isBuiltin" theme="primary" variant="light">内置</t-tag>
         <t-switch
           :model-value="plugin.enabled"
           :label="['已启用', '已停用']"
           @update:model-value="onToggle"
         />
-        <t-button size="small" variant="outline" @click="emit('edit', props.plugin)">
+        <t-button
+          v-if="!isBuiltin"
+          size="small"
+          variant="outline"
+          @click="emit('edit', props.plugin)"
+        >
           编辑代码
         </t-button>
         <t-button
+          v-if="!isBuiltin"
           size="small"
           theme="danger"
           variant="outline"
@@ -54,11 +69,7 @@ function goAccount(): void {
       </div>
     </header>
 
-    <t-alert
-      v-if="plugin.loadError"
-      theme="error"
-      :message="`插件加载失败：${plugin.loadError}`"
-    />
+    <t-alert v-if="plugin.loadError" theme="error" :message="`插件加载失败：${plugin.loadError}`" />
     <t-alert
       v-else-if="!plugin.envReady"
       theme="warning"
@@ -77,17 +88,23 @@ function goAccount(): void {
       </div>
       <div class="meta-item">
         <dt>说明</dt>
-        <dd>{{ plugin.description || '—' }}</dd>
+        <dd>
+          <t-tooltip :content="plugin.description || '—'" placement="top-left">
+            <span class="meta-ellipsis">{{ plugin.description || '—' }}</span>
+          </t-tooltip>
+        </dd>
       </div>
       <div class="meta-item">
         <dt>源文件</dt>
-        <dd class="meta-path">{{ plugin.filePath }}</dd>
+        <dd class="meta-path">{{ sourceText }}</dd>
       </div>
       <div class="meta-item">
         <dt>环境变量</dt>
         <dd>{{ plugin.hasEnv ? '已声明' : '无' }}</dd>
       </div>
     </dl>
+
+    <offline-pack-panel v-if="isBuiltin" />
 
     <plugin-test-panel :plugin="plugin" />
   </div>
@@ -98,7 +115,8 @@ function goAccount(): void {
   flex: 1;
   min-width: 0;
   overflow: auto;
-  padding: 0 4px;
+  // 页面容器已去掉内边距，右侧详情栏自己补回来
+  padding: 20px;
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -163,6 +181,14 @@ function goAccount(): void {
 
 .meta-path {
   word-break: break-all;
+}
+
+// 长说明只占一行，完整内容悬停查看
+.meta-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .env-hint {

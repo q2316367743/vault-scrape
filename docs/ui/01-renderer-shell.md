@@ -67,10 +67,13 @@ export interface SideMenuItem {
 
 `PageLayout.vue` 统一页面的标题区与内容区：
 
-- props：`title: string`、`description?: string`。
-- 结构：`.page-header`（高 56px，标题 + 描述，右侧 `#extra` 插槽）+ `.page-container`（`flex: 1; overflow: auto`，内容插槽）。
+- props：`title: string`、`description?: string`、`padded?: boolean`（默认 `true`）。
+- 结构：`.page-header`（高 56px，标题 + 描述，右侧 `#extra` 插槽）+ `.page-container`（`flex: 1; overflow: auto`，内容插槽，默认 `padding: 20px`）。
+- `:padded="false"` 给内容区加 `is-flush`：`padding: 0; overflow: hidden`，内容贴到页面边缘，滚动与内边距下放给页面内部。
 
 所有基础页面都用它包裹，保证标题位置、内边距与滚动行为一致。
+
+**左右分栏页面（插件页、存储页）的约定**：传 `:padded="false"`，左栏固定 300px、通高、内部自己滚动，只用 `border-right: 1px solid var(--fluent-sidebar-border)` 分隔，不做卡片（无圆角、无阴影、无四周边框）；两栏 `gap: 0`，右侧栏自己补 `padding: 20px`。这样左侧不再被容器的 20px 内边距挤掉一圈宽度。
 
 ## 样式分层
 
