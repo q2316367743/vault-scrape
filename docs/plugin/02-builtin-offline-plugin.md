@@ -87,7 +87,7 @@
 
 `src/main/src/modules/offline/offlineRepo.ts` 只读打开 `r18.db`（`readonly: true, fileMustExist: true`）：
 
-- `offlineSearch(keyword, limit = 50)`：先把关键字按「番号」归一化（大写、去掉空白与 `-`/`_`），分三档查 `derived_video`：`dvd_id_norm = ?`（精确）、`content_id = ?` / `dvd_id_norm LIKE ?||'%'`（前缀区间扫描，命中索引）、其余 `title_ja/title_en LIKE ? ESCAPE '\'`（兜底，同时扫 `derived_video_actress` 关联的演员名）；候选合并去重后按 rank（0 精确 / 1 content_id / 2 前缀 / 3 标题）+ 数据完整度排序；
+- `offlineSearch(keyword, limit = 50)`：先把关键字按「番号」归一化（大写、去掉空白与 `-`/`_`），分三档查 `derived_video`：`dvd_id_norm = ?`（精确）、`content_id = ?` / `dvd_id_norm LIKE ?||'%'`（前缀区间扫描，命中索引）、其余 `title_ja/title_en LIKE ? ESCAPE '\'`（兜底）；候选合并去重后按 rank（0 精确 / 1 content_id / 2 前缀 / 3 标题）+ 数据完整度排序，写进结果时顺带 join `derived_video_actress` 取最多 10 个演员名填到 `PluginMovieCandidate.actors`（供列表展示，详情仍取全量）；
 - `offlineDetail(movieId)`：按 content_id 找最佳行，再 join 演员（按 `CAST(ordinality AS INTEGER)` 排序）、类别、导演、maker / label / series / site 字典；
 - `offlineCovers(movieId)` / `offlineExtras(movieId)`：见下节图片规则；
 - 未安装数据包时 `search` 返回空数组（保底语义：没装就当没有结果），`detail` / `covers` / `extras` 抛 `offlineMissing`，界面给「请先导入离线数据包」的可读提示；

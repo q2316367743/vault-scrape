@@ -151,7 +151,7 @@ export function galleryUrls(first: string, last: string, limit = OFFLINE_STILL_L
   return urls
 }
 
-export function toCandidate(row: OfflineVideoRow): PluginMovieCandidate {
+export function toCandidate(row: OfflineVideoRow, actresses: readonly string[] = []): PluginMovieCandidate {
   const title = row.titleJa || row.titleEn || row.dvdId || row.contentId
   const cover = picUrl(row.jacketFull)
   return {
@@ -159,7 +159,8 @@ export function toCandidate(row: OfflineVideoRow): PluginMovieCandidate {
     title,
     num: row.dvdId || undefined,
     cover: cover.length > 0 ? cover : undefined,
-    date: row.releaseDate || undefined
+    date: row.releaseDate || undefined,
+    actors: actresses.length > 0 ? [...actresses] : undefined
   }
 }
 

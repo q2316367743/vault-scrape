@@ -81,7 +81,7 @@ function onSelectTheme(option: { value?: unknown }): void {
 
     <t-dropdown
       trigger="click"
-      placement="bottom-left"
+      placement="bottom"
       :options="themeOptions"
       @click="onSelectTheme"
     >

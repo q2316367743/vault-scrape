@@ -16,6 +16,8 @@ export interface PluginMovieCandidate {
   cover?: string
   /** 发行日期 */
   date?: string
+  /** 演员（可选：搜索阶段拿得到就填，拿不到时用 detail 的 actors） */
+  actors?: string[]
   isSeries?: boolean
   /** 多集作品的总集数 */
   episodeCount?: number

@@ -44,6 +44,9 @@ export interface OfflineMeta {
 /** 单次查询最多取回的行数（同一作品多站点会有多行） */
 const ROW_SCAN_LIMIT = 50
 
+/** 候选列表里每个作品最多带几个演员名（只用于列表展示，详情仍取全量） */
+const CANDIDATE_ACTOR_LIMIT = 10
+
 let handle: Database.Database | null = null
 
 /** 关闭只读句柄（导入替换库文件前必须调用） */
@@ -255,7 +258,9 @@ export function offlineSearch(keyword: string, limit = 50): PluginMovieCandidate
           left.row.dvdId.localeCompare(right.row.dvdId)
       )
       .slice(0, Math.max(1, limit))
-      .map((item) => toCandidate(item.row))
+      .map((item) =>
+        toCandidate(item.row, loadActressNames(db, item.row.contentId, CANDIDATE_ACTOR_LIMIT))
+      )
   } catch (error) {
     throw mapDbError(error)
   }
@@ -271,20 +276,27 @@ function readDictionaryName(
   return readText(row, 'name_ja') || readText(row, 'name_en')
 }
 
-function loadRefs(db: Database.Database, contentId: string, row: OfflineVideoRow): OfflineDetailRefs {
-  const refs = emptyDetailRefs()
-
-  const actresses = db
+/** 作品演员名：优先汉字名，其次罗马字、假名；按 ordinality 排序 */
+function loadActressNames(db: Database.Database, contentId: string, limit = 100): string[] {
+  const names: string[] = []
+  const rows = db
     .prepare(
-      'SELECT a.name_kanji, a.name_kana, a.name_romaji FROM derived_video_actress va JOIN derived_actress a ON a.id = va.actress_id WHERE va.content_id = ? ORDER BY CAST(va.ordinality AS INTEGER) LIMIT 100'
+      'SELECT a.name_kanji, a.name_kana, a.name_romaji FROM derived_video_actress va JOIN derived_actress a ON a.id = va.actress_id WHERE va.content_id = ? ORDER BY CAST(va.ordinality AS INTEGER) LIMIT ?'
     )
-    .all(contentId)
-  for (const raw of actresses) {
+    .all(contentId, limit)
+  for (const raw of rows) {
     const item = asRow(raw)
     const name =
       readText(item, 'name_kanji') || readText(item, 'name_romaji') || readText(item, 'name_kana')
-    if (name.length > 0) refs.actresses.push(name)
+    if (name.length > 0) names.push(name)
   }
+  return names
+}
+
+function loadRefs(db: Database.Database, contentId: string, row: OfflineVideoRow): OfflineDetailRefs {
+  const refs = emptyDetailRefs()
+
+  refs.actresses.push(...loadActressNames(db, contentId))
 
   const categories = db
     .prepare(

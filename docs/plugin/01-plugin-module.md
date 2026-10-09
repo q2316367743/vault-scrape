@@ -46,6 +46,8 @@ interface PluginMovieCandidate {
   num?: string
   cover?: string
   date?: string
+  /** 可选：搜索阶段拿得到演员就填（离线内置插件会填），拿不到时由 detail 的 actors 提供 */
+  actors?: string[]
   isSeries?: boolean
   episodeCount?: number
 }

@@ -141,6 +141,7 @@ export function normalizeCandidate(raw: unknown): PluginMovieCandidate | null {
     num: optional(source, 'num'),
     cover: optional(source, 'cover'),
     date: optional(source, 'date'),
+    actors: optionalStringArray(source, 'actors'),
     isSeries: optionalBoolean(source, 'isSeries'),
     episodeCount: optionalCount(source, 'episodeCount')
   }

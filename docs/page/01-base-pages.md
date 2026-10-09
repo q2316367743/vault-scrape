@@ -45,7 +45,7 @@
 - 状态在 `composables/usePlugins.ts`（列表、选中持久化到 localStorage、启停、导入、删除、源码读写）与 `composables/usePluginTest.ts`（只负责搜索：关键字、候选列表、loading）里；影片详情在 `composables/useMoviePreview.ts`（按影片 ID 拉详情 / 封面 / 花絮，并按当前下载设置标注资产）。
 - 环境变量不在插件页填写，统一放在**设置 → 账号设置**（`SettingAccountPanel.vue`）：按插件分卡片，每个变量一行多行文本域；环境变量一律按敏感处理，明文永不回传，文本域留空表示保持已保存的值。详情页的「去填写」按钮通过 `/setting?group=account` 直达该分组。
 - 安装（导入 / 保存源码）时会在沙箱里执行一次脚本，读取 `env` 声明并写入索引，不联网、不调用四个方法；声明表即账号设置面板的数据源。
-- 测试面板 `components/PluginTestPanel.vue` 只留两个入口：搜索关键字（结果每行单行省略 + `t-tooltip` 悬停看全，点行或「详情」按钮打开抽屉）与直接填影片 ID 点「查看详情」。
+- 测试面板 `components/PluginTestPanel.vue` 只留两个入口：搜索关键字（结果每行 = 单行省略的标题 + `t-tooltip` 悬停看全，下面是带图标的标签行：番号 / 发行日期 / 集数 / 演员，演员超过 3 个折成 `+N` 悬停看全，点行或「详情」按钮打开抽屉）与直接填影片 ID 点「查看详情」。
 - 影片详情是命令式抽屉：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
 - 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，保存时主进程先编译校验再落盘）。
 - 导入重名时弹 `DialogPlugin.confirm`，确认后带 `overwrite: true` 重试；导入的系统文件选择框由主进程弹出。
