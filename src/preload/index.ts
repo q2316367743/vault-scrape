@@ -6,6 +6,7 @@ import { dialogApi } from '~/modules/dialog/dialog'
 import { fileApi } from '~/modules/file/file'
 import { offlineApi } from '~/modules/offline/offline'
 import { pluginApi } from '~/modules/plugin/plugin'
+import { scrapeApi } from '~/modules/scrape/scrape'
 import { settingApi } from '~/modules/setting/setting'
 
 // 业务桥：渲染层只通过这些 API 访问主进程能力
@@ -16,6 +17,7 @@ const preload = {
   file: fileApi,
   offline: offlineApi,
   plugin: pluginApi,
+  scrape: scrapeApi,
   setting: settingApi
 }
 

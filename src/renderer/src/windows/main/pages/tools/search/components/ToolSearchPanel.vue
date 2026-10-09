@@ -33,6 +33,15 @@
           class="candidate-item"
         >
           <div class="candidate-row" @click="openCandidate(candidate)">
+            <sensitive-image
+              v-if="candidate.cover"
+              class="candidate-cover"
+              :src="candidate.cover"
+              :protect="protection"
+              :width="72"
+              :height="100"
+              alt="候选预览图"
+            />
             <div class="candidate-info">
               <t-tooltip :content="candidate.title || candidate.id" placement="top-left">
                 <div class="candidate-title">{{ candidate.title || candidate.id }}</div>
@@ -97,6 +106,8 @@ import { computed, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { CalendarIcon, PlayCircleIcon, TagIcon, UserIcon } from 'tdesign-icons-vue-next'
 import type { PluginMovieCandidate, PluginSummary } from '@common/types/plugin'
+import SensitiveImage from '@/components/SensitiveImage.vue'
+import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { useToolSearch } from '../composables/useToolSearch'
 import { openMovieDetailDrawer } from '../modals/MovieDetailDrawer'
 
@@ -110,6 +121,8 @@ const props = defineProps<{
 
 const current = computed(() => props.plugin)
 const test = useToolSearch(current)
+/** 搜索页没有存储上下文，因此只受应用设置里的总开关约束 */
+const { protection } = useNsfwProtection()
 
 const movieId = ref('')
 
@@ -173,6 +186,10 @@ function openCandidate(candidate: PluginMovieCandidate): void {
   font-size: 13px;
   font-weight: 600;
   color: var(--td-text-color-primary);
+}
+
+.candidate-cover {
+  flex-shrink: 0;
 }
 
 .candidate-item {

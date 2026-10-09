@@ -1,3 +1,4 @@
+import { normalizeSettingApp, buildSettingApp, type SettingApp } from './appSetting'
 import { normalizeSettingDownload, buildSettingDownload, type SettingDownload } from './downloadSetting'
 import { normalizeSettingFile, buildSettingFile, type SettingFile } from './fileSetting'
 import { normalizeSettingNaming, buildSettingNaming, type SettingNaming } from './namingSetting'
@@ -11,6 +12,7 @@ import {
 } from './translateSetting'
 
 export type {
+  SettingApp,
   SettingPath,
   SettingScrape,
   SettingNetwork,
@@ -40,6 +42,7 @@ export {
  * 账号设置（站点账号参数）尚未接入，故不在本类型内。
  */
 export interface SettingSchema {
+  app: SettingApp
   path: SettingPath
   scrape: SettingScrape
   network: SettingNetwork
@@ -52,6 +55,7 @@ export interface SettingSchema {
 export type SettingGroupKey = keyof SettingSchema
 
 export const SETTING_GROUP_KEYS: readonly SettingGroupKey[] = [
+  'app',
   'path',
   'scrape',
   'network',
@@ -65,6 +69,7 @@ export const SETTING_GROUP_KEYS: readonly SettingGroupKey[] = [
 export const settingNormalizers: {
   readonly [K in SettingGroupKey]: (raw: unknown) => SettingSchema[K]
 } = {
+  app: normalizeSettingApp,
   path: normalizeSettingPath,
   scrape: normalizeSettingScrape,
   network: normalizeSettingNetwork,
@@ -76,6 +81,7 @@ export const settingNormalizers: {
 
 export function buildSetting(): SettingSchema {
   return {
+    app: buildSettingApp(),
     path: buildSettingPath(),
     scrape: buildSettingScrape(),
     network: buildSettingNetwork(),
@@ -90,6 +96,7 @@ export function buildSetting(): SettingSchema {
 export function normalizeSetting(raw: unknown): SettingSchema {
   const source = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   return {
+    app: settingNormalizers.app(source.app),
     path: settingNormalizers.path(source.path),
     scrape: settingNormalizers.scrape(source.scrape),
     network: settingNormalizers.network(source.network),

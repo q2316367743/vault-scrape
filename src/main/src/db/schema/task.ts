@@ -8,8 +8,11 @@ export const taskTable = sqliteTable(
     id: text('id').primaryKey(),
     name: text('name').notNull(),
     status: text('status').$type<TaskStatus>().notNull(),
+    connectionId: text('connection_id').notNull().default(''),
+    dirPath: text('dir_path').notNull().default(''),
     total: integer('total').notNull().default(0),
     finished: integer('finished').notNull().default(0),
+    failed: integer('failed').notNull().default(0),
     message: text('message').notNull().default(''),
     createdAt: integer('created_at').notNull(),
     updatedAt: integer('updated_at').notNull()

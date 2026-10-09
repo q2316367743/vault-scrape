@@ -6,7 +6,15 @@ import PageLayout from '@/components/PageLayout/PageLayout.vue'
 import type { TaskItem, TaskStats, TaskStatus } from '@common/types/task'
 import StatCard from './components/StatCard.vue'
 
-const stats = ref<TaskStats>({ total: 0, pending: 0, running: 0, success: 0, failed: 0 })
+const stats = ref<TaskStats>({
+  total: 0,
+  pending: 0,
+  running: 0,
+  success: 0,
+  failed: 0,
+  paused: 0,
+  interrupted: 0
+})
 const tasks = ref<TaskItem[]>([])
 const loading = ref(true)
 
@@ -17,18 +25,22 @@ const columns = [
   { colKey: 'updatedAt', title: '更新时间', width: 170 }
 ]
 
-const statusThemes: Record<TaskStatus, 'default' | 'primary' | 'success' | 'danger'> = {
+const statusThemes: Record<TaskStatus, 'default' | 'primary' | 'success' | 'danger' | 'warning'> = {
   pending: 'default',
   running: 'primary',
   success: 'success',
-  failed: 'danger'
+  failed: 'danger',
+  paused: 'warning',
+  interrupted: 'warning'
 }
 
 const statusLabels: Record<TaskStatus, string> = {
   pending: '等待',
   running: '进行中',
   success: '成功',
-  failed: '失败'
+  failed: '失败',
+  paused: '已取消',
+  interrupted: '已中断'
 }
 
 function formatTime(value: number): string {
@@ -60,6 +72,8 @@ onMounted(load)
       <stat-card label="进行中" :value="stats.running" />
       <stat-card label="已成功" :value="stats.success" />
       <stat-card label="已失败" :value="stats.failed" />
+      <stat-card label="已取消" :value="stats.paused" />
+      <stat-card label="已中断" :value="stats.interrupted" />
     </div>
 
     <t-card class="recent-card" title="最近任务" :bordered="false">

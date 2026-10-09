@@ -2,9 +2,17 @@
 
 本文档按功能域列出全部设置项、默认值与落盘键。定义文件在 `src/common/types/setting/`，界面在 `src/renderer/src/windows/main/pages/setting/components/`。
 
-落盘键与分组（`SettingGroupKey`）：`path` / `scrape` / `network` / `translate` / `naming` / `download` / `file`。站点账号参数不在设置页，由插件在 `env` 里声明、在插件页的配置区块填写，见第 8 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
+落盘键与分组（`SettingGroupKey`）：`app` / `path` / `scrape` / `network` / `translate` / `naming` / `download` / `file`（设置页标签顺序与之一致，`app` 为第一个分组）。站点账号参数不在设置页，由插件在 `env` 里声明、在插件页的配置区块填写，见第 9 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 
-## 1. 目录与路径（`path`）
+## 1. 应用设置（`app`）
+
+| 字段 | 含义 | 默认值 | 界面 |
+| --- | --- | --- | --- |
+| `nsfwProtection` | NSFW 保护：开启后，标记为 NSFW 的存储会隐藏列表、搜索与详情页的敏感图片；没有存储上下文的页面（如工具搜索）只按本开关生效 | `false` | 开关 |
+
+应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。存储侧的配合项是连接上的 `nsfw` 标记（见[存储管理页面](../page/02-storage-page.md)）：只有「总开关开启 + 该存储被标记」同时成立才隐藏内容，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`。
+
+## 2. 目录与路径（`path`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -15,7 +23,7 @@
 
 路径为空表示使用默认位置。目录选择按钮当前为 `MessagePlugin.info` 提示占位。
 
-## 2. 刮削设置（`scrape`）
+## 3. 刮削设置（`scrape`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -24,7 +32,7 @@
 | `restAfterCount` | 连续刮削多少条后休息，0 表示不休息 | `50` | 数字输入，最小 0 |
 | `restDuration` | 休息时长（秒） | `60` | 数字输入，最小 0 |
 
-## 3. 网络连接（`network`）
+## 4. 网络连接（`network`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -36,7 +44,7 @@
 
 代理协议与地址在 `proxyEnabled` 为 false 时禁用。`socket5` 当前不受支持：识别到会回落直连并写一条 `warn` 日志，详见 [../http/01-http-client.md](../http/01-http-client.md)。
 
-## 4. 翻译服务（`translate`）
+## 5. 翻译服务（`translate`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -45,7 +53,7 @@
 
 翻译服务本身尚未接入，`enabled` 为 false 时目标语言禁用。
 
-## 5. 命名规则（`naming`）
+## 6. 命名规则（`naming`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -74,7 +82,7 @@
 
 其中 `{count}` 仅用于 `actorOverflowSuffix`。该词表是与刮削实现共同演进的约定，新增占位符时需同时更新提示条与本文档。
 
-## 6. 下载选项（`download`）
+## 7. 下载选项（`download`）
 
 | 字段 | 含义 | 默认值 |
 | --- | --- | --- |
@@ -97,7 +105,7 @@
 
 角标类型与角标位置两行仅在 `posterTagBadge` 开启时显示；角标类型为可多选、可搜索、可新建的下拉框。
 
-## 7. 文件行为（`file`）
+## 8. 文件行为（`file`）
 
 | 字段 | 含义 | 默认值 |
 | --- | --- | --- |
@@ -108,7 +116,7 @@
 | `scrapeSymlinkDir` | 刮削软链接目录 | `false` |
 | `saveLogToFile` | 保存日志到文件 | `false` |
 
-## 8. 站点账号参数（不在设置页）
+## 9. 站点账号参数（不在设置页）
 
 站点账号参数**不并入 `settings.json`**：刮削源由插件决定，账号类参数（站点地址、Cookie、API Key 等）由插件在自己的 `env` 表里声明，值落在 `~/.vault-scrape/plugin/plugins.json`；环境变量一律按敏感处理，由 `safeStorage` 加密保存且明文永不跨 IPC。
 
@@ -123,3 +131,4 @@
 - 数字字段非有限数或低于下限 → 默认值（`concurrency` / `timeout` / `actorMaxCount` / 长度类下限为 1，其余为 0）。
 - 枚举字段取值不在候选内 → 默认值。
 - 字符串数组字段非数组或元素非字符串 → 默认值（空数组）。
+- `app.nsfwProtection` 非布尔 → 默认值 `false`。

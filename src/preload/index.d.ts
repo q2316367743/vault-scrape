@@ -5,6 +5,7 @@ import type { DialogApi } from './src/modules/dialog/dialog'
 import type { FileApi } from './src/modules/file/file'
 import type { OfflineApi } from './src/modules/offline/offline'
 import type { PluginApi } from './src/modules/plugin/plugin'
+import type { ScrapeApi } from './src/modules/scrape/scrape'
 import type { SettingApi } from './src/modules/setting/setting'
 
 declare global {
@@ -17,6 +18,7 @@ declare global {
       file: FileApi
       offline: OfflineApi
       plugin: PluginApi
+      scrape: ScrapeApi
       setting: SettingApi
     }
   }

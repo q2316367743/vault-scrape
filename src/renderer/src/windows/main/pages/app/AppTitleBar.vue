@@ -1,19 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import {
   CloseIcon,
-  DesktopIcon,
   Fullscreen1Icon,
   FullscreenExit1Icon,
   MenuFoldIcon,
   MenuUnfoldIcon,
-  MinusIcon,
-  ModeDarkIcon,
-  ModeLightIcon
+  MinusIcon
 } from 'tdesign-icons-vue-next'
 import { appWindowApi } from '@/api'
 import { collapsed, toggleCollapsed } from '@/global/AppState'
-import { setThemeMode, themeMode, type ThemeMode } from '@/global/AppTheme'
 
 /** macOS 保留系统红黄绿灯，其余平台由本组件自绘窗口按钮 */
 const isMac = appWindowApi.isMac
@@ -40,29 +36,6 @@ onMounted(() => {
 onUnmounted(() => {
   disposeMaximized?.()
 })
-
-/** 三档主题：按钮图标显示当前档位，下拉面板里高亮当前档位 */
-const themeModes: ThemeMode[] = ['light', 'dark', 'auto']
-const themeLabels: Record<ThemeMode, string> = { light: '亮色', dark: '深色', auto: '跟随系统' }
-
-const themeOptions = computed(() =>
-  themeModes.map((mode) => ({
-    content: themeLabels[mode],
-    value: mode,
-    active: themeMode.value === mode
-  }))
-)
-
-const themeLabel = computed(() => themeLabels[themeMode.value])
-
-/**
- * 下拉项点击。参数结构来自 TDesign 的 DropdownOption，这里只声明用得到的字段，
- * 用字面量判断收窄成 ThemeMode，避免 `as` 断言。
- */
-function onSelectTheme(option: { value?: unknown }): void {
-  const mode = option.value
-  if (mode === 'light' || mode === 'dark' || mode === 'auto') setThemeMode(mode)
-}
 </script>
 
 <template>
@@ -78,14 +51,6 @@ function onSelectTheme(option: { value?: unknown }): void {
         <menu-fold-icon v-else />
       </t-button>
     </t-tooltip>
-
-    <t-dropdown trigger="click" placement="bottom" :options="themeOptions" @click="onSelectTheme">
-      <t-button class="theme-toggle" variant="text" :aria-label="'外观：' + themeLabel">
-        <mode-light-icon v-if="themeMode === 'light'" />
-        <mode-dark-icon v-else-if="themeMode === 'dark'" />
-        <desktop-icon v-else />
-      </t-button>
-    </t-dropdown>
 
     <span class="bar-title">vault-scrape</span>
 
@@ -145,14 +110,12 @@ function onSelectTheme(option: { value?: unknown }): void {
 
 // 标题栏是拖拽区，交互元素必须显式排除，否则点击会被窗口拖动吞掉
 .bar-toggle,
-.theme-toggle,
 .window-button {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }
 
-.bar-toggle,
-.theme-toggle {
+.bar-toggle {
   width: 32px;
   height: 32px;
   padding: 0;

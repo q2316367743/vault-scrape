@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { AddIcon, DeleteIcon, Edit1Icon, LinkIcon } from 'tdesign-icons-vue-next'
-import { FILE_PROTOCOL_LABELS, describeConnection, type FileConnection } from '@common/types/file'
+import { FILE_PROTOCOL_LABELS, describeConnection, describeScrapers, type FileConnection } from '@common/types/file'
 import { PROTOCOL_ICONS } from '../storageUtils'
 
 defineProps<{
@@ -53,6 +53,12 @@ const emit = defineEmits<{
           </div>
           <t-tag class="connection-tag" theme="primary" variant="light">
             {{ FILE_PROTOCOL_LABELS[connection.protocol] }}
+          </t-tag>
+          <t-tag class="connection-tag" variant="light-outline">
+            {{ describeScrapers(connection) }}
+          </t-tag>
+          <t-tag v-if="connection.nsfw" class="connection-tag" theme="danger" variant="light">
+            NSFW
           </t-tag>
 
           <div class="connection-actions">

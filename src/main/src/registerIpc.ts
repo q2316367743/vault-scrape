@@ -4,6 +4,7 @@ import { registerDialogIpc } from './modules/dialog/dialogIpc'
 import { registerFileIpc } from './modules/file/fileIpc'
 import { registerOfflineIpc } from './modules/offline/offlineIpc'
 import { registerPluginIpc } from './modules/plugin/pluginIpc'
+import { registerScrapeIpc } from './modules/scrape/scrapeIpc'
 import { registerSettingIpc } from './modules/setting/settingIpc'
 
 /** IPC 注册总入口：新增一个域就在这里挂一行 */
@@ -14,5 +15,6 @@ export function registerIpc(): void {
   registerFileIpc()
   registerOfflineIpc()
   registerPluginIpc()
+  registerScrapeIpc()
   registerSettingIpc()
 }

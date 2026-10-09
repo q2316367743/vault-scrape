@@ -1,6 +1,7 @@
 /**
- * 数据源（连接）列表的页面状态：加载、选中、删除、连通性测试。
+ * 数据源（连接）的全局状态：加载、选中、删除、连通性测试。
  *
+ * 存储页与工作台共用：工作台需要「当前数据源」和它是否标记了 NSFW。
  * 选中项持久化到 localStorage，重开页面仍停在上次的数据源；
  * 该连接已被删除时自动回落到第一个可用连接。
  */
@@ -8,17 +9,25 @@ import { computed, ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { fileApi } from '@/api'
-import { type ConnectionTestResult, type FileConnection, type FileConnectionDraft } from '@common/types/file'
+import {
+  scraperIdsOf,
+  type ConnectionTestResult,
+  type FileConnection,
+  type FileConnectionDraft
+} from '@common/types/file'
 
 const ACTIVE_CONNECTION_KEY = 'vault-scrape:storage-active-connection'
 
 /** 已保存连接 → 草稿：不带 password 即沿用密钥串里已存的密码 */
 function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
+  const scrapers = scraperIdsOf(connection)
   if (connection.protocol === 'local') {
     return {
       id: connection.id,
       protocol: 'local',
       name: connection.name,
+      nsfw: connection.nsfw,
+      scrapers,
       rootPath: connection.rootPath
     }
   }
@@ -27,6 +36,8 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
       id: connection.id,
       protocol: 'webdav',
       name: connection.name,
+      nsfw: connection.nsfw,
+      scrapers,
       url: connection.url,
       username: connection.username,
       authType: connection.authType
@@ -36,6 +47,8 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
     id: connection.id,
     protocol: 'smb',
     name: connection.name,
+    nsfw: connection.nsfw,
+    scrapers,
     host: connection.host,
     port: connection.port,
     share: connection.share,
@@ -44,7 +57,7 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
   }
 }
 
-export function useStorageConnections() {
+export function useFileConnections() {
   const storedActiveId = useLocalStorage(ACTIVE_CONNECTION_KEY, '')
   const connections = ref<FileConnection[]>([])
   const loading = ref(false)

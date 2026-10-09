@@ -15,12 +15,14 @@ src/renderer/src/windows/main/pages/storage/
 ├── StoragePage.vue                  # 页面骨架：PageLayout + 左面板 + 右浏览器
 ├── storageUtils.ts                  # 纯展示工具（无状态）
 ├── composables/
-│   ├── useStorageConnections.ts     # 连接列表 / 选中 / 保存 / 删除 / 测试
 │   ├── useStorageBrowser.ts         # 当前目录、条目、面包屑与全部写操作
 │   ├── useStorageTransfers.ts       # 上传下载的进度、取消与清理
-│   └── useStorageActions.ts         # 把界面点击转成「弹窗 + 调用」
+│   ├── useStorageActions.ts         # 把界面点击转成「弹窗 + 调用」
+│   ├── useConnectionForm.ts         # 连接弹窗的表单状态、草稿拼装与保存 / 测试
+│   └── useScraperOptions.ts         # 连接弹窗的刮削器候选项（已启用且编译通过的插件）
 ├── modals/                          # 四组命令式弹窗：外壳 .tsx + 内容 .vue
 │   ├── ConnectionDialog.tsx / ConnectionDialogContent.vue
+│   ├── ConnectionPolicyField.vue    # 弹窗内的策略字段：NSFW 开关 + 刮削器多选
 │   ├── EntryNameDialog.tsx / EntryNameDialogContent.vue
 │   ├── PathDialog.tsx / PathDialogContent.vue
 │   └── TextEditorDialog.tsx / TextEditorDialogContent.vue
@@ -39,7 +41,7 @@ src/renderer/src/windows/main/pages/storage/
 
 ## 4. 连接管理
 
-状态在 `useStorageConnections.ts` 里，页面与面板都不自己存连接：
+状态在通用 hook `@/hooks/UseFileConnections.ts`（`useFileConnections()`）里，页面与面板都不自己存连接；`pages/storage/composables/` 只留浏览器、传输与动作三个 hook：
 
 | 导出 | 说明 |
 | --- | --- |
@@ -50,12 +52,18 @@ src/renderer/src/windows/main/pages/storage/
 | `remove(connection)` | `fileApi.deleteConnection` → 提示 → 刷新 |
 | `test(connection)` | 返回 `ConnectionTestResult`，页面按 `ok` 分别 `MessagePlugin.success / error` |
 
+连接上的 `nsfw` 标记（连接弹窗里「NSFW」开关，`ConnectionDialogContent.vue`）表示该数据源是敏感内容：列表里的连接会带一个 `NSFW` 标签（`StorageConnectionPanel.vue`，`theme="danger"`，`variant="light"`），并在应用设置开启「NSFW 保护」后让该数据源的页面隐藏敏感图片（见[设置项清单 · 应用设置](../setting/02-setting-items.md)）。转换草稿时 `nsfw` 原样带上（`toConnectionDraft` 已包含该字段）。
+
+连接上的 `scrapers` 是**该存储允许使用的刮削器**（插件 id 数组）：列表里每个连接都会带一个标签，未配置显示「全部刮削器」，配置了显示「N 个刮削器」（`describeScrapers(connection)`）。空数组表示不限制，运行时由 `usablePlugins(connectionId)` 兜底为全部已启用插件；配置了但当前不可用的 id 由运行时跳过、弹窗里标为「已失效」（详见[刮削模块 · 任务与调度](../scrape/01-scrape-module.md)）。`toConnectionDraft` 用 `scraperIdsOf(connection)` 把它带进草稿，测试连通与保存都走同一份草稿。
+
 测试已保存的连接时不重新输入密码：内部的 `toConnectionDraft(connection)` 会把连接转成草稿且**不带 `password` 字段**，主进程 `buildConnectionFromDraft` 见到 `id` 存在且未传密码就沿用钥匙串里的已存密码（见[文件模块 5 节](../file/01-file-module.md)）。
 
 ## 5. 连接弹窗
 
 - 外壳 `modals/ConnectionDialog.tsx` 导出 `openConnectionDialog({ connection?, onSaved? })`：`DialogPlugin({ width: 560, footer: false, destroyOnClose: true, body: () => h(ConnectionDialogContent, props) })`，内容组件通过 `emit('success', connection)` / `emit('close')` 回传，外壳负责关闭弹窗并回调 `onSaved`。
 - 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码。
+- 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增字段只改这一个文件。
+- 协议无关的策略字段抽在 `modals/ConnectionPolicyField.vue`：NSFW 开关 + 刮削器多选（`t-select multiple clearable`，占位文案「不选则使用全部已启用插件」）。候选项来自 `useScraperOptions`（`pluginApi.list()` 过滤 `enabled && loadError === ''`，标签为 `名称（id）`）；配置里已失效的 id 仍在下方以 `theme="warning"` 的标签列出，提示用户处理，但不自动清除。
 - 本地磁盘的根目录用通用控件 `DirectoryPickerField.vue`（输入框 + 右侧「选择」按钮）填写：点击唤起系统目录选择框，选中后回填**本机绝对路径**；用户取消或选择框打开失败都不改动原值（失败时提示「打开系统选择框失败，请手动输入绝对路径」）。底层是 dialog 域 IPC，见[系统对话框模块](../dialog/01-dialog-module.md)。
 - 协议在编辑态不可切换（连接协议是身份的一部分，改协议等于换连接）。
 - 密码草稿语义与主进程一致：**留空 = 沿用已存密码（`undefined`）**，填了就是新密码，显式清空才写空串；编辑时占位文案提示这一点，新建时提示「密码只写入本机钥匙串，不落明文」。
@@ -101,3 +109,4 @@ src/renderer/src/windows/main/pages/storage/
 5. 文本：对 `.nfo` / `.json` 走「编辑文本」，保存后重新打开确认内容已写入；对二进制大文件确认没有暴露编辑入口。
 6. 切换数据源与离开页面：选中项应被记住，传输列表不残留别的连接的任务，控制台无残留推送报错。
 7. 本地数据源根目录的「选择」按钮：点开系统目录框选中一个目录后输入框回填其绝对路径；再点一次并在系统框里「取消」，输入框应保持原值且没有报错提示；保存后「测试连接」应能通过。切到 WebDAV / SMB 时该按钮不出现。
+8. 刮削器选择：新建数据源时下拉应列出「已启用且能正常加载」的插件（标签形如 `名称（id）`，停用或编译失败的插件不出现）；不选任何项保存后，列表标签显示「全部刮削器」；只勾选一个保存后，标签显示「1 个刮削器」，再到工作台启动任务，结果行里的插件应只有勾选的那个。把该插件停用后重新打开弹窗，该项应出现在「已失效」提示里，保存后仍保留在配置中。

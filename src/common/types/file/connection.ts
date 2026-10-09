@@ -4,7 +4,8 @@
  * 契约：
  * - 密码永不跨 IPC：对外形状只有 `hasPassword` 布尔值，密文只存在主进程的存储文件里；
  * - 一个 SMB 连接对应一个共享（share），连接根即该共享根；
- * - 草稿（Draft）的 `id` 缺省表示新建，`password` 缺省表示保持已存密码、空串表示清空。
+ * - 草稿（Draft）的 `id` 缺省表示新建，`password` 缺省表示保持已存密码、空串表示清空；
+ * - `scrapers` 是该存储允许使用的刮削器（插件 ID），空数组表示沿用全部已启用插件。
  */
 export type FileProtocol = 'local' | 'webdav' | 'smb'
 
@@ -27,6 +28,10 @@ export interface LocalConnection {
   name: string
   protocol: 'local'
   hasPassword: false
+  /** NSFW 标记：只有标记的存储才会被 NSFW 保护处理 */
+  nsfw: boolean
+  /** 该存储允许使用的刮削器（插件 ID）；空数组表示「使用全部已启用插件」 */
+  scrapers: string[]
   /** 本机绝对路径 */
   rootPath: string
 }
@@ -36,6 +41,10 @@ export interface WebdavConnection {
   name: string
   protocol: 'webdav'
   hasPassword: boolean
+  /** NSFW 标记：只有标记的存储才会被 NSFW 保护处理 */
+  nsfw: boolean
+  /** 该存储允许使用的刮削器（插件 ID）；空数组表示「使用全部已启用插件」 */
+  scrapers: string[]
   url: string
   username: string
   authType: WebdavAuthType
@@ -46,6 +55,10 @@ export interface SmbConnection {
   name: string
   protocol: 'smb'
   hasPassword: boolean
+  /** NSFW 标记：只有标记的存储才会被 NSFW 保护处理 */
+  nsfw: boolean
+  /** 该存储允许使用的刮削器（插件 ID）；空数组表示「使用全部已启用插件」 */
+  scrapers: string[]
   host: string
   port: number
   /** 共享名，即连接根 */
@@ -61,6 +74,8 @@ export interface LocalConnectionDraft {
   id?: string
   protocol: 'local'
   name: string
+  nsfw: boolean
+  scrapers: string[]
   rootPath: string
 }
 
@@ -68,6 +83,8 @@ export interface WebdavConnectionDraft {
   id?: string
   protocol: 'webdav'
   name: string
+  nsfw: boolean
+  scrapers: string[]
   url: string
   username: string
   authType: WebdavAuthType
@@ -78,6 +95,8 @@ export interface SmbConnectionDraft {
   id?: string
   protocol: 'smb'
   name: string
+  nsfw: boolean
+  scrapers: string[]
   host: string
   port?: number
   share: string
@@ -96,4 +115,21 @@ export function describeConnection(connection: FileConnection): string {
   if (connection.protocol === 'local') return `本地磁盘 ${connection.rootPath}`
   if (connection.protocol === 'webdav') return `WebDAV ${connection.url}`
   return `SMB ${connection.host}:${connection.port}/${connection.share}`
+}
+
+/** 存储配置的刮削器 ID；未配置（或旧数据缺字段）时返回空数组，语义为「全部已启用插件」 */
+export function scraperIdsOf(connection: FileConnection | null | undefined): string[] {
+  const ids = connection?.scrapers
+  return Array.isArray(ids) ? ids : []
+}
+
+/** 该存储是否使用全部已启用插件 */
+export function usesAllScrapers(connection: FileConnection | null | undefined): boolean {
+  return scraperIdsOf(connection).length === 0
+}
+
+/** 刮削器配置的一句话描述，用于存储列表标签与详情 */
+export function describeScrapers(connection: FileConnection | null | undefined): string {
+  const count = scraperIdsOf(connection).length
+  return count === 0 ? '全部刮削器' : `${count} 个刮削器`
 }

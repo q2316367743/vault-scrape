@@ -97,6 +97,9 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 - 草稿（Draft）语义：`id` 缺省 = 新建；`password` 为 `undefined` = 保持已存密码，空串 = 清空。
 - 落盘前校验：名称不能为空；本地根目录不能为空；WebDAV 地址必须是合法 URL；SMB 主机与共享名不能为空、端口必须是 1–65535 的整数。校验失败抛 `invalidArgument`（中文提示）。
 - 读取失败（文件损坏 / JSON 非法）一律 `console.error` 后回落空列表，不阻塞启动；逐条归一化时 `id` 或 `name` 为空的记录会被丢弃。
+- 每个连接除了协议字段外还有两个策略字段：
+  - `nsfw: boolean`：标记为敏感数据源，只有标记过的存储才会被 NSFW 保护处理（渲染层用 `useNsfwProtection(connection)` 判定）；
+  - `scrapers: string[]`：该存储允许使用的刮削器（插件 id，**空数组表示不限制，即全部已启用插件**）。归一化时按 `PLUGIN_ID_PATTERN` 过滤、去重、上限 200 条；插件被删除或停用后这些 id 留在配置里，由运行时跳过、界面提示为「已失效」，不自动清除（避免重装插件后配置丢失）。
 
 ## 6. IPC 通道与信封
 
@@ -106,7 +109,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | --- | --- | --- |
 | `file:listConnections` | — | `FileConnection[]` |
 | `file:saveConnection` | `FileConnectionDraft` | `FileConnection`（保存后自动失效旧客户端） |
-| `file:deleteConnection` | `connectionId` | `boolean` |
+| `file:deleteConnection` | `connectionId` | `boolean`（顺带清理该存储的资源索引，见 [资源索引](../resource/01-resource-index.md)） |
 | `file:testConnection` | `FileConnectionDraft` | `ConnectionTestResult`（临时建连后必定释放，永不抛错） |
 | `file:disposeConnection` | `connectionId` | `boolean`（释放缓存的客户端实例） |
 | `file:list` / `file:stat` / `file:exists` / `file:readText` | `FileTargetRequest{ connectionId, path }` | `FileEntry[]` / `FileEntry` / `boolean` / `string` |

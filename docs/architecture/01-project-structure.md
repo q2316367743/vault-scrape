@@ -16,7 +16,7 @@
 | `electron.vite.config.ts` | 三个构建目标的别名、插件与端口 |
 | `uno.config.ts` | 原子类与 TDesign CSS 变量的桥接 |
 | `electron-builder.yml` | 打包配置（原生依赖 asarUnpack） |
-| `src/main/index.ts` | 主进程入口：注册 IPC、初始化数据库、建窗口 |
+| `src/main/index.ts` | 主进程入口：注册 IPC、初始化数据库、注册 `storage://` 私有协议、建窗口 |
 | `src/preload/index.ts` | contextBridge 暴露面 |
 | `src/renderer/index.html` | 渲染进程 HTML 入口 |
 | `src/renderer/src/windows/main/main.ts` | Vue 应用挂载入口 |
@@ -29,6 +29,7 @@ src/
 │   └── types/
 │       ├── setting/         # 设置类型：shared / path / scrape / network / translate / naming / download / file / index
 │       ├── file/            # 文件类型：error / path / entry / connection / request / transfer / result / index
+│       ├── resource/        # 资源索引类型：ResourceKind / ResourceItem / storage:// 地址的拼装与解析
 │       ├── plugin/          # 插件类型：asset / movie / manifest / env / define / normalize / error / result / index
 │       ├── log.ts           # 日志类型与查询条件
 │       ├── dialog.ts        # 系统文件/目录选择框（Electron dialog）的入参与结果契约
@@ -42,13 +43,15 @@ src/
 │       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
 │       ├── modules/http/    # HTTP 域：axios 单例 + 请求拦截器按网络设置注入代理
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
+│       ├── modules/resource/ # 资源域：把目录扫描结果写进 resource 索引表，并注册 storage:// 私有协议提供静态资源（本地直读 / 远端缓存）
+│       ├── modules/scrape/  # 刮削域：任务编排 + 单文件流水线 + 根目录扫描 + IPC 与进度推送
 │       ├── modules/setting/ # 设置域：落盘实现 + IPC
 │       ├── utils/           # 主进程通用工具：secretCodec（safeStorage 编解码，插件与文件域共用）
 │       └── registerIpc.ts   # 汇总注册各域 IPC
 ├── preload/
 │   ├── index.ts             # contextBridge 暴露 electron 与 preload
 │   ├── index.d.ts           # window 全局类型声明
-│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin）
+│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin / scrape）
 └── renderer/
     ├── index.html
     └── src/

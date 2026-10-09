@@ -4,13 +4,13 @@ import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { AddIcon, RefreshIcon } from 'tdesign-icons-vue-next'
 import PageLayout from '@/components/PageLayout/PageLayout.vue'
 import type { FileConnection } from '@common/types/file'
-import { useStorageConnections } from './composables/useStorageConnections'
+import { useFileConnections } from '@/hooks/UseFileConnections'
 import { openConnectionDialog } from './modals/ConnectionDialog'
 import StorageBrowser from './components/StorageBrowser.vue'
 import StorageConnectionPanel from './components/StorageConnectionPanel.vue'
 
 const { connections, loading, activeId, activeConnection, refresh, select, remove, test } =
-  useStorageConnections()
+  useFileConnections()
 
 function onCreate(): void {
   openConnectionDialog({ onSaved: () => void refresh() })

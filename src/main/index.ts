@@ -6,7 +6,12 @@ import { appendLog } from '$/db/repo/logRepo'
 import { bindWindowState } from '$/modules/appWindow/appWindowIpc'
 import { disposeFileClients } from '$/modules/file/fileClientManager'
 import { runOfflineStartupCheck } from '$/modules/offline/offlineCheck'
+import { markInterruptedOnStartup } from '$/modules/scrape/scrapeRunner'
+import { registerResourceProtocol, registerResourceScheme } from '$/modules/resource/resourceProtocol'
 import { registerIpc } from '$/registerIpc'
+
+// 自定义协议必须在 app ready 之前登记为特权协议，否则渲染层的 storage:// 会被拦截
+registerResourceScheme()
 
 /**
  * 平台差异化的窗口外观：亚克力材质 + 自定义标题栏。
@@ -86,6 +91,19 @@ app.whenReady().then(() => {
   // 注册全部 IPC 域（内部会初始化数据库），再落一条启动日志便于验证链路
   registerIpc()
   appendLog({ level: 'info', scope: 'app', message: 'vault-scrape 启动' })
+
+  // 接管 storage:// 请求（资源索引 + 封面兜底），必须在开窗之前完成
+  registerResourceProtocol()
+
+  // 上次退出时残留的 running 任务标记为中断：主进程内存态已丢失，留着会永远「运行中」
+  const interrupted = markInterruptedOnStartup()
+  if (interrupted > 0) {
+    appendLog({
+      level: 'warn',
+      scope: 'scrape',
+      message: `应用重启，已把 ${interrupted} 个未完成的刮削任务标记为中断`
+    })
+  }
 
   createWindow()
 

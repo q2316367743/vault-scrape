@@ -12,10 +12,14 @@
 | --- | --- |
 | `src/main/src/db/schema/log.ts` | `log` 表定义 |
 | `src/main/src/db/schema/task.ts` | `task` 表定义 |
+| `src/main/src/db/schema/scrapeFile.ts` | `scrape_file` 表定义 |
+| `src/main/src/db/schema/resource.ts` | `resource` 表定义（资源索引） |
 | `src/main/src/db/schema/index.ts` | schema 汇总导出（drizzle 配置的入口） |
 | `src/main/src/db/client.ts` | 单例连接、`initDb()`、`db()` |
 | `src/main/src/db/repo/logRepo.ts` | 日志仓储 |
 | `src/main/src/db/repo/taskRepo.ts` | 任务仓储与统计 |
+| `src/main/src/db/repo/scrapeRepo.ts` | 刮削任务下的逐文件结果仓储（含 `findScrapeFileByCoverId`） |
+| `src/main/src/db/repo/resourceRepo.ts` | 资源索引仓储 |
 | `src/main/src/db/dbIpc.ts` | 数据库域 IPC 注册 |
 | `src/preload/src/modules/db/dbChannels.ts` | 通道常量与载荷类型（契约） |
 | `src/preload/src/modules/db/db.ts` | 渲染层可用的 `dbApi` |
@@ -44,13 +48,47 @@
 | --- | --- | --- |
 | `id` | text PK | 任务 id |
 | `name` | text | 任务名，通常是待刮削目录名或番号 |
-| `status` | text | `pending` / `running` / `success` / `failed` |
+| `status` | text | `pending` / `running` / `success` / `failed` / `paused` |
+| `connection_id` | text | 数据源（存储）id |
+| `dir_path` | text | 该次任务扫描的根目录（远端路径） |
 | `total` | integer | 计划处理数量 |
 | `finished` | integer | 已处理数量 |
+| `failed` | integer | 失败数量 |
 | `message` | text | 结果说明或失败原因 |
 | `created_at` / `updated_at` | integer | 毫秒时间戳 |
 
 索引：`idx_task_status`（status）、`idx_task_created`（created_at）。
+
+`scrape_file` 表（`scrapeFileTable('scrape_file')`）：逐文件结果，主键为 `` `${taskId}:${path}` ``。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | text PK | `${taskId}:${path}` |
+| `task_id` | text | 所属任务 |
+| `path` / `name` | text | 文件远端路径与文件名 |
+| `keyword` | text | 搜索关键词（由文件名解析） |
+| `status` | text | `pending` / `running` / `success` / `failed` / `skipped` |
+| `plugin_id` / `title` | text | 命中的插件与条目标题 |
+| `message` | text | 结果说明或失败原因 |
+| `cover_id` / `cover_path` | text | 刮削产出的封面资源 id 与远端路径，空串表示没有封面 |
+| `updated_at` | integer | 毫秒时间戳 |
+
+索引：`idx_scrape_file_task`（taskId）、`idx_scrape_file_status`（taskId, status）。
+
+`resource` 表（`resourceTable('resource')`）：媒体库资源索引，一次扫描（或任务收尾重建）按目录整体替换。
+
+| 列 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | text PK | `sha1(connectionId + '\n' + path)` 的 16 位十六进制前缀 |
+| `connection_id` | text | 所属数据源 |
+| `dir_path` | text | 建立索引时扫描的目录 |
+| `path` / `name` | text | 文件远端路径与文件名 |
+| `extname` / `mime` | text | 扩展名（小写不含点）与 MIME |
+| `size` / `modified_at` | integer | 字节数与修改时间（毫秒） |
+| `kind` | text | `video` / `image` / `nfo` / `other` |
+| `indexed_at` | integer | 建立索引的时间（毫秒） |
+
+索引：`idx_resource_dir`（connectionId, dirPath）、唯一索引 `idx_resource_conn_path`（connectionId, path）。
 
 时间一律使用整数毫秒，避免时区与字符串格式歧义。
 
@@ -74,6 +112,8 @@
 - `listTask(query?: TaskQuery): TaskItem[]`：默认 `limit = 20`。
 - `countTask(query?: TaskQuery): number`。
 - `taskStats(): TaskStats`：按 status 分组聚合，输出 `{ total, pending, running, success, failed }`。
+- `replaceResourceDir(connectionId, dirPath, items): number`：在一个事务里先按 `(connectionId, dirPath)` 删除、再按 `path` 删除，最后批量插入，返回写入条数。重复扫描同一目录是幂等的（不会翻倍）。
+- `getResourceById(id): ResourceItem | null`、`listResourceByDir(connectionId, dirPath): ResourceItem[]`（按 name 升序）、`countResource(): number`、`deleteResourceByConnection(connectionId): number`。
 
 IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）：
 
@@ -87,6 +127,8 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 | `db:taskStats` | 无 → `TaskStats` |
 
 渲染层通过 `dbApi`（`@/api` 再导出）以 `dbApi.log.list(...)` / `dbApi.task.stats()` 形式调用。
+
+资源索引与逐文件刮削结果**不额外开 IPC 通道**：它们只被主进程自己用（`storage://` 协议处理、任务终态重建、删除数据源时清理），渲染层拿到的封面地址就是 `storage://` URL（见 [../resource/01-resource-index.md](../resource/01-resource-index.md)）。将来做媒体库页面时再补索引查询通道。
 
 ## 迁移
 

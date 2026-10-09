@@ -27,6 +27,7 @@ import {
   type FileWriteTextRequest
 } from '@common/types/file'
 import { FileChannels } from '~/modules/file/fileChannels'
+import { deleteResourceByConnection } from '$/db/repo/resourceRepo'
 import type { FileClient } from './FileClient'
 import { isRetryableFileError } from './fileErrorUtils'
 import {
@@ -99,6 +100,8 @@ export function registerFileIpc(): void {
     handle(async (): Promise<boolean> => {
       const removed = deleteConnection(connectionId)
       await invalidateFileClient(connectionId)
+      // 存储没了，索引里的资源 ID 就成了悬空数据，一并清掉
+      deleteResourceByConnection(connectionId)
       return removed
     })
   )
