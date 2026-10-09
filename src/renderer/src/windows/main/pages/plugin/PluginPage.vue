@@ -79,8 +79,17 @@ function describeFailures(result: PluginImportResult): string {
   return result.failed.map((item) => `${item.filePath}：${item.message}`).join('；')
 }
 
+function describeSkipped(result: PluginImportResult): string {
+  return result.skipped.map((item) => `${item.filePath}：${item.message}`).join('；')
+}
+
 function handleImport(result: PluginImportResult, canOverwrite: boolean): void {
   if (result.imported.length > 0) MessagePlugin.success(`已导入 ${result.imported.length} 个插件`)
+  if (result.skipped.length > 0) {
+    MessagePlugin.info(
+      `已跳过 ${result.skipped.length} 个旧版本插件：${describeSkipped(result)}`
+    )
+  }
   if (result.failed.length === 0) return
   const duplicates = result.failed.filter((item) => item.code === 'duplicate')
   const others = result.failed.filter((item) => item.code !== 'duplicate')

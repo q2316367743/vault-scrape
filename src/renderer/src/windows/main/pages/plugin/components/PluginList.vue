@@ -31,9 +31,9 @@
                     内置
                   </t-tag>
                 </div>
-                <t-tooltip :content="plugin.description || plugin.id" placement="top-left">
-                  <div class="plugin-desc">{{ plugin.description || plugin.id }}</div>
-                </t-tooltip>
+                <div class="plugin-desc" :title="plugin.description || plugin.id">
+                  {{ plugin.description || plugin.id }}
+                </div>
               </div>
               <div class="plugin-tags">
                 <t-tag v-if="plugin.loadError" size="small" theme="danger" variant="light">

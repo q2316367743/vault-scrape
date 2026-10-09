@@ -29,6 +29,30 @@ export interface PluginMeta {
 }
 
 /**
+ * 语义化版本比较：按 `.` 分段，每段取前导数字比较，缺失段按 0 处理。
+ *
+ * 只认数字，因此 `1.0.0-beta` 与 `1.0.0` 视为相同（预发布后缀不参与排序）；
+ * 返回 <0 / 0 / >0，供导入时「同名只保留最新」择优使用。
+ */
+export function comparePluginVersion(left: string, right: string): number {
+  const leftParts = left.split('.')
+  const rightParts = right.split('.')
+  const length = Math.max(leftParts.length, rightParts.length)
+  for (let index = 0; index < length; index += 1) {
+    const leftNumber = leadingNumber(leftParts[index])
+    const rightNumber = leadingNumber(rightParts[index])
+    if (leftNumber !== rightNumber) return leftNumber < rightNumber ? -1 : 1
+  }
+  return 0
+}
+
+/** 取版本段的前导数字；没有数字时按 0 处理 */
+function leadingNumber(part: string | undefined): number {
+  const matched = part?.match(/^\d+/)
+  return matched ? Number.parseInt(matched[0], 10) : 0
+}
+
+/**
  * 插件声明的环境变量。
  *
  * 账号类参数（站点地址、Cookie、Token…）都是文本，所以声明只描述「要填什么」，
@@ -95,8 +119,25 @@ export interface PluginImportFailure {
   message: string
 }
 
+/**
+ * 被跳过的插件文件：同批或本机已有更新的版本，本次不落盘。
+ *
+ * 契约：`skipped` 是**非错误**语义，渲染层按提示处理，不能计入导入失败。
+ */
+export interface PluginImportSkipped {
+  filePath: string
+  id: string
+  name: string
+  /** 最终保留（未被替换）的版本号 */
+  keptVersion: string
+  /** 可直接展示的中文原因，例如「本机已安装更新的版本 v2.0.0」 */
+  message: string
+}
+
 /** 批量导入结果：逐个文件独立成败，一个失败不影响其余文件 */
 export interface PluginImportResult {
   imported: PluginSummary[]
+  /** 因同名已有更新版本而跳过的文件 */
+  skipped: PluginImportSkipped[]
   failed: PluginImportFailure[]
 }

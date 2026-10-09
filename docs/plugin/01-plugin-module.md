@@ -127,6 +127,18 @@ interface PluginAsset {
 
 > 兼容：早期示例把声明写成 `config: [...]` 仍然可用，但会写一条 `warn` 日志提醒改名为 `env`。
 
+**批量导入与同名去重（同名只保留最新）**
+
+`plugin:import` 一次可选择多个 `.js` 文件；主进程按 `meta.id`（不是 `meta.name`）判定「同名」，同一批文件在落盘前先择优，全程只有一个版本会被写入：
+
+1. 先比 `meta.version`（按 `.` 分段、逐段取前导数字比较，缺失段按 0，因此 `1.0.0-beta` 与 `1.0.0` 视为相同），版本高者胜；
+2. 版本相同时比源文件 mtime，较新者胜；两者都相同则由先选中的文件胜出；
+3. 批内落选的文件不落盘，进 `PluginImportResult.skipped`，提示「同批中已保留更新的版本 v…」；
+4. 胜者再与本机已安装记录比较：版本更高 → 自动覆盖，且 store 保留原有的 `enabled` 与已保存的环境变量密文；版本更低 → 跳过并提示「本机已安装更新的版本 v…」；版本相同且未开启 `overwrite` → 仍以 `duplicate` 失败，由渲染层确认后重试；
+5. 内置插件不参与版本比较，同名导入一律由 store 抛 `unsupported`。
+
+`skipped` 是**非错误**语义（旧版本被有意保留），与 `failed` 分开返回：渲染层只用 `info` 提示「已跳过 N 个旧版本插件」，不计入导入失败数，也不触发覆盖确认框。
+
 ### 2.4 插件来源：文件插件与内置插件
 
 `PluginSummary.source` 区分两种来源，插件列表 / 插件详情 / 工具箱的搜索页共用：
@@ -199,6 +211,7 @@ interface PluginResponse {
 | 插件源码 | `~/.vault-scrape/plugin/<id>.js` |
 
 - 单个源码文件上限 1 MB；
+- 同名覆盖导入（版本更高时自动触发，或确认 `overwrite: true`）只更新元信息、`envFields` 与源码文件，**保留**原有的 `enabled` 与 `envValues`（已保存的环境变量密文不丢）；
 - 清单里 `plugins` 数组的顺序就是插件列表的展示顺序：插件页拖拽排序后经 `plugin:reorder` 以完整 id 列表写回 `plugins.json`，顺序未变化时不写盘；
 - 内置插件在清单里以 `builtin: true` 记录（`toPluginSummary` 据此给出 `source` 与空的 `filePath`），没有 `<id>.js`，store 层同时拒绝覆盖与删除；
 - 环境变量一律按敏感值处理：先 `safeStorage` 加密再写入清单（`plugins.json` 的 `envValues` 存 `safe:` 前缀密文），系统钥匙串不可用时回落 `plain:` + base64 并写 `warn` 日志。编解码统一在 `src/main/src/utils/secretCodec.ts`，与文件模块的连接密码共用；
@@ -216,7 +229,7 @@ interface PluginResponse {
 | `plugin:list` | — | `PluginSummary[]` |
 | `plugin:readCode` | `{ id }` | `string` |
 | `plugin:saveCode` | `{ id, code }` | `PluginSummary`（先编译校验通过才落盘） |
-| `plugin:import` | `{ overwrite }` | `PluginImportResult`（主进程弹出系统文件选择框，多选 `.js`） |
+| `plugin:import` | `{ overwrite }` | `PluginImportResult`（主进程弹出系统文件选择框，可多选 `.js`；结果为 `imported` / `skipped` / `failed` 三组，同名只保留最新，见 §2.3） |
 | `plugin:remove` | `{ id }` | `boolean` |
 | `plugin:setEnabled` | `{ id, enabled }` | `PluginSummary` |
 | `plugin:reorder` | `{ ids }` | `PluginSummary[]`（按传入顺序重排；未出现的 id 保持原有相对顺序追加到末尾） |
@@ -251,7 +264,7 @@ interface PluginEnvField {
 | 错误码 | 含义 |
 | --- | --- |
 | `notFound` | 插件/文件不存在 |
-| `duplicate` | 导入时 ID 已存在（可用 `overwrite: true` 覆盖） |
+| `duplicate` | 导入时 ID 已存在**且版本相同**、又未传 `overwrite: true`（版本更高的文件会自动覆盖，版本更低的进 `skipped`，都不报此错） |
 | `invalidPlugin` | 没有 `definePlugin`、`meta` 不合法、缺少四个方法之一 |
 | `invalidArgument` | 参数缺失或类型不合法（如非 http(s) url、空 keyword） |
 | `unsupported` | 当前环境不支持的操作 |
@@ -269,7 +282,8 @@ interface PluginEnvField {
 失败模式与处理：
 
 - 保存被拒 → 不落盘，编辑弹窗保持打开；
-- ID 重名 → `duplicate` → 渲染层弹确认框 → `overwrite: true` 重试；
+- ID 重名且**版本相同** → `duplicate` → 渲染层弹确认框 → `overwrite: true` 重试；
+- 导入的文件版本更旧，或同一批里不是最新 → 不落盘，进 `skipped`，渲染层以 `info` 提示「已跳过 N 个旧版本插件」；
 - 数据畸形/超量 → 归一化层逐字段校验，非法项丢弃，单项上限 500 条并写 `warn` 日志。
 
 ## 9. 关键文件

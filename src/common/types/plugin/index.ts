@@ -18,12 +18,14 @@ export {
 
 export {
   PLUGIN_ID_PATTERN,
+  comparePluginVersion,
   type PluginEnvDraft,
   type PluginEnvField,
   type PluginEnvSnapshot,
   type PluginEnvValue,
   type PluginImportFailure,
   type PluginImportResult,
+  type PluginImportSkipped,
   type PluginMeta,
   type PluginSource,
   type PluginSummary

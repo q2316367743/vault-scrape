@@ -11,6 +11,7 @@ import { statSync } from 'node:fs'
 import { basename } from 'node:path'
 import {
   PluginError,
+  comparePluginVersion,
   describePluginError,
   readEnvFilledMask,
   type PluginEnvDraft,
@@ -18,8 +19,10 @@ import {
   type PluginEnvSnapshot,
   type PluginImportFailure,
   type PluginImportResult,
+  type PluginImportSkipped,
   type PluginInvokeData,
   type PluginInvokePayload,
+  type PluginMeta,
   type PluginMethod,
   type PluginSummary
 } from '@common/types/plugin'
@@ -204,41 +207,140 @@ function compileImported(
   }
 }
 
+/** 批内候选：编译结果 + 源文件 mtime（同版本时用于排序） */
+interface ImportCandidate {
+  filePath: string
+  source: string
+  compiled: CompiledPlugin
+  flush: (id: string) => void
+  mtimeMs: number
+}
+
+/** 读源文件 mtime；读不到时按 0 处理，不影响导入成败 */
+function fileMtime(filePath: string): number {
+  try {
+    return statSync(filePath).mtimeMs
+  } catch {
+    return 0
+  }
+}
+
+/** 批内择优：版本高者胜；版本相同取 mtime 更大者；两者都相同则由先选中者保持胜出 */
+function isNewerCandidate(candidate: ImportCandidate, current: ImportCandidate): boolean {
+  const byVersion = comparePluginVersion(
+    candidate.compiled.meta.version,
+    current.compiled.meta.version
+  )
+  if (byVersion !== 0) return byVersion > 0
+  return candidate.mtimeMs > current.mtimeMs
+}
+
 /**
  * 批量导入本机插件文件：逐个文件独立成败。
  *
- * 已存在同 ID 且 `overwrite` 为 false 时该项以 `duplicate` 失败，其余文件不受影响。
+ * 契约：
+ * 1. 同名（`meta.id`）只保留最新：先比 `meta.version`，版本相同再比源文件 mtime，批内落选者进 `skipped`；
+ * 2. 与本机已安装记录比较：严格更新时自动覆盖（store 保留原启停状态与环境变量），更旧时跳过并进 `skipped`；
+ * 3. 版本相同且未开启 `overwrite` 时仍以 `duplicate` 失败，由渲染层确认后重试；
+ * 4. 内置插件不参与版本比较，一律交给 store 抛 `unsupported`；
+ * 5. `skipped` 是非错误语义，与 `failed` 分开返回。
  */
-export function importPluginFiles(
-  paths: readonly string[],
-  overwrite: boolean
-): PluginImportResult {
+export function importPluginFiles(paths: readonly string[], overwrite: boolean): PluginImportResult {
   const imported: PluginSummary[] = []
+  const skipped: PluginImportSkipped[] = []
   const failed: PluginImportFailure[] = []
+
+  function skip(filePath: string, meta: PluginMeta, keptVersion: string, message: string): void {
+    skipped.push({ filePath, id: meta.id, name: meta.name, keptVersion, message })
+    appendLog({
+      level: 'info',
+      scope: `plugin:${meta.id}`,
+      message: `已跳过旧版本插件：${basename(filePath)}`
+    })
+  }
+
+  // 第一步：逐文件读取并编译，按 id 在批内择优，落选者当场记入 skipped
+  const winners = new Map<string, ImportCandidate>()
   for (const filePath of paths) {
     try {
       const source = readPluginFile(filePath)
       const { compiled, flush } = compileImported(source, basename(filePath))
-      const next = writePluginSource(
+      const candidate: ImportCandidate = {
+        filePath,
         source,
-        { meta: compiled.meta, envFields: compiled.env },
-        { overwrite }
-      )
-      cache.set(compiled.meta.id, { compiled, mtimeMs: sourceMtime(compiled.meta.id) })
-      loadErrors.delete(compiled.meta.id)
-      flush(compiled.meta.id)
-      imported.push(toPluginSummary(next, ''))
-      appendLog({
-        level: 'info',
-        scope: `plugin:${compiled.meta.id}`,
-        message: `已导入插件：${basename(filePath)}`
-      })
+        compiled,
+        flush,
+        mtimeMs: fileMtime(filePath)
+      }
+      const current = winners.get(compiled.meta.id)
+      if (current && isNewerCandidate(candidate, current)) {
+        winners.set(compiled.meta.id, candidate)
+        skip(
+          current.filePath,
+          current.compiled.meta,
+          compiled.meta.version,
+          `同批中已保留更新的版本 v${compiled.meta.version}`
+        )
+        continue
+      }
+      if (current) {
+        skip(
+          filePath,
+          compiled.meta,
+          current.compiled.meta.version,
+          `同批中已保留更新的版本 v${current.compiled.meta.version}`
+        )
+        continue
+      }
+      winners.set(compiled.meta.id, candidate)
     } catch (error) {
       const { code, message } = describePluginError(error)
       failed.push({ filePath, code, message })
     }
   }
-  return { imported, failed }
+
+  // 第二步：胜者与本机已安装记录比对后落盘
+  for (const candidate of winners.values()) {
+    const meta = candidate.compiled.meta
+    const installed = getStoredPlugin(meta.id)
+    const replaceable = installed !== null && !installed.builtin
+    if (installed !== null && !installed.builtin) {
+      const byVersion = comparePluginVersion(meta.version, installed.version)
+      if (byVersion < 0) {
+        skip(candidate.filePath, meta, installed.version, `本机已安装更新的版本 v${installed.version}`)
+        continue
+      }
+      if (byVersion === 0 && !overwrite) {
+        failed.push({
+          filePath: candidate.filePath,
+          code: 'duplicate',
+          message: `插件 ${meta.id} 已存在，请确认是否覆盖`
+        })
+        continue
+      }
+    }
+    try {
+      const next = writePluginSource(
+        candidate.source,
+        { meta, envFields: candidate.compiled.env },
+        { overwrite: overwrite || replaceable }
+      )
+      cache.set(meta.id, { compiled: candidate.compiled, mtimeMs: sourceMtime(meta.id) })
+      loadErrors.delete(meta.id)
+      candidate.flush(meta.id)
+      imported.push(toPluginSummary(next, ''))
+      appendLog({
+        level: 'info',
+        scope: `plugin:${meta.id}`,
+        message: `已导入插件：${basename(candidate.filePath)}`
+      })
+    } catch (error) {
+      const { code, message } = describePluginError(error)
+      failed.push({ filePath: candidate.filePath, code, message })
+    }
+  }
+
+  return { imported, skipped, failed }
 }
 
 export function removePluginById(id: string): boolean {

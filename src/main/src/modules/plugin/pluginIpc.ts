@@ -93,15 +93,17 @@ function readIds(payload: unknown): string[] {
   return raw.filter((item): item is string => typeof item === 'string')
 }
 
-/** 弹出系统文件选择框并批量导入；用户取消时返回空结果 */
+/** 弹出系统文件选择框并批量导入（可多选）；用户取消时返回空结果 */
 async function importFromDialog(overwrite: boolean): Promise<PluginImportResult> {
   const result = await dialog.showOpenDialog({
-    title: '选择插件脚本',
+    title: '选择插件脚本（可多选）',
     buttonLabel: '导入',
     filters: [{ name: '插件脚本', extensions: ['js'] }],
     properties: ['openFile', 'multiSelections']
   })
-  if (result.canceled || result.filePaths.length === 0) return { imported: [], failed: [] }
+  if (result.canceled || result.filePaths.length === 0) {
+    return { imported: [], skipped: [], failed: [] }
+  }
   return importPluginFiles(result.filePaths, overwrite)
 }
 
