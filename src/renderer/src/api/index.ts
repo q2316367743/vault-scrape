@@ -1,5 +1,6 @@
 export { appWindowApi } from './appWindow'
 export { dbApi } from './db'
+export { dialogApi } from './dialog'
 export { fileApi } from './file'
 export { offlineApi } from './offline'
 export { pluginApi } from './plugin'

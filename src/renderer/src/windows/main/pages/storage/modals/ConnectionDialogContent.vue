@@ -181,9 +181,10 @@ async function onSubmit(): Promise<void> {
     <template v-if="protocol === 'local'">
       <div class="form-row">
         <span class="form-label">根目录</span>
-        <t-input
+        <directory-picker-field
           v-model="form.rootPath"
           class="form-control"
+          title="选择根目录"
           placeholder="本机绝对路径，例如 /Users/you/Media"
         />
       </div>

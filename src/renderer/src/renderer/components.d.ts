@@ -12,6 +12,7 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    DirectoryPickerField: typeof import('./../components/DirectoryPickerField.vue')['default']
     PageLayout: typeof import('./../components/PageLayout/PageLayout.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
@@ -48,6 +49,7 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const DirectoryPickerField: typeof import('./../components/DirectoryPickerField.vue')['default']
   const PageLayout: typeof import('./../components/PageLayout/PageLayout.vue')['default']
   const RouterLink: typeof import('vue-router')['RouterLink']
   const RouterView: typeof import('vue-router')['RouterView']

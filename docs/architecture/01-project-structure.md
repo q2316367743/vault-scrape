@@ -31,12 +31,14 @@ src/
 │       ├── file/            # 文件类型：error / path / entry / connection / request / transfer / result / index
 │       ├── plugin/          # 插件类型：asset / movie / manifest / env / define / normalize / error / result / index
 │       ├── log.ts           # 日志类型与查询条件
+│       ├── dialog.ts        # 系统文件/目录选择框（Electron dialog）的入参与结果契约
 │       └── task.ts          # 任务类型与统计
 ├── main/
 │   ├── index.ts             # 主进程入口
 │   └── src/
 │       ├── db/              # 数据库：schema / client / repo / IPC
 │       ├── modules/appWindow/ # 窗口域：窗口控制与最大化状态推送
+│       ├── modules/dialog/  # 对话框域：把 Electron dialog 的「打开 / 保存」框收窄后暴露给渲染层
 │       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
 │       ├── modules/http/    # HTTP 域：axios 单例 + 请求拦截器按网络设置注入代理
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
@@ -46,13 +48,13 @@ src/
 ├── preload/
 │   ├── index.ts             # contextBridge 暴露 electron 与 preload
 │   ├── index.d.ts           # window 全局类型声明
-│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / setting / file / plugin）
+│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin）
 └── renderer/
     ├── index.html
     └── src/
         ├── api/             # 渲染层唯一 API 出口（页面不直接读 window.preload）
         ├── assets/style/    # 全局样式：theme / tdesign-cover / customer
-        ├── components/      # 跨页面通用组件（menu / PageLayout）
+        ├── components/      # 跨页面通用组件（menu / PageLayout / DirectoryPickerField）
         ├── global/          # 全局状态
         ├── hooks/           # 通用 hooks
         └── windows/main/    # 主窗口：入口、App.vue、router、store、pages

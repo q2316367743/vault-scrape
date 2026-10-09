@@ -1,5 +1,6 @@
 import { registerDbIpc } from './db/dbIpc'
 import { registerAppWindowIpc } from './modules/appWindow/appWindowIpc'
+import { registerDialogIpc } from './modules/dialog/dialogIpc'
 import { registerFileIpc } from './modules/file/fileIpc'
 import { registerOfflineIpc } from './modules/offline/offlineIpc'
 import { registerPluginIpc } from './modules/plugin/pluginIpc'
@@ -9,6 +10,7 @@ import { registerSettingIpc } from './modules/setting/settingIpc'
 export function registerIpc(): void {
   registerDbIpc()
   registerAppWindowIpc()
+  registerDialogIpc()
   registerFileIpc()
   registerOfflineIpc()
   registerPluginIpc()

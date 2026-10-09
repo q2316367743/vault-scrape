@@ -2,6 +2,7 @@ import { contextBridge } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import { appWindowApi } from '~/modules/appWindow/appWindow'
 import { dbApi } from '~/modules/db/db'
+import { dialogApi } from '~/modules/dialog/dialog'
 import { fileApi } from '~/modules/file/file'
 import { offlineApi } from '~/modules/offline/offline'
 import { pluginApi } from '~/modules/plugin/plugin'
@@ -11,6 +12,7 @@ import { settingApi } from '~/modules/setting/setting'
 const preload = {
   appWindow: appWindowApi,
   db: dbApi,
+  dialog: dialogApi,
   file: fileApi,
   offline: offlineApi,
   plugin: pluginApi,
