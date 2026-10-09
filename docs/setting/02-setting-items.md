@@ -12,6 +12,8 @@
 
 应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。存储侧的配合项是连接上的 `nsfw` 标记（见[存储管理页面](../page/02-storage-page.md)）：只有「总开关开启 + 该存储被标记」同时成立才隐藏内容，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`。
 
+总开关在渲染层是模块级缓存（`protection` ref，一次读取、全应用共享），所以**它必须能被刷新**：`SettingAppStore.ts` 给 `createSettingGroupStore` 传了 `onSaved` 回调，应用分组保存成功后调用 `refreshNsfwProtection()`。刷新点只能挂在「保存成功之后」——落盘有 300ms 防抖，挂在值变化上会读到主进程里还没更新的旧值，反而把保护状态刷成旧值。效果：切换开关约 300ms 后全应用生效，不需要重启或刷新页面，影视墙的遮罩会立刻出现/消失（见[设置存储](../setting/01-setting-storage.md)的「注意事项」）。
+
 ## 2. 目录与路径（`path`）
 
 | 字段 | 含义 | 默认值 | 界面 |

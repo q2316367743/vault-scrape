@@ -60,6 +60,7 @@ src/renderer/src/windows/main/pages/media/
 - 卡片用 `useNsfwProtection(computed(() => props.connection))` 取 `active`（全局开关 + 该存储的 `nsfw` 标记同时成立才隐藏），封面统一走 `@/components/SensitiveImage.vue`。
 - 打开抽屉时把当时的 `active` 作为 `protect` 快照传进去（`MediaDetailDrawerOptions.protect`），抽屉里的大封面沿用同一状态。
 - `SensitiveImage` 的遮罩容器带 `@click.stop`：在卡片上点「内容已隐藏，点击查看」只放行图片，不会顺带打开详情抽屉。
+- `active` 依赖 `connections`（页面挂载时 `refreshConnections()`）与模块级的总开关缓存，两者都到位才有遮罩。总开关由应用设置保存成功后的回调刷新（见[设置存储](../setting/01-setting-storage.md)）：在影视墙开着的时候去打开「应用设置 → NSFW 保护」，回来约 300ms 内卡片遮罩应当直接出现，不需要刷新页面或重进影视墙；反过来关掉开关，遮罩应立即消失。
 
 ## 6. 手工验证清单
 

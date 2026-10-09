@@ -39,7 +39,7 @@ src/renderer/src/windows/main/pages/workspace/
 
 ## 5. NSFW 保护
 
-- 判定规则：应用设置 `app.nsfwProtection` 是总开关，存储连接的 `nsfw` 标记决定**哪些存储**受保护，两者同时成立才隐藏内容；没有存储上下文的页面（如工具搜索）只看总开关。判定收敛在 `@/hooks/UseNsfwProtection.ts`：`useNsfwProtection(connection?)` 返回 `{ protection, active }`，并导出 `refreshNsfwProtection()` 供设置保存后刷新。
+- 判定规则：应用设置 `app.nsfwProtection` 是总开关，存储连接的 `nsfw` 标记决定**哪些存储**受保护，两者同时成立才隐藏内容；没有存储上下文的页面（如工具搜索）只看总开关。判定收敛在 `@/hooks/UseNsfwProtection.ts`：`useNsfwProtection(connection?)` 返回 `{ protection, active }`，并导出 `refreshNsfwProtection()`——它由应用设置 store（`SettingAppStore.ts`）挂在分组保存成功的回调上，所以拨动总开关后约 300ms（防抖落盘）全应用生效，不需要刷新页面。保护状态是模块级 ref、一次读取全应用共享：**没有任何地方在保存后刷新它，开关就会一直停在本次启动时的首个读取值**，表现正是「开关打开了，影视墙还是直接显示封面」。
 - 图片位统一用 `@/components/SensitiveImage.vue`（props `{ src, protect, alt?, width?, height?, fit? }`）：保护生效时显示遮罩，用户点击后本次显示放行，刷新页面重新隐藏。组件本身不读设置、不读连接，只认 `protect`；遮罩容器带 `@click.stop`，因此「点击查看」只放行图片，不会连带触发外层元素（如影视墙卡片）的点击。
 - 当前落地：工作台在 `active` 为真时于页头显示「NSFW 保护已生效」标签；文件表格的封面列（`protect` 即 `active`）与工具搜索页的候选预览图（`PluginMovieCandidate.cover`，按总开关接入）是现有的图片位；影视墙的卡片封面与详情抽屉大封面同样走 `SensitiveImage`（按该影片所属存储判定，见[影视墙页面](./04-media-wall-page.md)）。后续新增影片列表 / 详情页渲染图片时必须走 `SensitiveImage`，不要直接使用 `t-image`。
 

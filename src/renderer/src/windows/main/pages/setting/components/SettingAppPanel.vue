@@ -22,13 +22,11 @@ function onThemeChange(value: unknown): void {
     <t-list-item>
       <t-list-item-meta title="主题" description="亮色、深色或跟随系统，切换后立即生效" />
       <template #action>
-        <div class="setting-field">
-          <t-radio-group :value="themeMode" variant="default-filled" @change="onThemeChange">
-            <t-radio-button v-for="item in themeOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </t-radio-button>
-          </t-radio-group>
-        </div>
+        <t-radio-group :value="themeMode" variant="default-filled" @change="onThemeChange">
+          <t-radio-button v-for="item in themeOptions" :key="item.value" :value="item.value">
+            {{ item.label }}
+          </t-radio-button>
+        </t-radio-group>
       </template>
     </t-list-item>
 

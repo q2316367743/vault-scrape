@@ -8,8 +8,8 @@
 | [data/01-sqlite-storage.md](./data/01-sqlite-storage.md) | SQLite 存储 | drizzle + better-sqlite3 的建库、表结构（含 `resource` 资源索引、`scrape_file` 的封面列与 `final_path`）、迁移与主进程/渲染层契约 |
 | [resource/01-resource-index.md](./resource/01-resource-index.md) | 资源索引与私有协议 | `resource` 表的建立时机与资源 ID 规则、`storage://存储ID/资源ID/文件名` 的注册与解析、本地直读与远端缓存、CSP 与限制、影视墙使用的按 kind 查询与最新索引时间查询 |
 | [file/01-file-module.md](./file/01-file-module.md) | 文件模块 | FileClient 接口与本地 / WebDAV / SMB 三实现、连接配置与 safeStorage 加密、IPC 通道与传输进度、能力矩阵与限制 |
-| [setting/01-setting-storage.md](./setting/01-setting-storage.md) | 设置存储 | 设置以单个 JSON 落盘，主进程为唯一写入口，渲染层按分组读写 |
-| [setting/02-setting-items.md](./setting/02-setting-items.md) | 设置项清单 | 八组设置的全部字段、含义、默认值与命名模板占位符词表（`app` 为第一个分组：主题与 NSFW 保护）；站点账号参数由插件声明，不在设置页 |
+| [setting/01-setting-storage.md](./setting/01-setting-storage.md) | 设置存储 | 设置以单个 JSON 落盘，主进程为唯一写入口，渲染层按分组读写；分组 store 的默认值 → 异步回填 → 300ms 防抖回写链路、加载回填不覆盖用户刚做的修改、保存成功回调 `onSaved`（用于刷新模块级缓存） |
+| [setting/02-setting-items.md](./setting/02-setting-items.md) | 设置项清单 | 八组设置的全部字段、含义、默认值与命名模板占位符词表（`app` 为第一个分组：主题与 NSFW 保护；总开关保存成功后经 `onSaved` 刷新 `refreshNsfwProtection()`，切换即全应用生效）；站点账号参数由插件声明，不在设置页 |
 | [scrape/01-scrape-module.md](./scrape/01-scrape-module.md) | 刮削模块（主进程） | 根目录扫描与重复番号判定、任务单例与并发调度（并发数 / 休息节奏）、跨插件顺序补全、命名与移动、资源下载与 NFO 落盘、日志落文件、IPC 契约与错误码 |
 | [ui/01-renderer-shell.md](./ui/01-renderer-shell.md) | 渲染层外壳与主题 | 应用外壳布局、侧栏菜单与折叠、页面容器（`PageLayout` 的 `#leading` 与子页面容器 `SubPageLayout`）、TDesign Token 与 Fluent 变量分层、亮/深色主题三档与切换 |
 | [ui/02-window-chrome.md](./ui/02-window-chrome.md) | 窗口外观与自定义标题栏 | 亚克力系统材质、平台窗口参数、渲染层透明链路、标题栏与窗口按钮、appWindow IPC、材质跟随深色主题 |

@@ -70,16 +70,22 @@ IPC 通道（`SettingChannels`）：
 `useSettingGroup.ts` 提供工厂：
 
 ```ts
-export function createSettingGroupStore<K extends SettingGroupKey>(id: string, key: K)
+export function createSettingGroupStore<K extends SettingGroupKey>(
+  id: string,
+  key: K,
+  onSaved?: () => void
+)
 ```
 
-内部行为：`setting` 初始值为 `buildSetting()[key]`（先有可渲染的默认值），随后异步 `getGroup(key)` 拉取真实值覆盖；对 `setting` 做 `watchDebounced(..., { debounce: 300, deep: true })` 自动调用 `saveGroup(key, value)`。因此页面里只需要：
+内部行为：`setting` 初始值为 `buildSetting()[key]`（先有可渲染的默认值），随后异步 `getGroup(key)` 拉取真实值覆盖；对 `setting` 做 `watchDebounced(..., { debounce: 300, deep: true })` 自动调用 `saveGroup(key, value)`，成功后触发 `onSaved`。因此页面里只需要：
 
 ```ts
 const { setting } = storeToRefs(useSettingNamingStore())
 ```
 
-不做「数据已就绪」守卫是有意的：即使拉取失败或首启无文件，默认值也会被回写一次，从而生成一份完整的配置文件。
+另外用一个同步 `deep` watcher 记录「用户是否改过这个分组」，`getGroup` 回填前先看这个标记：**用户已经改过就丢弃回填结果**。旧实现是无条件 `setting.value = group`，一旦用户在加载返回前点了开关，就会被旧值整体覆盖——界面上开关弹回，磁盘上只剩覆盖后的旧值，连「点过」的痕迹都留不下（详见「注意事项」）。
+
+不做「数据已就绪」守卫是有意的：首启无文件时 `getGroup` 返回的就是归一化后的默认值，回填后会被防抖回写一次，从而生成一份完整的配置文件（不需要等「加载完成」再渲染控件）。
 
 ## 注意事项
 
@@ -90,3 +96,5 @@ const { setting } = storeToRefs(useSettingNamingStore())
 - **传给 IPC 的载荷必须是纯值**：`@/api/setting` 出口（`src/renderer/src/api/setting.ts`）会先 `toRaw` 再 `structuredClone`，所以 `settingApi.saveGroup(key, value)` 可以直接传响应式对象；但新增的任何 IPC 出口都要自己保证纯值——Vue 的 `ref/reactive` 会把对象包成 Proxy，Proxy 无法通过 IPC 的结构化克隆（报 `#<Object> could not be cloned`），表现为主进程一个字节都收不到、设置改了不生效且重启被重置。
 - 自动保存失败会 `logger.error('设置分组保存失败', error)`，并按 store 实例一次性 `MessagePlugin.error` 提示，不再静默失败。
 - 自动保存有 300ms 防抖：改动后立刻退出应用（不足 300ms）可能丢掉最后一笔写入；退出前 flush 属于后续增强。
+- **加载回填不能无条件覆盖**：`getGroup` 是异步的，用户完全可能在它返回前就点了开关。回填前必须检查「用户是否已改」（同步 deep watcher + `applyingRemote` 标记区分自己写入），否则用户的点击会被旧值冲掉——界面上开关弹回，磁盘上什么痕迹都没有，排查时会误判成「开关坏了」。任何新的设置分组都继承这套保护，无需自己处理。
+- **依赖设置分组的模块级缓存要挂在 `onSaved` 上，不能挂在「值变化」上**：值变化发生在点击瞬间，而落盘要等 300ms 防抖，此时主进程缓存还是旧值，刷新会读到旧值。应用分组就是这么接的：`SettingAppStore.ts` 传入 `() => void refreshNsfwProtection()`，否则 NSFW 开关要整页刷新才生效（影视墙等页面表现为「设置没生效」）。

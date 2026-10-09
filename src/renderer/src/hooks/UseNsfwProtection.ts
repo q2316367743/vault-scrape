@@ -12,16 +12,22 @@
 import { computed, ref, type Ref } from 'vue'
 import type { FileConnection } from '@common/types/file'
 import { settingApi } from '@/api'
+import { useLog } from '@/hooks/UseLog'
 
+const logger = useLog({ name: 'nsfw-protection' })
 const protection = ref(false)
 let loaded = false
 
-/** 读取应用设置里的 NSFW 开关；页面在设置保存后主动调用即可刷新 */
+/** 读取应用设置里的 NSFW 开关；设置保存成功后会由应用设置 store 主动调用刷新 */
 export async function refreshNsfwProtection(): Promise<void> {
   loaded = false
-  const app = await settingApi.getGroup('app')
-  protection.value = app.nsfwProtection
-  loaded = true
+  try {
+    const app = await settingApi.getGroup('app')
+    protection.value = app.nsfwProtection
+    loaded = true
+  } catch (error: unknown) {
+    logger.error('NSFW 保护状态读取失败，保持当前状态并在下次使用时重试', error)
+  }
 }
 
 /** NSFW 保护状态：`protection` 为总开关，传入连接后 `active` 才表示该存储是否受保护 */

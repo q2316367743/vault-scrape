@@ -17,7 +17,10 @@ const active = ref(typeof route.query.group === 'string' ? route.query.group : '
 </script>
 
 <template>
-  <page-layout title="设置" description="保存在 ~/.vault-scrape/setting/settings.json，修改后自动保存">
+  <page-layout
+    title="设置"
+    description="保存在 ~/.vault-scrape/setting/settings.json，修改后自动保存"
+  >
     <t-tabs v-model="active" class="setting-tabs" theme="normal">
       <t-tab-panel value="app" label="应用设置">
         <setting-app-panel />
