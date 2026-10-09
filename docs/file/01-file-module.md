@@ -46,7 +46,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 
 ## 3. FileClient 接口与统一语义
 
-`FileClient`（`src/main/src/modules/file/FileClient.ts`）共 14 个方法：`init`、`dispose`、`stat`、`exists`、`list`、`mkdir`、`createFile`、`readText`、`writeText`、`move`、`copy`、`remove`、`upload`、`download`，外加只读属性 `protocol`。
+`FileClient`（`src/main/src/modules/file/FileClient.ts`）共 15 个方法：`init`、`dispose`、`stat`、`exists`、`list`、`mkdir`、`createFile`、`readText`、`readRange`、`writeText`、`move`、`copy`、`remove`、`upload`、`download`，外加只读属性 `protocol`。
 
 统一语义（三实现必须一致，`AbstractFileClient` 负责公共部分）：
 
@@ -59,6 +59,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | `remove` | `recursive` 默认 `true`；目录非空且 `recursive: false` 抛 `notEmpty` |
 | `move` / `copy` | 仅限**同一连接内**；目标父目录不存在时按底层错误收敛为 `notFound`，不自动建父目录 |
 | `readText` | 只用于 NFO / JSON 等小文件；大文件一律走 `upload` / `download` 的流式通道 |
+| `readRange` | `readRange(path, start, end)`，**闭区间（含 `end`）**，返回 node `Readable`；专供 `storage://` 播放器按区间取字节，调用方负责已用 `stat` 校验过区间（不越界），实现不再二次裁剪。WebDAV 的库是**按 `range.start` 发 Range 头、服务器没返回 206 就抛错**，所以三个实现的口径必须一致 |
 | 超时 | 每个方法都被 `run()` 包住，超时抛 `timeout`（默认取设置 `network.timeout`，非法值回落 30 秒） |
 | 错误 | 实现内部只抛 `FileError`；非 `FileError` 由 `fileErrorUtils.toFileError` 按 Node 错误码 / HTTP 状态码 / 兜底码收敛 |
 
@@ -74,6 +75,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | `mkdir` | `mkdir({ recursive })` | `createDirectory({ recursive })` | 逐级 `createDirectory`，`alreadyExists` 视为成功 |
 | `createFile` | `open(flag: overwrite ? 'w' : 'wx')` 后关闭 | `putFileContents(remote, '')` | `createFile(remote)` / `createFile(remote, content)` |
 | `readText` | `readFile(utf-8)` | `getFileContents({ format: 'text' })`，返回值统一转文本 | `readFile(remote).toString('utf-8')` |
+| `readRange` | `access` 探存在 → `createReadStream({ start, end })` | `createReadStream(remote, { range: { start, end } })`，返回值用 `instanceof Readable` 收窄（库返回自己的 `ReadableLike`，但运行时是真 `PassThrough`） | `createFileReadStream(remote, { start, end })`——**依赖 `patches/@awo00+smb2+1.1.1.patch`**（上游只能从 0 顺序读） |
 | `writeText` | `writeFile` | `putFileContents` | `createFile(remote, content)`（写前按 `overwrite` 预处理） |
 | `move` | `rename`（先查目标） | `moveFile`（服务端 MOVE） | 按源类型 `renameDirectory` / `renameFile` |
 | `copy` | `cp({ recursive })` | `copyFile`（服务端 COPY） | **无服务端复制**：目录逐项递归、文件走读流 → 写流 |
@@ -88,6 +90,19 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 - `getFileContents()` 的 `format` 只有 `'text' | 'binary'`，**没有** `'stream'`，大文件下载只能走 `createReadStream`；
 - `createReadStream()` / `createWriteStream()` 返回库自己的 `ReadableLike` / `WritableLike`（不满足 node `Readable` / `Writable` 接口），因此 `streamCopy.ts` 额外提供 `ProgressSource` 这个最小结构接口与 `withProgress`；
 - `AuthType` 是**字符串枚举**（`AuthType.Auto` 等），不是字面量联合，`basic` 在库里的名字是 `AuthType.Password`。
+
+### SMB 区间读（`patches/@awo00+smb2+1.1.1.patch`）
+
+`@awo00/smb2` 的 `File.createReadStream()` 只能从偏移 0 顺序读完整个文件，`Tree.createFileReadStream(path)` 也不接受区间——播放器每拖一次进度条就要从头读一遍，等于把整个视频重新拉一次。补丁（仓库 `patches/` 下，随仓库提交）做了两件事：
+
+- `File.js` 新增 `createRangeReadStream(start, end)`：复用上游已有的 `readChunk(initial, offset)`（它本来就按偏移发 SMB2 READ，所以**不用碰报文层**），按 `maxReadChunkLength` 步进、按 `fileSize` 夹取，最后一跨用 `subarray` 裁到 `end`；
+- `Tree.createFileReadStream(path, options?)` 增加可选 `{ start?, end? }`：给了 `start` 就走区间读（`end` 缺省读到文件尾），否则保持原来的顺序读；「流关闭时关文件」的约定不变。
+
+配套约定：
+
+- `postinstall` 串联为 `electron-builder install-app-deps && patch-package`，`yarn install` 后自动生效；`.gitignore` 不含 `patches/`。
+- `package.json` 里 `@awo00/smb2` 是**精确版本 `1.1.1`**（不是 `^`）：补丁文件名带版本号，升级必须显式重新生成，钉死版本避免 `yarn install` 后补丁静默失配。
+- 生成 / 更新补丁：改完 `node_modules/@awo00/smb2/dist/client/{File,Tree}.{js,d.ts}` 后跑 `npx patch-package @awo00/smb2 --use-yarn`。**`--use-yarn` 必须带**：本仓库同时存在 `yarn.lock` 与 `package-lock.json`，patch-package 8 的包管理器探测会误判成 npm 并以 status 255 失败（`postinstall` 里的应用阶段不需要该参数）。
 
 ## 5. 连接配置与密码存储
 
@@ -149,7 +164,8 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | 本地根逃逸 | `resolveInsideRoot` 用 `startsWith(root + sep)` 复核，但不解析符号链接——根目录内的软链接可以指向根外（已知限制） |
 | 根目录删除 | 明确禁止，抛 `invalidPath` |
 | 0 字节文件 | 正常支持（`contentLength: 0`、空流均可） |
-| 大文件 | 一律流式，禁止整文件读入内存；`readText` 只用于 NFO / JSON 小文件 |
+| 大文件 | 一律流式，禁止整文件读入内存；`readText` 只用于 NFO / JSON 小文件；播放由 `readRange` 按区间取字节 |
+| SMB 区间读依赖补丁 | SMB 的 `readRange` 建立在 `patches/@awo00+smb2+1.1.1.patch` 之上，升级 `@awo00/smb2` 后必须重新生成补丁（见 §4） |
 | 名称冲突 | 默认 `overwrite: false`，渲染层需要覆盖时必须显式传 `true` |
 
 ## 9. 手工验证清单

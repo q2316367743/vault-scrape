@@ -153,6 +153,7 @@ function toWallItem(
     num: numOf(item, record),
     title: titleOf(item, record),
     coverUrl: coverUrlOf(item, record, evidence),
+    playUrl: buildResourceUrl(item.connectionId, item.id, item.name),
     scraped: record !== undefined || evidence?.hasNfo === true,
     scrapedAt: record?.updatedAt ?? 0,
     pluginId: record?.pluginId ?? '',

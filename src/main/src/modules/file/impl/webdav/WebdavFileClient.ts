@@ -1,5 +1,6 @@
 import { createReadStream } from 'fs'
 import { stat as statPath } from 'fs/promises'
+import { Readable } from 'stream'
 import { AuthType, createClient, type FileStat, type WebDAVClient } from 'webdav'
 import {
   FileError,
@@ -133,6 +134,22 @@ export class WebdavFileClient extends AbstractFileClient {
           .then((content) => toText(content)),
       'notFound',
       '读取文件'
+    )
+  }
+
+  async readRange(path: string, start: number, end: number): Promise<Readable> {
+    const remote = this.path(path)
+    return this.run(
+      async () => {
+        // range 选项会让库发出 Range 头，服务器不返回 206 时库自己抛错
+        const source = await this.client.createReadStream(remote, { range: { start, end } })
+        if (!(source instanceof Readable)) {
+          throw new FileError('network', `WebDAV 未返回流式响应：${remote}`)
+        }
+        return source
+      },
+      'network',
+      '读取文件区间'
     )
   }
 

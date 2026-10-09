@@ -11,6 +11,7 @@ import {
   writeFile
 } from 'fs/promises'
 import { join, resolve } from 'path'
+import type { Readable } from 'stream'
 import {
   FileError,
   createFileEntry,
@@ -123,6 +124,20 @@ export class LocalFileClient extends AbstractFileClient {
   async readText(path: string): Promise<string> {
     const remote = this.path(path)
     return this.run(() => readFile(this.toLocal(remote), 'utf-8'), 'notFound', '读取文件')
+  }
+
+  async readRange(path: string, start: number, end: number): Promise<Readable> {
+    const remote = this.path(path)
+    const local = this.toLocal(remote)
+    return this.run(
+      async () => {
+        // 先探一次存在性，让 notFound 在流建立前就暴露，而不是变成流上的 error 事件
+        await access(local)
+        return createReadStream(local, { start, end })
+      },
+      'notFound',
+      '读取文件区间'
+    )
   }
 
   async writeText(path: string, content: string, options?: FileCreateOptions): Promise<void> {

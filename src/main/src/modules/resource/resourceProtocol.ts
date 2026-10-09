@@ -5,7 +5,10 @@
  * - 地址形如 `storage://{存储ID}/{资源ID}/{原始文件名}`，**只认 ID，不接受绝对路径**，
  *   所以渲染层拿不到、也构造不出越权地址；
  * - 解析顺序：资源索引表 → 结果行封面兜底（索引被清空后封面仍可显示）；
- * - 本地存储直接读磁盘（`net.fetch` 自带 Range/流式），远端存储把整文件落到本机缓存后再读；
+ * - 视频（`kind === 'video'`）走 Range 流式：主进程自己解析 Range 头按区间读，
+ *   本机直读磁盘、WebDAV 用原生 Range、SMB 用补丁后的区间读，应答 200 / 206 / 416
+ *   （`net.fetch` 不会转发 Range 头，非 faststart 的 MP4 会整段加载失败，故不能走它）；
+ * - 其它资源（封面、NFO）沿用 `net.fetch`：本地直接读磁盘，远端先落本机缓存再读；
  * - 任何失败都返回 404 并只记日志（同一资源 60 秒内只记一条），不把异常抛回渲染层。
  */
 import { randomUUID } from 'crypto'
@@ -13,8 +16,8 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlin
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { app, net, protocol } from 'electron'
-import type { FileConnection } from '@common/types/file'
-import { RESOURCE_SCHEME, parseResourceUrl } from '@common/types/resource'
+import { guessMimeType, type FileConnection } from '@common/types/file'
+import { RESOURCE_SCHEME, parseResourceUrl, type ResourceKind } from '@common/types/resource'
 import { appendLog } from '$/db/repo/logRepo'
 import { getResourceById } from '$/db/repo/resourceRepo'
 import { findScrapeFileByCoverId } from '$/db/repo/scrapeRepo'
@@ -22,6 +25,7 @@ import { getTask } from '$/db/repo/taskRepo'
 import { getConnection } from '$/modules/file/fileConnectionStore'
 import { resolveInsideRoot } from '$/modules/file/impl/local/localPath'
 import { getFileClient } from '$/modules/file/fileClientManager'
+import { toWebStream } from '$/modules/file/streamToWeb'
 
 const CONNECTION_ID_PATTERN = /^[a-z0-9-]{1,64}$/
 const RESOURCE_ID_PATTERN = /^[0-9a-f]{16}$/
@@ -71,18 +75,22 @@ interface ResourceTarget {
   path: string
   /** 已知大小；0 表示未知（封面兜底路径推不出大小） */
   size: number
+  /** 资源类型：决定走 Range 流式（video）还是 `net.fetch` */
+  kind: ResourceKind
 }
 
 /** 索引表优先、结果行封面兜底 */
 function resolveTarget(connectionId: string, resourceId: string): ResourceTarget | null {
   const row = getResourceById(resourceId)
-  if (row && row.connectionId === connectionId) return { path: row.path, size: row.size }
+  if (row && row.connectionId === connectionId) {
+    return { path: row.path, size: row.size, kind: row.kind }
+  }
 
   const file = findScrapeFileByCoverId(resourceId)
   if (!file || file.coverPath.length === 0) return null
   const task = getTask(file.taskId)
   if (!task || task.connectionId !== connectionId) return null
-  return { path: file.coverPath, size: 0 }
+  return { path: file.coverPath, size: 0, kind: 'image' }
 }
 
 function isCacheUsable(file: string, size: number): boolean {
@@ -169,6 +177,82 @@ function pruneCache(): void {
   }
 }
 
+/** 单个字节区间（闭区间，含 end） */
+interface ByteRange {
+  start: number
+  end: number
+}
+
+/**
+ * 解析单区间 Range 头：`bytes=start-end` / `bytes=start-` / `bytes=-suffix`。
+ *
+ * - 尾部探测（`bytes=-N`）必须支持：Chromium 靠它去文件末尾读 moov，非 faststart 的 MP4 全靠这一下；
+ * - 多区间（`bytes=0-1,5-6`）与非法值一律返回 null，退化成 200 全量，不做 multipart/byteranges；
+ * - start 超出文件大小返回 'unsatisfiable'，由调用方应答 416。
+ */
+function parseByteRange(header: string | null, total: number): ByteRange | 'unsatisfiable' | null {
+  if (!header) return null
+  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim())
+  if (!match) return null
+  const rawStart = match[1] ?? ''
+  const rawEnd = match[2] ?? ''
+  if (rawStart === '' && rawEnd === '') return null
+
+  if (rawStart === '') {
+    const suffix = Number(rawEnd)
+    if (!Number.isFinite(suffix) || suffix <= 0) return null
+    return { start: Math.max(0, total - suffix), end: total - 1 }
+  }
+
+  const start = Number(rawStart)
+  if (!Number.isFinite(start) || start >= total) return 'unsatisfiable'
+  if (rawEnd === '') return { start, end: total - 1 }
+
+  const end = Number(rawEnd)
+  if (!Number.isFinite(end) || end < start) return 'unsatisfiable'
+  return { start, end: Math.min(end, total - 1) }
+}
+
+/**
+ * 视频请求：当自己的 Range 服务端。
+ *
+ * 大小与 MIME 以 `stat` 为准（索引可能过期，而 206 的 `Content-Range` 必须和真实大小一致）；
+ * 流的取消由 `toWebStream` 传播成 `destroy()`，拖进度条 / 关页面都不会漏句柄。
+ */
+async function handleVideoRequest(
+  connection: FileConnection,
+  target: ResourceTarget,
+  request: Request
+): Promise<Response> {
+  const client = await getFileClient(connection.id)
+  const info = await client.stat(target.path)
+  if (info.type !== 'file' || info.size <= 0) return notFound()
+
+  const total = info.size
+  const parsed = parseByteRange(request.headers.get('range'), total)
+  if (parsed === 'unsatisfiable') {
+    return new Response(null, {
+      status: 416,
+      headers: { 'Content-Range': `bytes */${total}`, 'Accept-Ranges': 'bytes' }
+    })
+  }
+
+  const start = parsed ? parsed.start : 0
+  const end = parsed ? parsed.end : total - 1
+  const stream = await client.readRange(target.path, start, end)
+  const headers = new Headers({
+    'Content-Type': info.mime.length > 0 ? info.mime : guessMimeType(info.name),
+    'Content-Length': `${end - start + 1}`,
+    'Accept-Ranges': 'bytes'
+  })
+
+  if (!parsed) {
+    return new Response(toWebStream(stream), { status: 200, headers })
+  }
+  headers.set('Content-Range', `bytes ${start}-${end}/${total}`)
+  return new Response(toWebStream(stream), { status: 206, headers })
+}
+
 async function handleResourceRequest(request: Request): Promise<Response> {
   const parts = parseResourceUrl(request.url)
   if (!parts) return notFound()
@@ -181,6 +265,7 @@ async function handleResourceRequest(request: Request): Promise<Response> {
     if (!connection) return notFound()
     const target = resolveTarget(connectionId, resourceId)
     if (!target) return notFound()
+    if (target.kind === 'video') return await handleVideoRequest(connection, target, request)
     if (connection.protocol === 'local') {
       const osPath = resolveInsideRoot(connection.rootPath, target.path)
       return await net.fetch(pathToFileURL(osPath).toString())

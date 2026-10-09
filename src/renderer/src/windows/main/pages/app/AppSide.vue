@@ -19,7 +19,7 @@ import { themeSystem } from '@/global/AppTheme'
 /** 一级菜单：与 router.ts 的九个页面一一对应；工具项按前缀匹配，子页（/tools/search）也保持高亮 */
 const menuItems: SideMenuItem[] = [
   { label: '概览', icon: DashboardIcon, to: '/overview' },
-  { label: '影视墙', icon: FilmIcon, to: '/media' },
+  { label: '影视墙', icon: FilmIcon, to: '/media', match: 'prefix' },
   { type: 'divider', label: '' },
   { label: '工作台', icon: DesktopIcon, to: '/workspace' },
   { label: '工具', icon: ToolsIcon, to: '/tools', match: 'prefix' },

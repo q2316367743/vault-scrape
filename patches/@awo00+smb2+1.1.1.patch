@@ -1,0 +1,76 @@
+diff --git a/node_modules/@awo00/smb2/dist/client/File.d.ts b/node_modules/@awo00/smb2/dist/client/File.d.ts
+index 2ac2bb9..5abcc79 100644
+--- a/node_modules/@awo00/smb2/dist/client/File.d.ts
++++ b/node_modules/@awo00/smb2/dist/client/File.d.ts
+@@ -32,6 +32,7 @@ declare class File extends EventEmitter {
+     private readChunk;
+     read(): Promise<Buffer<ArrayBuffer>>;
+     createReadStream(): Readable;
++    createRangeReadStream(start: number, end: number): Readable;
+     exists(path: string): Promise<boolean>;
+     close(): Promise<void>;
+ }
+diff --git a/node_modules/@awo00/smb2/dist/client/File.js b/node_modules/@awo00/smb2/dist/client/File.js
+index dbc77f5..9a563ba 100644
+--- a/node_modules/@awo00/smb2/dist/client/File.js
++++ b/node_modules/@awo00/smb2/dist/client/File.js
+@@ -177,6 +177,23 @@ class File extends events_1.EventEmitter {
+             }
+         }.bind(this)());
+     }
++    createRangeReadStream(start, end) {
++        return stream_1.Readable.from(async function* read() {
++            const fileSize = Number(this.fileSize);
++            let offset = Math.max(0, Math.floor(start));
++            const to = Math.min(Math.floor(end), fileSize - 1);
++            while (offset <= to) {
++                const initial = Math.floor(offset / maxReadChunkLength);
++                const chunk = await this.readChunk(initial, offset);
++                if (chunk.length === 0) {
++                    break;
++                }
++                const remain = to - offset + 1;
++                yield remain < chunk.length ? chunk.subarray(0, remain) : chunk;
++                offset += chunk.length;
++            }
++        }.bind(this)());
++    }
+     async exists(path) {
+         try {
+             await this.open(path);
+diff --git a/node_modules/@awo00/smb2/dist/client/Tree.d.ts b/node_modules/@awo00/smb2/dist/client/Tree.d.ts
+index 3b5e118..d914d3b 100644
+--- a/node_modules/@awo00/smb2/dist/client/Tree.d.ts
++++ b/node_modules/@awo00/smb2/dist/client/Tree.d.ts
+@@ -30,7 +30,10 @@ declare class Tree extends EventEmitter {
+     removeFile(path: string): Promise<void>;
+     renameFile(path: string, newPath: string): Promise<void>;
+     readFile(path: string): Promise<Buffer<ArrayBuffer>>;
+-    createFileReadStream(path: string): Promise<import("stream").Readable>;
++    createFileReadStream(path: string, options?: {
++        start?: number;
++        end?: number;
++    }): Promise<import("stream").Readable>;
+     private registerFile;
+     private registerDirectory;
+     createRequest(header?: Header, body?: any): import("../protocol/smb2/Request").default;
+diff --git a/node_modules/@awo00/smb2/dist/client/Tree.js b/node_modules/@awo00/smb2/dist/client/Tree.js
+index 3c8ac1e..4795cfb 100644
+--- a/node_modules/@awo00/smb2/dist/client/Tree.js
++++ b/node_modules/@awo00/smb2/dist/client/Tree.js
+@@ -168,11 +168,13 @@ class Tree extends events_1.EventEmitter {
+         await file.close();
+         return buffer;
+     }
+-    async createFileReadStream(path) {
++    async createFileReadStream(path, options) {
+         const file = new File_1.default(this);
+         this.registerFile(file);
+         await file.open(path);
+-        const stream = file.createReadStream();
++        const stream = options && typeof options.start === "number"
++            ? file.createRangeReadStream(options.start, typeof options.end === "number" ? options.end : Number(file.fileSize) - 1)
++            : file.createReadStream();
+         stream.once("close", async () => {
+             await file.close();
+         });

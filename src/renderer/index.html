@@ -3,10 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <title>vault-scrape</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!--
+      `media-src` 必须显式允许 `storage:`：artplayer 把播放地址交给 <video>，
+      不写就会回落到 `default-src 'self'`，私有协议的影片一律加载失败。
+      https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: storage:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: storage:; media-src 'self' storage:"
     />
   </head>
 

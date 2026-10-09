@@ -1,3 +1,4 @@
+import type { Readable } from 'stream'
 import {
   FILE_ROOT,
   FileError,
@@ -43,6 +44,14 @@ export interface FileClient {
   createFile(path: string, options?: FileCreateOptions): Promise<void>
   /** 读文本（NFO / JSON 等小文件），免落临时文件 */
   readText(path: string): Promise<string>
+  /**
+   * 按字节区间读（闭区间，start / end 均含），用于 `storage://` 的媒体流式播放。
+   *
+   * 约定：三种实现都必须返回真正的 node `Readable`（可被 `Readable.toWeb` 转换、
+   * 也支持 `destroy()` 取消），不得返回协议私有的 ReadableLike。
+   * 调用方负责保证 `0 <= start <= end`，实现按文件实际大小兜底。
+   */
+  readRange(path: string, start: number, end: number): Promise<Readable>
   writeText(path: string, content: string, options?: FileCreateOptions): Promise<void>
   /** 移动 / 复制 */
   move(from: string, to: string, options?: FileCreateOptions): Promise<void>
@@ -76,6 +85,7 @@ export abstract class AbstractFileClient implements FileClient {
   abstract mkdir(path: string, options?: FileMkdirOptions): Promise<void>
   abstract createFile(path: string, options?: FileCreateOptions): Promise<void>
   abstract readText(path: string): Promise<string>
+  abstract readRange(path: string, start: number, end: number): Promise<Readable>
   abstract writeText(path: string, content: string, options?: FileCreateOptions): Promise<void>
   abstract move(from: string, to: string, options?: FileCreateOptions): Promise<void>
   abstract copy(from: string, to: string, options?: FileCreateOptions): Promise<void>

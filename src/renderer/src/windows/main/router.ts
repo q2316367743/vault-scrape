@@ -14,6 +14,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/windows/main/pages/media/MediaWallPage.vue')
   },
   {
+    // 影片详情：参数走 query（connectionId + path），可以直接刷新 / 收藏这一刻的地址
+    path: '/media/detail',
+    name: '影视墙详情',
+    component: () => import('@/windows/main/pages/media/detail/MediaDetailPage.vue')
+  },
+  {
     path: '/workspace',
     name: '工作台',
     component: () => import('@/windows/main/pages/workspace/WorkspacePage.vue')

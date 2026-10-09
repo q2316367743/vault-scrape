@@ -16,6 +16,7 @@
 | `electron.vite.config.ts` | 三个构建目标的别名、插件与端口 |
 | `uno.config.ts` | 原子类与 TDesign CSS 变量的桥接 |
 | `electron-builder.yml` | 打包配置（原生依赖 asarUnpack） |
+| `patches/` | `patch-package` 的包补丁（当前只有 `@awo00+smb2+1.1.1.patch` 的区间读），由 `postinstall` 自动应用 |
 | `src/main/index.ts` | 主进程入口：注册 IPC、初始化数据库、注册 `storage://` 私有协议、建窗口 |
 | `src/preload/index.ts` | contextBridge 暴露面 |
 | `src/renderer/index.html` | 渲染进程 HTML 入口 |
@@ -86,10 +87,11 @@ src/
 
 ## 依赖归类规则
 
-- `dependencies`：主进程/预加载在运行时真正 require、需要随包发布的包。当前为 `@awo00/smb2`、`@electron-toolkit/preload`、`@electron-toolkit/utils`、`axios`、`better-sqlite3`、`drizzle-orm`、`electron-updater`。
+- `dependencies`：主进程/预加载在运行时真正 require、需要随包发布的包。当前为 `@awo00/smb2`、`@electron-toolkit/preload`、`@electron-toolkit/utils`、`axios`、`better-sqlite3`、`drizzle-orm`、`electron-updater`。其中 `@awo00/smb2` 写**精确版本 `1.1.1`（不带 `^`）**：`patches/` 的补丁按版本号命名与应用，升到其它版本补丁会静默失效，SMB 的区间读随之退化为整段顺序读。
 - `devDependencies`（渲染进程）：只在渲染进程被 Vite 打包的包（`vue`、`vue-router`、`pinia`、`tdesign-vue-next`、`tdesign-icons-vue-next`、`dayjs`、`es-toolkit`、`@vueuse/core`、`unocss` 等）与全部构建/校验工具。这类包的内容会进入渲染产物，不需要作为 Electron 运行时依赖打包。
 - `devDependencies`（主进程 bundle）：被 Vite 打进主进程产物的纯 JS 包也归 `devDependencies`，例如文件模块用的 `webdav`（ESM-only，`externalizeDepsPlugin` 只外部化 `dependencies`，放进 `dependencies` 反而会让主进程去 require 一个 ESM 包）与插件模块用的 `cheerio`。判断方法：这个包是「构建期被 Vite 打进去」还是「运行期由 Electron require 进来」。
 - 新增依赖时先判断「谁在运行时 require 它」，再决定归类。
+- `patches/`：用 `patch-package` 维护无法上游解决的包改动（当前只有 `@awo00/smb2` 的 `readRange` 区间读）。`package.json` 的 `postinstall` 串成 `electron-builder install-app-deps && patch-package`，安装依赖后自动应用；生成命令必须带 `--use-yarn`（仓库同时存在 `yarn.lock` 与 `package-lock.json`，`patch-package` 会误判为 npm 而失败）：`npx patch-package @awo00/smb2 --use-yarn`。升级该包后要重新生成并提交补丁，同时更新钉死的精确版本号。
 
 ## 注意事项
 

@@ -4,7 +4,8 @@
  * 契约：
  * - 墙面以磁盘上的视频为准（`resource` 表），刮削记录（`scrape_file`）只用来补标题与封面，
  *   所以磁盘上删掉的影片会自动从墙上消失；
- * - 路径一律是连接内绝对路径，封面一律是 `storage://` 协议地址（空串表示没有封面）；
+ * - 路径一律是连接内绝对路径，封面与播放地址一律是 `storage://` 协议地址（封面空串表示没有封面）；
+ * - 播放地址由主进程用资源 ID 构造，渲染层拿不到磁盘路径、也构造不出越权地址。
  * - 跨数据源靠 `connectionId` 区分，同名路径的不同存储不会互相污染。
  */
 import type { MediaNfoMeta } from './nfo'
@@ -29,6 +30,8 @@ export interface MediaWallItem {
   title: string
   /** 封面地址（`storage://`），空串表示没有封面 */
   coverUrl: string
+  /** 播放地址（`storage://`），可直接喂给 video / artplayer；只有索引里存在这个视频时才非空 */
+  playUrl: string
   /** 是否匹配到刮削记录 */
   scraped: boolean
   /** 匹配到的刮削记录更新时间；未匹配为 0（仅用于排序） */

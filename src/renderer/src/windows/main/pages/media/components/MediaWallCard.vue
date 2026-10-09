@@ -5,15 +5,16 @@
  * 契约：
  * - 封面只走 `item.coverUrl`（`storage://` 协议），没有封面时显示占位，不自己拼路径；
  * - NSFW 保护按「全局开关 + 本条记录所属存储的 nsfw 标记」判定，连接由父页面传进来；
- * - 点击整张卡片打开详情抽屉；卡片内其它可点击元素（如遮罩按钮）必须自己阻止冒泡。
+ * - 点击整张卡片跳详情页（参数走 query），播放与更细的信息都在那边；
+ *   卡片内其它可点击元素（如遮罩按钮）必须自己阻止冒泡。
  */
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 import { FilmIcon, TagIcon } from 'tdesign-icons-vue-next'
 import SensitiveImage from '@/components/SensitiveImage.vue'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import type { FileConnection } from '@common/types/file'
 import type { MediaWallItem } from '@common/types/media'
-import { openMediaDetailDrawer } from '../modals/MediaDetailDrawer'
 import { formatSize, formatTime } from '../mediaUtils'
 
 const props = defineProps<{
@@ -24,15 +25,13 @@ const props = defineProps<{
   sourceName: string
 }>()
 
+const router = useRouter()
 const { active } = useNsfwProtection(computed(() => props.connection))
 
 function openDetail(): void {
-  openMediaDetailDrawer({
-    connectionId: props.item.connectionId,
-    path: props.item.path,
-    title: props.item.title,
-    sourceName: props.sourceName,
-    protect: active.value
+  void router.push({
+    name: '影视墙详情',
+    query: { connectionId: props.item.connectionId, path: props.item.path }
   })
 }
 </script>

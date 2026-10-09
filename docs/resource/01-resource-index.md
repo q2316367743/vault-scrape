@@ -26,7 +26,7 @@ storage://<存储ID>/<资源ID>/<原始文件名>.<原始拓展名>
 | `src/main/src/db/schema/resource.ts` | `resource` 表定义 |
 | `src/main/src/db/repo/resourceRepo.ts` | 索引仓储（按目录整体替换、按 id 查询、按数据源清理、按 kind 列出与取最新索引时间） |
 | `src/main/src/modules/resource/resourceIndex.ts` | `resourceIdOf()` 与 `indexDirectory()`（列目录 + 写索引） |
-| `src/main/src/modules/resource/resourceProtocol.ts` | 特权协议登记与 `storage://` 请求处理（本地直读 / 远端缓存） |
+| `src/main/src/modules/resource/resourceProtocol.ts` | 特权协议登记与 `storage://` 请求处理（视频走 Range 流式，其它资源本地直读 / 远端缓存） |
 
 ## 资源 ID
 
@@ -63,11 +63,13 @@ protocol.handle('storage', (request) => handleResourceRequest(request))
 
 调用点在 `src/main/index.ts`：`registerResourceScheme()` 在模块顶层（ready 之前），`registerResourceProtocol()` 在 `registerIpc()` 之后、`createWindow()` 之前。
 
-渲染层的 CSP 必须放行该协议，否则封面会静默变成空白：
+渲染层的 CSP 必须放行该协议，否则封面会静默变成空白、视频会加载失败：
 
 ```
-img-src 'self' data: storage:
+img-src 'self' data: storage:; media-src 'self' storage:
 ```
+
+两条都要（`src/renderer/index.html`）：封面走 `img-src`，播放地址交给 `<video>` 走 `media-src`——不写 `media-src` 会回落到 `default-src 'self'`，`storage:` 的视频一律被拦。
 
 **注意**：`standard: true` 会把 URL 的 host 段小写化，因此存储 ID 必须是小写（现有 id 为小写 `randomUUID()`，符合）。
 
@@ -78,12 +80,25 @@ img-src 'self' data: storage:
    - `getResourceById(resourceId)`，并要求 `row.connectionId === connectionId`（跨存储访问一律 404）；
    - 兜底：`findScrapeFileByCoverId(resourceId)` 拿到任务行，校验任务所属存储后使用 `cover_path`。
      这条兜底让**封面不依赖索引重建**也能显示（例如索引重建失败或尚未重建）。
-3. 按协议分派：
-   - `local`：`resolveInsideRoot(connection.rootPath, row.path)` 校验不越根后，用 `net.fetch(pathToFileURL(...))` 直接把本地文件作为响应；Range、流式由 `net.fetch` 自己处理，不把整文件读进内存；
-   - `webdav` / `smb`：先落到本地缓存 `~/.vault-scrape/cache/resource/<resourceId>`，再走同样的 `net.fetch`。
+3. 按 `row.kind` 分派：
+   - `video`：走自建的 Range 服务端（见下一节），本机 / WebDAV / SMB 三种协议都按区间实时读，**不落缓存**；
+   - 其余（封面、NFO、兜底路径）：
+     - `local`：`resolveInsideRoot(connection.rootPath, row.path)` 校验不越根后，用 `net.fetch(pathToFileURL(...))` 直接把本地文件作为响应；Range、流式由 `net.fetch` 自己处理，不把整文件读进内存；
+     - `webdav` / `smb`：先落到本地缓存 `~/.vault-scrape/cache/resource/<resourceId>`，再走同样的 `net.fetch`。
 4. 任何异常都只记日志并返回 `404`，不让协议处理抛错（抛错会变成渲染层的网络错误噪音）。
 
-### 远端缓存
+### 视频的 Range 流式（`kind === 'video'`）
+
+播放不能走 `net.fetch`：**`net.fetch` 不会把请求的 `Range` 头转给本地文件或远端流**，播放器只能拿到整段响应，非 faststart 的 MP4（moov 在文件尾）会直接加载失败。因此视频请求由主进程自己当服务端（`handleVideoRequest`）：
+
+- 先 `client.stat(path)` 取**权威**大小与 MIME（索引可能过期，而 206 的 `Content-Range` 必须与真实大小一致），不是文件或大小为 0 → `404`；
+- `parseByteRange(header, total)` 只解析单区间：`bytes=start-end` / `bytes=start-` / `bytes=-suffix`；多区间与非法值退化成「无 Range」；
+- 应答三种：无 Range → `200` + `Accept-Ranges: bytes` + `Content-Length`；有 Range → `206` + `Content-Range: bytes s-e/total`；`start` 超出文件大小 → `416` + `Content-Range: bytes */total`；
+- 区间读用 `FileClient.readRange(path, start, end)`（**闭区间，含 end**）：本机 `createReadStream`、WebDAV `createReadStream({ range })`（服务器没返回 206 时由库自己抛错）、SMB `createFileReadStream({ start, end })`（依赖 `patches/@awo00+smb2+1.1.1.patch`）；
+- node `Readable` → `Response` 的 body 走 `modules/file/streamToWeb.ts`：主进程里 DOM 与 `stream/web` 两套 `ReadableStream` 声明共存，`Readable.toWeb` 的返回值不能直接喂给 `new Response(...)`（TS2345），所以手写适配器（队列积压 `pause()`、`pull` 时 `resume()`、`cancel` 时 `destroy()` 源流）。
+- 尾部探测 `bytes=-N` 必须支持：Chromium 靠它去文件末尾读 moov，不支持就播不了非 faststart 的 MP4。
+
+### 远端缓存（只服务非视频资源）
 
 - 命中判定：文件存在且大小与索引记录一致（兜底路径没有 size 时只要文件存在即算命中）；
 - 写入：先下到 `<目标>.<randomUUID>.tmp` 再 `rename`，避免半截文件被当成缓存；
@@ -99,6 +114,6 @@ img-src 'self' data: storage:
 ## 限制与后续
 
 - **索引查询的 IPC 仍然很窄**：`resource` 表已就位，但 `db` 域不为它开查询通道；影视墙通过 `media` 域的 `media:wall` 一次性拉全部 `kind = 'video'` 的资源（`listResourceByKind` + `maxResourceIndexedAt`，见 [影视墙页面](../page/04-media-wall-page.md)），`listResourceByDir` / `countResource` 只被主进程自己用。影视墙还会顺带读 `kind = 'nfo'` 与 `kind = 'image'` 的索引，用来判断「同目录有没有刮削产出」并取同目录封面——只查索引、不读文件内容。按目录分页浏览的媒体库页面仍未实现。
-- **大文件流式播放**：本地路径已经由 `net.fetch` 支持 Range；远端（WebDAV/SMB）仍是「整文件落缓存后再响应」，播放器拖动进度条要等首次下载完成。
+- **大文件流式播放**：视频（`kind = 'video'`）已经自建 Range 服务端，本机 / WebDAV / SMB 都是按区间实时读、点开即播、不占磁盘；代价是拖动进度条要重新向远端要数据，网络差时会有缓冲等待（后续可加本地分片缓存）。封面 / NFO 这类小文件仍是「远端整文件落缓存后再响应」。
 - **目录嵌套**：同一存储的库根不应互相嵌套，索引按「最后一次扫描的目录」整体替换，嵌套时外层的索引会被内层扫描覆盖对应路径。
 - **失效资源**：索引被清理后，`storage://` 地址会返回 404，界面表现为图片空白（不报错）。

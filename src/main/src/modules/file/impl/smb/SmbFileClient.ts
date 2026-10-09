@@ -1,5 +1,6 @@
 import { createReadStream } from 'fs'
 import { stat as statPath } from 'fs/promises'
+import type { Readable } from 'stream'
 import { Client } from '@awo00/smb2'
 import {
   FileError,
@@ -163,6 +164,22 @@ export class SmbFileClient extends AbstractFileClient {
       () => this.requireTree().readFile(remote).then((content) => content.toString('utf-8')),
       'notFound',
       '读取文件'
+    )
+  }
+
+  /**
+   * 按字节区间读。
+   *
+   * `@awo00/smb2` 原本只能从 0 顺序读整文件，本项目的 `patches/@awo00+smb2+1.1.1.patch`
+   * 给 Tree.createFileReadStream 加了 `{ start, end }`（闭区间），这里直接使用；
+   * 升级该依赖时必须重新生成补丁，否则类型检查会报参数不匹配。
+   */
+  async readRange(path: string, start: number, end: number): Promise<Readable> {
+    const remote = this.path(path)
+    return this.run(
+      () => this.requireTree().createFileReadStream(remote, { start, end }),
+      'network',
+      '读取文件区间'
     )
   }
 
