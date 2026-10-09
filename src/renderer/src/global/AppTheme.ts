@@ -20,6 +20,7 @@ const colorMode = useColorMode({
 
 /** 用户选择的主题模式（含跟随系统的 `auto`），持久化在 localStorage；回显必须用它而不是解析结果 */
 export const themeMode = colorMode.store
+export const themeSystem = colorMode.system
 
 /** 切换主题：只写选择值，换肤与窗口材质同步统一交给下方 watch */
 export function setThemeMode(mode: ThemeMode): void {

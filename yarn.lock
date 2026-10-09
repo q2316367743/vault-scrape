@@ -889,6 +889,18 @@
     "@iconify/types" "^2.0.0"
     import-meta-resolve "^4.2.0"
 
+"@imengyu/vue-scroll-rect@^0.1.4":
+  version "0.1.10"
+  resolved "https://registry.npmmirror.com/@imengyu/vue-scroll-rect/-/vue-scroll-rect-0.1.10.tgz#45c1ea262b36c6b27593433c34fda941a9467eaa"
+  integrity sha512-2Cxm7WnRP7y9vNqv5YQvh4fasWZ1q5kW5cQyr3+647e4hEiS3NsgUZLaZb5+F7qOHGlIaERNYuWZVXIo7L32ug==
+
+"@imengyu/vue3-context-menu@^1.5.6":
+  version "1.5.6"
+  resolved "https://registry.npmmirror.com/@imengyu/vue3-context-menu/-/vue3-context-menu-1.5.6.tgz#e033f6e0d108a23e75eb44d5e2e59a5ac2ea3e22"
+  integrity sha512-rMsaQZHM3JJP2wKpX4lhmOtWL29h1BjLAv6UcbMU6rc2Lm+t/xtK2eMj3WpC02DroNlWYZr7Dtk1uAS+iwUxPw==
+  dependencies:
+    "@imengyu/vue-scroll-rect" "^0.1.4"
+
 "@isaacs/fs-minipass@^4.0.0":
   version "4.0.1"
   resolved "https://registry.npmmirror.com/@isaacs/fs-minipass/-/fs-minipass-4.0.1.tgz#2d59ae3ab4b38fb4270bfa23d30f8e2e86c7fe32"

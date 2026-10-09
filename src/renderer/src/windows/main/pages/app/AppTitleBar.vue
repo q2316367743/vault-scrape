@@ -79,12 +79,7 @@ function onSelectTheme(option: { value?: unknown }): void {
       </t-button>
     </t-tooltip>
 
-    <t-dropdown
-      trigger="click"
-      placement="bottom"
-      :options="themeOptions"
-      @click="onSelectTheme"
-    >
+    <t-dropdown trigger="click" placement="bottom" :options="themeOptions" @click="onSelectTheme">
       <t-button class="theme-toggle" variant="text" :aria-label="'外观：' + themeLabel">
         <mode-light-icon v-if="themeMode === 'light'" />
         <mode-dark-icon v-else-if="themeMode === 'dark'" />

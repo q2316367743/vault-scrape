@@ -56,6 +56,7 @@ import { usePlugins } from './composables/usePlugins'
 import { openPluginEditorDialog } from './modals/PluginEditorDialog'
 import PluginList from './components/PluginList.vue'
 import PluginDetail from './components/PluginDetail.vue'
+import { MessageUtil } from '@/utils/modal'
 
 const {
   plugins,
@@ -86,9 +87,7 @@ function describeSkipped(result: PluginImportResult): string {
 function handleImport(result: PluginImportResult, canOverwrite: boolean): void {
   if (result.imported.length > 0) MessagePlugin.success(`已导入 ${result.imported.length} 个插件`)
   if (result.skipped.length > 0) {
-    MessagePlugin.info(
-      `已跳过 ${result.skipped.length} 个旧版本插件：${describeSkipped(result)}`
-    )
+    MessageUtil.info(`已跳过 ${result.skipped.length} 个旧版本插件：${describeSkipped(result)}`)
   }
   if (result.failed.length === 0) return
   const duplicates = result.failed.filter((item) => item.code === 'duplicate')
