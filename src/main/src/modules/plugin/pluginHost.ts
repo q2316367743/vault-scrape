@@ -7,7 +7,9 @@
  * 1. 插件方法签名是 `(入参, env, ctx)`，env 里的敏感值已被解密且调用前已校验必填项；
  * 2. 插件没有任何原生网络能力（沙箱不注入 fetch / require），只能走 `ctx.request`；
  * 3. `ctx.request` 统一施加网络设置的超时与重试，并按刮削节奏设置串行限速；
- * 4. 代理由 `$/modules/http/httpClient` 的拦截器按最新设置注入（socket5 回落直连并告警）。
+ * 4. 代理由 `$/modules/http/httpClient` 的拦截器按最新设置注入（socket5 回落直连并告警）；
+ * 5. 正文按响应声明的字符集解码（响应头 charset → `<meta>` 声明 → UTF-8 兜底），
+ *    避免 axios 默认的 UTF-8 硬解把 euc-jp / shift_jis 站点的日文变成不可逆的乱码。
  */
 import axios from 'axios'
 import {
@@ -57,6 +59,68 @@ function toHeaderRecord(headers: unknown): Record<string, string> {
   return result
 }
 
+/** 嗅探字符集时最多检查的字节数：meta 声明出现在正文头部，给它足够余量 */
+const CHARSET_SNIFF_BYTES = 65536
+
+/**
+ * 服务端只在 HTML 里用 `<meta>` 声明字符集的两种写法。
+ * 必须锚定 `<meta>`：`<script charset="utf-8">` 这类属性不代表页面编码。
+ */
+const META_CHARSET_PATTERNS: readonly RegExp[] = [
+  /<meta[^>]+charset\s*=\s*["']?\s*([a-z0-9_-]+)/i,
+  /<meta[^>]+content\s*=\s*["'][^"']*charset\s*=\s*([a-z0-9_-]+)/i
+]
+
+/** 取 Content-Type 响应头里的 charset；没写返回空串 */
+function readHeaderCharset(headers: Record<string, unknown>): string {
+  const raw = headers['content-type']
+  const value = Array.isArray(raw) ? raw[0] : raw
+  if (typeof value !== 'string') return ''
+  const matched = /charset\s*=\s*["']?\s*([a-z0-9_-]+)/i.exec(value)
+  return matched ? matched[1] : ''
+}
+
+/** 响应头没写 charset 时，到正文头部找 `<meta>` 声明（不少日文老站只写在 meta 里） */
+function sniffCharset(bytes: Uint8Array): string {
+  const head = bytes.subarray(0, CHARSET_SNIFF_BYTES)
+  let ascii = ''
+  for (let index = 0; index < head.length; index += 1) {
+    ascii += head[index] < 0x80 ? String.fromCharCode(head[index]) : ' '
+  }
+  for (const pattern of META_CHARSET_PATTERNS) {
+    const matched = pattern.exec(ascii)
+    if (matched) return matched[1]
+  }
+  return ''
+}
+
+function toBytes(data: unknown): Uint8Array | null {
+  if (data instanceof Uint8Array) return data
+  if (data instanceof ArrayBuffer) return new Uint8Array(data)
+  return null
+}
+
+/**
+ * 原始响应字节 → 字符串。
+ *
+ * axios 默认固定按 UTF-8 解码正文，遇到 euc-jp / shift_jis 的站点会把日文变成不可逆的 U+FFFD；
+ * 这里改为自己拿字节，先看响应头、再看 meta 声明，最后才回落 UTF-8，让插件拿到的就是正确文本。
+ */
+function decodeResponseText(data: unknown, headers: Record<string, unknown>): string {
+  if (typeof data === 'string') return data
+  const bytes = toBytes(data)
+  if (!bytes) return ''
+  const charset = readHeaderCharset(headers) || sniffCharset(bytes)
+  if (charset) {
+    try {
+      return new TextDecoder(charset).decode(bytes)
+    } catch {
+      /** 未知字符集标签：回落 UTF-8，是否可用交给插件判断 */
+    }
+  }
+  return new TextDecoder('utf-8').decode(bytes)
+}
+
 function describeError(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === 'string') return error
@@ -89,21 +153,23 @@ async function requestOnce(
   }
   const method = options.method === 'POST' ? 'POST' : 'GET'
   /** 经共享实例发出：代理与超时兜底由 httpClient 的请求拦截器统一施加 */
-  const response = await httpClient.request<string>({
+  const response = await httpClient.request<ArrayBuffer>({
     url,
     method,
     headers: options.headers,
     data: method === 'POST' ? options.body : undefined,
     timeout: timeoutMs,
-    responseType: 'text',
+    /** 先取原始字节，再按响应声明的字符集解码（axios 默认只认 UTF-8，会把 euc-jp 站点读成乱码） */
+    responseType: 'arraybuffer',
     maxRedirects: 5,
     /** 状态码交给插件自己判断，宿主只负责传输 */
     validateStatus: () => true
   })
+  const headers = toHeaderRecord(response.headers)
   return {
     status: response.status,
-    headers: toHeaderRecord(response.headers),
-    data: typeof response.data === 'string' ? response.data : ''
+    headers,
+    data: decodeResponseText(response.data, headers)
   }
 }
 

@@ -56,12 +56,12 @@ IPC 通道（`SettingChannels`）：
 | --- | --- |
 | `setting:getAll` | 无 → `SettingSchema` |
 | `setting:getGroup` | `SettingGroupKey` → 该组设置 |
-| `setting:saveGroup` | `(key, value)` → 归一化后的该组设置 |
+| `setting:saveGroup` | `(key, value)` → 归一化后的整树设置 |
 
 主进程函数：
 
 - `loadSetting(): SettingSchema`：缓存为空时读盘，读盘失败回落默认值并打印 `[setting] 设置读取失败，使用默认配置`。
-- `saveSettingGroup<K extends SettingGroupKey>(key: K, value: unknown): SettingSchema[K]`：归一化单组 → 读回整树 → 替换该组 → `mkdirSync(dirname, { recursive: true })` → `writeFileSync(file, JSON.stringify(next, null, 2))` → 刷新缓存 → 返回归一化结果。
+- `saveSettingGroup<K extends SettingGroupKey>(key: K, value: unknown): SettingSchema`：归一化单组 → 读回整树 → 替换该组 → `mkdirSync(dirname, { recursive: true })` → `writeFileSync(file, JSON.stringify(next, null, 2))` → 刷新缓存 → 返回归一化后的整树（渲染层不使用返回值）。
 
 渲染进程通过 `settingApi`（由 `@/api` 再导出）调用：`settingApi.getAll()`、`settingApi.getGroup(key)`、`settingApi.saveGroup(key, value)`。
 
@@ -87,3 +87,6 @@ const { setting } = storeToRefs(useSettingNamingStore())
 - 应用外修改 JSON 文件不会被感知（缓存不会失效）。这是当前契约内不支持的场景，需要重载时才生效。
 - `saveGroup` 写的是整份文件（读回整树后整体覆盖），所以不要在文件里手工塞入未在 `SettingSchema` 中登记的字段，它们会在下次保存时丢失。
 - 新增一组设置的固定动作：① 写 `<组>Setting.ts` 三件套；② 在 `setting/index.ts` 登记（`SettingSchema`、`SETTING_GROUP_KEYS`、`settingNormalizers`、`buildSetting`、`normalizeSetting`）；③ 在 `store/setting/` 加一个 `createSettingGroupStore` 实例并导出；④ 在设置页加面板；⑤ 更新 `02-setting-items.md`。IPC 通道无需新增。
+- **传给 IPC 的载荷必须是纯值**：`@/api/setting` 出口（`src/renderer/src/api/setting.ts`）会先 `toRaw` 再 `structuredClone`，所以 `settingApi.saveGroup(key, value)` 可以直接传响应式对象；但新增的任何 IPC 出口都要自己保证纯值——Vue 的 `ref/reactive` 会把对象包成 Proxy，Proxy 无法通过 IPC 的结构化克隆（报 `#<Object> could not be cloned`），表现为主进程一个字节都收不到、设置改了不生效且重启被重置。
+- 自动保存失败会 `logger.error('设置分组保存失败', error)`，并按 store 实例一次性 `MessagePlugin.error` 提示，不再静默失败。
+- 自动保存有 300ms 防抖：改动后立刻退出应用（不足 300ms）可能丢掉最后一笔写入；退出前 flush 属于后续增强。

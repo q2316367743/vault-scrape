@@ -181,6 +181,7 @@ interface PluginResponse {
 - 重试：按网络设置的 `retryCount` 重试，间隔 300ms（`invalidArgument` 不重试）；
 - 限速：两次插件请求之间至少间隔 `scrape.requestDelay` 秒（模块级串行，`concurrency` 归后续调度器）；
 - 代理：已接入。请求经 `src/main/src/modules/http/httpClient.ts` 的共享实例发出，由请求拦截器按最新网络设置注入 http/https 代理；`socket5` 暂不支持，会回落直连并写一条 `warn`，详见 [../http/01-http-client.md](../http/01-http-client.md)。
+- 字符集：`ctx.request` 以 `arraybuffer` 取回原始字节后自行解码，顺序为「响应头 `content-type` 的 `charset`」→「正文前 64KB 内 `<meta>` 声明的 `charset`」→「UTF-8 兜底」，因此 `euc-jp`、`shift_jis` 等站点（如 `h0930` / `h4610`）的日文不会变成乱码；字符集标签无法识别时回落 UTF-8 并继续，不会抛错。
 
 ## 4. 执行与超时
 
