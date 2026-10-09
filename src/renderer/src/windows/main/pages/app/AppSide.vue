@@ -17,9 +17,9 @@ import { collapsed } from '@/global/AppState'
 const menuItems: SideMenuItem[] = [
   { label: '概览', icon: DashboardIcon, to: '/overview' },
   { label: '工作台', icon: DesktopIcon, to: '/workspace' },
+  { label: '工具', icon: ToolsIcon, to: '/tools', match: 'prefix' },
   { label: '存储', icon: HardDiskStorageIcon, to: '/storage' },
   { label: '插件', icon: ExtensionIcon, to: '/plugin' },
-  { label: '工具', icon: ToolsIcon, to: '/tools', match: 'prefix' },
   { label: '设置', icon: SettingIcon, to: '/setting' },
   { label: '日志', icon: SystemLogIcon, to: '/log' },
   { label: '关于', icon: InfoCircleIcon, to: '/about' }

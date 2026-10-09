@@ -1,3 +1,21 @@
+<template>
+  <t-table
+    row-key="id"
+    :data="items"
+    :columns="columns"
+    :loading="loading"
+    size="small"
+    hover
+    max-height="calc(100vh - 186px)"
+  >
+    <template #createdAt="{ row }">{{ formatTime(row.createdAt) }}</template>
+    <template #level="{ row }">
+      <t-tag :theme="levelThemes[row.level as LogLevel]" variant="light">
+        {{ levelLabels[row.level as LogLevel] }}
+      </t-tag>
+    </template>
+  </t-table>
+</template>
 <script setup lang="ts">
 import dayjs from 'dayjs'
 import type { LogItem, LogLevel } from '@common/types/log'
@@ -34,14 +52,3 @@ function formatTime(value: number): string {
   return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
 }
 </script>
-
-<template>
-  <t-table row-key="id" :data="items" :columns="columns" :loading="loading" size="small" hover>
-    <template #createdAt="{ row }">{{ formatTime(row.createdAt) }}</template>
-    <template #level="{ row }">
-      <t-tag :theme="levelThemes[row.level as LogLevel]" variant="light">
-        {{ levelLabels[row.level as LogLevel] }}
-      </t-tag>
-    </template>
-  </t-table>
-</template>

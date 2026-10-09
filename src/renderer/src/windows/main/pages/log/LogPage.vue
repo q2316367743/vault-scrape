@@ -1,3 +1,25 @@
+<template>
+  <page-layout title="日志" description="日志写入本地数据库，最多保留最近的记录">
+    <template #extra>
+      <t-select v-model="levelFilter" class="log-level" :options="levelOptions" />
+      <t-button theme="danger" variant="outline" :disabled="total === 0" @click="onClear">
+        清空日志
+      </t-button>
+    </template>
+
+    <div class="log-table">
+      <log-table :items="items" :loading="loading" />
+    </div>
+
+    <t-pagination
+      v-model="page"
+      v-model:page-size="pageSize"
+      class="log-pagination"
+      :total="total"
+      :page-size-options="[20, 50, 100]"
+    />
+  </page-layout>
+</template>
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
@@ -57,9 +79,9 @@ function onClear(): void {
     onConfirm: async () => {
       await dbApi.log.clear()
       dialog.hide()
-      MessagePlugin.success('日志已清空')
       page.value = 1
       await load()
+      await MessagePlugin.success('日志已清空')
     }
   })
 }
@@ -72,30 +94,6 @@ watch(page, () => {
 
 onMounted(load)
 </script>
-
-<template>
-  <page-layout title="日志" description="日志写入本地数据库，最多保留最近的记录">
-    <template #extra>
-      <t-select v-model="levelFilter" class="log-level" :options="levelOptions" />
-      <t-button theme="danger" variant="outline" :disabled="total === 0" @click="onClear">
-        清空日志
-      </t-button>
-    </template>
-
-    <div class="log-table">
-      <log-table :items="items" :loading="loading" />
-    </div>
-
-    <t-pagination
-      v-model="page"
-      v-model:page-size="pageSize"
-      class="log-pagination"
-      :total="total"
-      :page-size-options="[20, 50, 100]"
-    />
-  </page-layout>
-</template>
-
 <style scoped lang="less">
 .log-level {
   width: 140px;
