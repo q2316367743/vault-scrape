@@ -7,7 +7,7 @@
  * 1. 插件方法签名是 `(入参, env, ctx)`，env 里的敏感值已被解密且调用前已校验必填项；
  * 2. 插件没有任何原生网络能力（沙箱不注入 fetch / require），只能走 `ctx.request`；
  * 3. `ctx.request` 统一施加网络设置的超时与重试，并按刮削节奏设置串行限速；
- * 4. 代理暂未接入：启用了代理时只写一条告警，避免用户误以为请求走了代理。
+ * 4. 代理由 `$/modules/http/httpClient` 的拦截器按最新设置注入（socket5 回落直连并告警）。
  */
 import axios from 'axios'
 import {
@@ -18,6 +18,7 @@ import {
 } from '@common/types/plugin'
 import { readString, toSource } from '@common/types/setting/shared'
 import { appendLog } from '$/db/repo/logRepo'
+import { httpClient } from '$/modules/http/httpClient'
 import { loadSetting } from '$/modules/setting/settingStore'
 import type { PluginLogSink } from './pluginRuntime'
 
@@ -25,9 +26,6 @@ const RETRY_DELAY_MS = 300
 
 /** 上一次插件请求的发起时间，用于刮削节奏限速 */
 let lastRequestAt = 0
-
-/** 代理告警每个进程只写一次 */
-let proxyWarned = false
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -78,13 +76,20 @@ function toRequestError(error: unknown, url: string): PluginError {
   return new PluginError('invokeFailed', `插件请求失败：${describeError(error)}（${url}）`)
 }
 
-async function requestOnce(options: PluginRequestOptions, timeoutMs: number): Promise<PluginResponse> {
+async function requestOnce(
+  options: PluginRequestOptions,
+  timeoutMs: number
+): Promise<PluginResponse> {
   const url = typeof options.url === 'string' ? options.url.trim() : ''
   if (!/^https?:\/\//i.test(url)) {
-    throw new PluginError('invalidArgument', `插件请求的 url 必须是 http(s) 地址：${url || '（空）'}`)
+    throw new PluginError(
+      'invalidArgument',
+      `插件请求的 url 必须是 http(s) 地址：${url || '（空）'}`
+    )
   }
   const method = options.method === 'POST' ? 'POST' : 'GET'
-  const response = await axios.request<string>({
+  /** 经共享实例发出：代理与超时兜底由 httpClient 的请求拦截器统一施加 */
+  const response = await httpClient.request<string>({
     url,
     method,
     headers: options.headers,
@@ -140,14 +145,6 @@ export function createPluginLogSink(id: string): PluginLogSink {
  * 调用方必须已完成必填校验（见 pluginRegistry 的 invokePlugin）。
  */
 export function createPluginContext(id: string): PluginContext {
-  if (!proxyWarned && loadSetting().network.proxyEnabled) {
-    proxyWarned = true
-    appendLog({
-      level: 'warn',
-      scope: `plugin:${id}`,
-      message: '当前已启用代理，但插件请求暂未走代理，请留意网络连通性'
-    })
-  }
   return {
     request: hostRequest,
     log: createPluginLogSink(id)

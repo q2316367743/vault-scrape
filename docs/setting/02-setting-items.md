@@ -34,7 +34,7 @@
 | `timeout` | 请求超时时间（秒） | `30` | 数字输入，最小 1 |
 | `retryCount` | 请求失败重试次数 | `3` | 数字输入，最小 0 |
 
-代理协议与地址在 `proxyEnabled` 为 false 时禁用。
+代理协议与地址在 `proxyEnabled` 为 false 时禁用。`socket5` 当前不受支持：识别到会回落直连并写一条 `warn` 日志，详见 [../http/01-http-client.md](../http/01-http-client.md)。
 
 ## 4. 翻译服务（`translate`）
 

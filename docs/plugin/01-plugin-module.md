@@ -167,7 +167,7 @@ interface PluginResponse {
 - 超时：`max(1000, options.timeout ?? network.timeout * 1000)`；
 - 重试：按网络设置的 `retryCount` 重试，间隔 300ms（`invalidArgument` 不重试）；
 - 限速：两次插件请求之间至少间隔 `scrape.requestDelay` 秒（模块级串行，`concurrency` 归后续调度器）；
-- 代理：**本期未接入**。启用代理时插件请求仍走直连，主进程只写一条 `warn` 日志提醒，避免误解。
+- 代理：已接入。请求经 `src/main/src/modules/http/httpClient.ts` 的共享实例发出，由请求拦截器按最新网络设置注入 http/https 代理；`socket5` 暂不支持，会回落直连并写一条 `warn`，详见 [../http/01-http-client.md](../http/01-http-client.md)。
 
 ## 4. 执行与超时
 
@@ -258,7 +258,7 @@ interface PluginEnvField {
 | `src/common/types/plugin/` | 三端共享的纯类型与纯函数（契约、归一化、环境变量声明校验、错误码、信封） |
 | `src/main/src/modules/plugin/pluginStore.ts` | `plugins.json` 落盘、源码读写、safeStorage 加解密接入 |
 | `src/main/src/modules/plugin/pluginRuntime.ts` | vm 沙箱编译、方法调用与超时 |
-| `src/main/src/modules/plugin/pluginHost.ts` | `ctx` 构造：axios 请求、cheerio 注入、日志桥（环境变量不经 ctx） |
+| `src/main/src/modules/plugin/pluginHost.ts` | `ctx` 构造：共享 http 客户端请求（超时 / 重试 / 限速）、cheerio 注入、日志桥（环境变量不经 ctx） |
 | `src/main/src/modules/plugin/pluginRegistry.ts` | 内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/环境变量/调用入口 |
 | `src/main/src/modules/plugin/pluginIpc.ts` | IPC 注册与信封转换（唯一转换点），系统文件选择框 |
 | `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
@@ -398,6 +398,6 @@ definePlugin({
 
 - 刮削调度器 / 真正的下载器 / 图片角标 / NFO 生成 / 命名落盘（本期只产出并展示下载配置）；
 - 在线插件仓库与远程更新（只支持本机目录导入）；
-- 代理接入（`https-proxy-agent` / `socks-proxy-agent` 两个新依赖）；
+- SOCKS5 代理支持（需引入 `socks-proxy-agent`；http/https 代理已接入，见 [../http/01-http-client.md](../http/01-http-client.md)）；
 - 插件多文件打包、TypeScript 插件、代码编辑器语法高亮；
 - 子进程级隔离（`utilityProcess`）。

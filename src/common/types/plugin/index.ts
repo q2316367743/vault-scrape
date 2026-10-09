@@ -36,11 +36,7 @@ export {
   PLUGIN_ENV_FIELD_LIMIT
 } from './env'
 
-export type {
-  PluginEpisode,
-  PluginMovieCandidate,
-  PluginMovieDetail
-} from './movie'
+export type { PluginEpisode, PluginMovieCandidate, PluginMovieDetail } from './movie'
 
 export {
   PLUGIN_METHODS,

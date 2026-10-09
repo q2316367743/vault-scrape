@@ -38,6 +38,7 @@ src/
 │       ├── db/              # 数据库：schema / client / repo / IPC
 │       ├── modules/appWindow/ # 窗口域：窗口控制与最大化状态推送
 │       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
+│       ├── modules/http/    # HTTP 域：axios 单例 + 请求拦截器按网络设置注入代理
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
 │       ├── modules/setting/ # 设置域：落盘实现 + IPC
 │       ├── utils/           # 主进程通用工具：secretCodec（safeStorage 编解码，插件与文件域共用）
