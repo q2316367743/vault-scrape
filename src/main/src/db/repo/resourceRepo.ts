@@ -1,5 +1,5 @@
-import { and, asc, count, eq, inArray } from 'drizzle-orm'
-import type { ResourceItem } from '@common/types/resource'
+import { and, asc, count, eq, inArray, max } from 'drizzle-orm'
+import type { ResourceItem, ResourceKind } from '@common/types/resource'
 import { db } from '../client'
 import { resourceTable, type ResourceRow } from '../schema'
 
@@ -74,6 +74,28 @@ export function countResource(connectionId: string): number {
     .from(resourceTable)
     .where(eq(resourceTable.connectionId, connectionId))
     .get()
+  return row?.value ?? 0
+}
+
+/**
+ * 按类型列出资源，按「存储 → 路径」排序。
+ *
+ * 用途：影视墙按 `kind = 'video'` 一次拉全整墙；筛选与排序都在渲染层做，
+ * 主进程不复制渲染层的排序规则。
+ */
+export function listResourceByKind(kind: ResourceKind): ResourceItem[] {
+  return db()
+    .select()
+    .from(resourceTable)
+    .where(eq(resourceTable.kind, kind))
+    .orderBy(asc(resourceTable.connectionId), asc(resourceTable.path))
+    .all()
+    .map(toItem)
+}
+
+/** 索引里最新的索引时间；一条资源都没有时返回 0 */
+export function maxResourceIndexedAt(): number {
+  const row = db().select({ value: max(resourceTable.indexedAt) }).from(resourceTable).get()
   return row?.value ?? 0
 }
 

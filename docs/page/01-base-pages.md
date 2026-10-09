@@ -2,7 +2,7 @@
 
 ## 实现思路
 
-七个基础页面覆盖「看状态、干活、调试、配置、查日志、看版本、管插件」七件事，另有[存储管理页面](./02-storage-page.md)承载文件模块的界面。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC，插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），工作台接了刮削模块 IPC（扫描根目录 / 启动 / 取消 / 继续 / 进度推送）。
+八个基础页面（概览 / 工作台 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、干活、调试、配置、查日志、看版本、管插件」这些事，另有[存储管理页面](./02-storage-page.md)承载文件模块的界面、[影视墙页面](./04-media-wall-page.md)承载刮削成果的浏览。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC，插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），工作台接了刮削模块 IPC（扫描根目录 / 启动 / 取消 / 继续 / 进度推送），影视墙接了媒体模块 IPC（整墙取数 / 影片详情与 NFO 解析）。
 
 页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
@@ -14,6 +14,7 @@
 | --- | --- | --- |
 | `/` | 重定向到 `/overview` | — |
 | `/overview` | `pages/overview/OverviewPage.vue` | 概览 |
+| `/media` | `pages/media/MediaWallPage.vue` | 影视墙 |
 | `/workspace` | `pages/workspace/WorkspacePage.vue` | 工作台 |
 | `/storage` | `pages/storage/StoragePage.vue` | 存储 |
 | `/plugin` | `pages/plugin/PluginPage.vue` | 插件 |
@@ -30,6 +31,10 @@
 - 数据来源：`dbApi.task.stats()` 取任务统计，`dbApi.task.list({ limit: 5 })` 取最近任务。
 - 结构：7 张统计卡片（总数 / 等待中 / 进行中 / 已成功 / 已失败 / 已取消 / 已中断）（`components/StatCard.vue`，props `{ label, value }`）+ 最近任务表格。
 - 表格列：名称 / 状态 / 进度 / 更新时间。状态用带主题色的标签（`statusThemes` 按 `TaskStatus` 取色），进度显示 `finished / total`，更新时间用 dayjs 格式化为 `YYYY-MM-DD HH:mm:ss`。
+
+## 影视墙
+
+侧栏「概览」下方的第二个一级入口（`/media`）。墙面**以磁盘上的视频为准**（资源索引里 `kind = 'video'` 的行），刮削记录只用来补标题与封面，未刮削的视频也会以文件名占位显示；所有数据源聚合成一堵墙，卡片带来源角标，顶部提供搜索、数据源筛选与排序，点击卡片打开命令式详情抽屉（读同目录 NFO 补全元信息）。图片位统一走 `SensitiveImage`，NSFW 判定口径同工作台。详见[影视墙页面](./04-media-wall-page.md)。
 
 ## 工作台
 

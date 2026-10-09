@@ -52,6 +52,8 @@ src/renderer/src/windows/main/pages/storage/
 | `remove(connection)` | `fileApi.deleteConnection` → 提示 → 刷新 |
 | `test(connection)` | 返回 `ConnectionTestResult`，页面按 `ok` 分别 `MessagePlugin.success / error` |
 
+左栏列表项是**两行式**（`StorageConnectionPanel.vue`）：第一行协议图标 + 名称（`font-weight: 500`，超出省略，`title` 兜底），测试连通 / 编辑 / 删除按钮只在悬停或选中时出现；第二行是连接描述（`describeConnection`，超出省略，同样带 `title`）与标签组（协议标签、`describeScrapers` 的刮削器标签、`nsfw` 的 `NSFW` 标签）。名称与标签**必须分行**：标签与操作按钮都是 `flex-shrink: 0`，一旦和名称挤在同一个 flex 行里，`flex: 1; min-width: 0` 的名称会被压成零宽，在界面上直接「消失」。
+
 连接上的 `nsfw` 标记（连接弹窗里「NSFW」开关，`ConnectionDialogContent.vue`）表示该数据源是敏感内容：列表里的连接会带一个 `NSFW` 标签（`StorageConnectionPanel.vue`，`theme="danger"`，`variant="light"`），并在应用设置开启「NSFW 保护」后让该数据源的页面隐藏敏感图片（见[设置项清单 · 应用设置](../setting/02-setting-items.md)）。转换草稿时 `nsfw` 原样带上（`toConnectionDraft` 已包含该字段）。
 
 连接上的 `scrapers` 是**该存储允许使用的刮削器**（插件 id 数组）：列表里每个连接都会带一个标签，未配置显示「全部刮削器」，配置了显示「N 个刮削器」（`describeScrapers(connection)`）。空数组表示不限制，运行时由 `usablePlugins(connectionId)` 兜底为全部已启用插件；配置了但当前不可用的 id 由运行时跳过、弹窗里标为「已失效」（详见[刮削模块 · 任务与调度](../scrape/01-scrape-module.md)）。`toConnectionDraft` 用 `scraperIdsOf(connection)` 把它带进草稿，测试连通与保存都走同一份草稿。
@@ -74,6 +76,7 @@ src/renderer/src/windows/main/pages/storage/
 `useStorageBrowser(connectionId)` 持有当前目录，`watch(connectionId, { immediate: true })` 在切换数据源时把路径重置到连接根（`FILE_ROOT`）并重新拉取。
 
 - 路径：`path` 永远是连接内 POSIX 路径，`isRoot` 决定「上级目录」是否可用；`breadcrumb` 是 `{ label, path }[]`，根段显示「根目录」，点任意一段跳转。
+- 面包屑渲染约束：`t-breadcrumb` 会拿子项的 props 重建每一项，插槽里的元素连同 `@click` 会被替换成纯文本。所以跳转必须写在 `<t-breadcrumb-item @click>`（组件自身声明的 `onClick` prop）上，样式只能从容器用 `:deep(.t-breadcrumb__item)` 命中；当前目录段不响应点击。
 - 读：`load()` / `go(target)` / `goParent()` / `open(entry)`（目录进入，文件走下载）；失败时 `MessagePlugin.error` 展示信封里的中文 `message`。
 - 写：`mkdir` / `createFile` / `rename` / `copy` / `move` / `remove` 都走内部 `execute(action, successText)`——成功提示 + 重拉当前目录，失败提示；`remove` 额外拦下连接根（「不能删除连接根目录」）。
 - 名称校验：`nameError(name)` 只挡空名与含斜杠两种输入，其余交给主进程的落盘校验。

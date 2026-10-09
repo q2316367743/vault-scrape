@@ -41,7 +41,7 @@ const boxStyle = computed(() => ({ width: sizeOf(props.width), height: sizeOf(pr
 <template>
   <div class="sensitive-image" :style="boxStyle">
     <t-image v-if="!concealed" class="sensitive-image-media" :src="src" :alt="alt" :fit="fit" />
-    <div v-else class="sensitive-image-mask">
+    <div v-else class="sensitive-image-mask" @click.stop>
       <t-button variant="text" theme="default" @click="revealed = true">
         <template #icon><view-module-icon /></template>
         内容已隐藏，点击查看

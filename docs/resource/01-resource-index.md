@@ -3,7 +3,7 @@
 ## 实现思路
 
 扫描媒体库时顺手把该目录下的**所有文件**写进 `resource` 表（资源索引），每个文件得到一个稳定的资源 ID；
-渲染层要显示这些文件（目前是刮削产出的封面）时，不拼绝对路径、也不经过 IPC 传字节，而是使用私有协议地址：
+渲染层要显示这些文件（刮削产出的封面，以及影视墙上的视频封面）时，不拼绝对路径、也不经过 IPC 传字节，而是使用私有协议地址：
 
 ```
 storage://<存储ID>/<资源ID>/<原始文件名>.<原始拓展名>
@@ -24,7 +24,7 @@ storage://<存储ID>/<资源ID>/<原始文件名>.<原始拓展名>
 | --- | --- |
 | `src/common/types/resource/index.ts` | 三端共享的纯类型与纯函数：`ResourceKind`、`ResourceItem`、`resourceKindOf()`、`buildResourceUrl()`、`parseResourceUrl()` |
 | `src/main/src/db/schema/resource.ts` | `resource` 表定义 |
-| `src/main/src/db/repo/resourceRepo.ts` | 索引仓储（按目录整体替换、按 id 查询、按数据源清理） |
+| `src/main/src/db/repo/resourceRepo.ts` | 索引仓储（按目录整体替换、按 id 查询、按数据源清理、按 kind 列出与取最新索引时间） |
 | `src/main/src/modules/resource/resourceIndex.ts` | `resourceIdOf()` 与 `indexDirectory()`（列目录 + 写索引） |
 | `src/main/src/modules/resource/resourceProtocol.ts` | 特权协议登记与 `storage://` 请求处理（本地直读 / 远端缓存） |
 
@@ -98,7 +98,7 @@ img-src 'self' data: storage:
 
 ## 限制与后续
 
-- **媒体库页面尚未实现**：`resource` 表与查询函数已经就位（`listResourceByDir` / `countResource`），但还没有查询 IPC 通道与页面；本轮只落地「索引 + 私有协议 + 封面显示」。
+- **索引查询的 IPC 仍然很窄**：`resource` 表已就位，但 `db` 域不为它开查询通道；影视墙通过 `media` 域的 `media:wall` 一次性拉全部 `kind = 'video'` 的资源（`listResourceByKind` + `maxResourceIndexedAt`，见 [影视墙页面](../page/04-media-wall-page.md)），`listResourceByDir` / `countResource` 只被主进程自己用。影视墙还会顺带读 `kind = 'nfo'` 与 `kind = 'image'` 的索引，用来判断「同目录有没有刮削产出」并取同目录封面——只查索引、不读文件内容。按目录分页浏览的媒体库页面仍未实现。
 - **大文件流式播放**：本地路径已经由 `net.fetch` 支持 Range；远端（WebDAV/SMB）仍是「整文件落缓存后再响应」，播放器拖动进度条要等首次下载完成。
 - **目录嵌套**：同一存储的库根不应互相嵌套，索引按「最后一次扫描的目录」整体替换，嵌套时外层的索引会被内层扫描覆盖对应路径。
 - **失效资源**：索引被清理后，`storage://` 地址会返回 404，界面表现为图片空白（不报错）。

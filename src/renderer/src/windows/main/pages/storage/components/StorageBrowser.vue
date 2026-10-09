@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { AddIcon, FolderAddIcon, RefreshIcon, UploadIcon } from 'tdesign-icons-vue-next'
 import { FILE_PROTOCOL_LABELS, type FileConnection } from '@common/types/file'
-import { useStorageBrowser } from '../composables/useStorageBrowser'
+import { useStorageBrowser, type StorageBreadcrumb } from '../composables/useStorageBrowser'
 import { useStorageTransfers } from '../composables/useStorageTransfers'
 import { useStorageActions } from '../composables/useStorageActions'
 import { PROTOCOL_ICONS } from '../storageUtils'
@@ -17,6 +17,16 @@ const props = defineProps<{
 const connectionId = computed(() => props.connection?.id ?? '')
 const browser = useStorageBrowser(connectionId)
 const { entries, loading, isRoot, breadcrumb, load, go, goParent, open } = browser
+
+/**
+ * 面包屑跳转。
+ * 点击必须挂到 t-breadcrumb-item 自身：父级 t-breadcrumb 会按 props 重建每一项，
+ * 插槽内的元素（连同其 @click）会被替换成纯文本；当前目录（最后一段）不响应。
+ */
+function onCrumbClick(segment: StorageBreadcrumb, isCurrent: boolean): void {
+  if (isCurrent) return
+  void go(segment.path)
+}
 
 const transfers = useStorageTransfers({
   onSettled: (event) => {
@@ -78,15 +88,12 @@ const {
 
       <nav class="browser-crumbs">
         <t-breadcrumb>
-          <t-breadcrumb-item v-for="(segment, index) in breadcrumb" :key="segment.path">
-            <span
-              class="crumb"
-              :class="{ 'is-current': index === breadcrumb.length - 1 }"
-              @click="go(segment.path)"
-            >
-              {{ segment.label }}
-            </span>
-          </t-breadcrumb-item>
+          <t-breadcrumb-item
+            v-for="(segment, index) in breadcrumb"
+            :key="segment.path"
+            :content="segment.label"
+            @click="onCrumbClick(segment, index === breadcrumb.length - 1)"
+          />
         </t-breadcrumb>
       </nav>
 
@@ -173,22 +180,26 @@ const {
 .browser-crumbs {
   flex-shrink: 0;
   padding-bottom: 10px;
-}
 
-.crumb {
-  font-size: 13px;
-  color: var(--td-text-color-secondary);
-  cursor: pointer;
-  transition: color var(--fluent-transition-fast);
-}
+  // 面包屑项由 t-breadcrumb 按 props 重建，拿不到本组件的 scoped 属性，
+  // 因此只能从容器用 :deep 命中 tdesign 自身的类名
+  :deep(.t-breadcrumb__item) {
+    font-size: 13px;
+    color: var(--td-text-color-secondary);
+  }
 
-.crumb:hover {
-  color: var(--td-brand-color);
-}
+  :deep(.t-breadcrumb__item:not(:last-child)) {
+    cursor: pointer;
+    transition: color var(--fluent-transition-fast);
+  }
 
-.crumb.is-current {
-  color: var(--td-text-color-primary);
-  cursor: default;
+  :deep(.t-breadcrumb__item:not(:last-child):hover) {
+    color: var(--td-brand-color);
+  }
+
+  :deep(.t-breadcrumb__item:last-child) {
+    color: var(--td-text-color-primary);
+  }
 }
 
 .browser-table {

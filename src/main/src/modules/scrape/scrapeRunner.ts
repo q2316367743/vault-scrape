@@ -137,6 +137,7 @@ function rowsFromScan(taskId: string, entries: readonly ScrapeScanEntry[]): Scra
       id: `${taskId}:${entry.path}`,
       taskId,
       path: entry.path,
+      finalPath: entry.path,
       name: entry.name,
       keyword: entry.keyword,
       status: duplicate ? 'skipped' : 'pending',
@@ -225,7 +226,7 @@ async function runFiles(
           return
         }
         const message = error instanceof Error ? error.message : '未知错误'
-        outcome = { status: 'failed', pluginId: '', title: '', message }
+        outcome = { status: 'failed', pluginId: '', title: '', message, finalPath: item.path }
       }
 
       finished += 1
@@ -236,6 +237,7 @@ async function runFiles(
         pluginId: outcome.pluginId,
         title: outcome.title,
         message: outcome.message,
+        finalPath: outcome.finalPath,
         coverId: outcome.cover?.id ?? '',
         coverPath: outcome.cover?.path ?? '',
         updatedAt: Date.now()

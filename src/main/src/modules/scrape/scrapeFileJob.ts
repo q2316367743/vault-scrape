@@ -91,6 +91,12 @@ export interface ScrapeJobOutcome {
   pluginId: string
   title: string
   message: string
+  /**
+   * 本次结束时文件在连接内的最终路径。
+   *
+   * 未发生改名/移动时就是扫描时的原路径；影视墙靠它把磁盘上的视频与刮削记录对齐。
+   */
+  finalPath: string
   /** 本次成功产出的封面（按 poster > thumb > fanart 取第一张） */
   cover?: ScrapeCoverRef
 }
@@ -291,7 +297,13 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
         await client.move(entry.path, joinRemotePath(failedDir, entry.name), { overwrite: false })
       }
     }
-    return { status: 'failed', pluginId: '', title: '', message: '未找到匹配的刮削结果' }
+    return {
+      status: 'failed',
+      pluginId: '',
+      title: '',
+      message: '未找到匹配的刮削结果',
+      finalPath: entry.path
+    }
   }
 
   const ruleBase = resolveVideoBase(detail, originalBase, settings.naming)
@@ -366,6 +378,7 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
     pluginId,
     title: detail.title,
     message: parts.join('，'),
+    finalPath: targetPath,
     ...(cover ? { cover } : {})
   }
 }

@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq } from 'drizzle-orm'
 import type { ScrapeFileItem, ScrapeFileStatus } from '@common/types/scrape'
 import { db } from '../client'
-import { scrapeFileTable } from '../schema'
+import { scrapeFileTable, taskTable } from '../schema'
 
 /** 扫描结束后一次性写入整批待刮削文件 */
 export function insertScrapeFiles(items: readonly ScrapeFileItem[]): void {
@@ -56,4 +56,27 @@ export function findScrapeFileByCoverId(coverId: string): ScrapeFileItem | null 
       .limit(1)
       .get() ?? null
   )
+}
+
+/** 一条刮削记录 + 它所属任务的连接 ID（`scrape_file` 自己不带连接信息） */
+export interface ScrapeRecordWithConnection {
+  item: ScrapeFileItem
+  connectionId: string
+}
+
+/**
+ * 跨任务读取刮削记录，顺带把连接 ID 带出来。
+ *
+ * 用途：影视墙要把「磁盘上的视频」和「刮削成果」按路径对齐，
+ * 而路径只有在同一个连接内才有意义，所以必须 join 任务表拿 `connection_id`。
+ */
+export function listScrapeWithConnection(status?: ScrapeFileStatus): ScrapeRecordWithConnection[] {
+  return db()
+    .select({ file: scrapeFileTable, connectionId: taskTable.connectionId })
+    .from(scrapeFileTable)
+    .innerJoin(taskTable, eq(scrapeFileTable.taskId, taskTable.id))
+    .where(status ? eq(scrapeFileTable.status, status) : undefined)
+    .orderBy(desc(scrapeFileTable.updatedAt))
+    .all()
+    .map((row) => ({ item: row.file, connectionId: row.connectionId }))
 }

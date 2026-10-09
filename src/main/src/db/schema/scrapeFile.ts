@@ -9,6 +9,14 @@ export const scrapeFileTable = sqliteTable(
     taskId: text('task_id').notNull(),
     /** 扫描时的原始路径，任务内唯一 */
     path: text('path').notNull(),
+    /**
+     * 刮削结束后的最终路径。
+     *
+     * 未开启改名/移动时与 `path` 相同；开启后是文件在磁盘上的新位置，
+     * 影视墙靠它把「磁盘上的视频」和「刮削记录」精确对齐。
+     * 旧数据（本列上线前写入的行）为空串，读取方需要回落到 `path`。
+     */
+    finalPath: text('final_path').notNull().default(''),
     name: text('name').notNull().default(''),
     keyword: text('keyword').notNull().default(''),
     status: text('status').$type<ScrapeFileStatus>().notNull().default('pending'),

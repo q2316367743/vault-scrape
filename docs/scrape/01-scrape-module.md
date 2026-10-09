@@ -16,6 +16,7 @@
 | --- | --- |
 | `id` | `${taskId}:${path}`，任务内唯一 |
 | `taskId` / `path` / `name` | 所属任务、扫描时的原始连接内路径、文件名 |
+| `finalPath` | 流水线算出的最终路径（成功重命名 / 移动之后）；未改名时与 `path` 相同，影视墙按它把磁盘视频配对到刮削记录 |
 | `keyword` | 文件名解析出的搜索关键词 |
 | `status` | `pending` / `running` / `success` / `failed` / `skipped` |
 | `pluginId` / `title` | 最终命中的插件与插件标题，未命中为空串 |
@@ -100,7 +101,7 @@ src/common/types/scrape/
      | `trailer` | `[前缀]trailer[序号].{ext}` | 工作目录 |
 
      扩展名由 URL 推断（`assetExtension`，图片兜底 `jpg`、视频兜底 `mp4`）。
-4. **NFO 与移动**：`download.generateNfo` 为真时按 `download.nfoFileNaming` 写 NFO（`movie` → `movie.nfo`；`filename` → `{基名}.nfo`；`both` → 两者，基名为 `movie` 时去重），`keepNfo` 为真且已存在则跳过。最后 `file.renameAfterSuccess` 决定视频最终名，目标路径与原始路径不同时 `client.move(overwrite: false)`，移动失败抛 `ScrapeError('moveFailed')`。
+4. **NFO 与移动**：`download.generateNfo` 为真时按 `download.nfoFileNaming` 写 NFO（`movie` → `movie.nfo`；`filename` → `{基名}.nfo`；`both` → 两者，基名为 `movie` 时去重），`keepNfo` 为真且已存在则跳过。最后 `file.renameAfterSuccess` 决定视频最终名，目标路径与原始路径不同时 `client.move(overwrite: false)`，移动失败抛 `ScrapeError('moveFailed')`。无论是否移动，算出的最终路径都会随 `ScrapeJobOutcome.finalPath` 写进 `scrape_file.final_path`（未改名时等于扫描时的 `path`），影视墙据此把磁盘上的视频配对到刮削记录。
 
 流水线还会顺带记录本次产出的封面：资源循环里把第一张 `thumb` / `poster` / `fanart` 的落盘路径记进 `coverByKind`（**按 keep 设置跳过、但目标文件已存在时同样记录**，因为文件本来就在那儿），成功返回时按 `poster` → `thumb` → `fanart` 顺序挑一张，以 `ScrapeCoverRef { kind, path, id }` 形式挂在 `ScrapeJobOutcome.cover` 上；`id = resourceIdOf(connectionId, path)`。任务调度把它写进 `scrape_file.cover_id` / `cover_path`，渲染层据此拼出 `storage://` 封面地址。失败或未产出封面时两个字段为空串。
 

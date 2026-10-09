@@ -1,12 +1,17 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 八个一级页面（name 同时作为侧栏菜单文案）+ 工具子页 */
+/** 九个一级页面（name 同时作为侧栏菜单文案）+ 工具子页 */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/overview' },
   {
     path: '/overview',
     name: '概览',
     component: () => import('@/windows/main/pages/overview/OverviewPage.vue')
+  },
+  {
+    path: '/media',
+    name: '影视墙',
+    component: () => import('@/windows/main/pages/media/MediaWallPage.vue')
   },
   {
     path: '/workspace',

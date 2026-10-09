@@ -33,6 +33,12 @@ export interface ScrapeFileItem {
   taskId: string
   /** 扫描时的原始路径，任务内唯一 */
   path: string
+  /**
+   * 刮削结束后的最终路径：未开启改名/移动时与 `path` 相同。
+   *
+   * 旧数据（`final_path` 列上线前写入的行）为空串，读取方需要回落到 `path`。
+   */
+  finalPath: string
   name: string
   /** 文件名解析出的搜索关键词 */
   keyword: string

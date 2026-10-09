@@ -1,0 +1,1 @@
+ALTER TABLE `scrape_file` ADD `final_path` text DEFAULT '' NOT NULL;

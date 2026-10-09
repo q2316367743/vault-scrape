@@ -18,8 +18,8 @@
 | `src/main/src/db/client.ts` | 单例连接、`initDb()`、`db()` |
 | `src/main/src/db/repo/logRepo.ts` | 日志仓储 |
 | `src/main/src/db/repo/taskRepo.ts` | 任务仓储与统计 |
-| `src/main/src/db/repo/scrapeRepo.ts` | 刮削任务下的逐文件结果仓储（含 `findScrapeFileByCoverId`） |
-| `src/main/src/db/repo/resourceRepo.ts` | 资源索引仓储 |
+| `src/main/src/db/repo/scrapeRepo.ts` | 刮削任务下的逐文件结果仓储（含 `findScrapeFileByCoverId` 与跨任务按路径 / 状态取记录的 `listScrapeWithConnection`） |
+| `src/main/src/db/repo/resourceRepo.ts` | 资源索引仓储（含影视墙用的 `listResourceByKind` / `maxResourceIndexedAt`） |
 | `src/main/src/db/dbIpc.ts` | 数据库域 IPC 注册 |
 | `src/preload/src/modules/db/dbChannels.ts` | 通道常量与载荷类型（契约） |
 | `src/preload/src/modules/db/db.ts` | 渲染层可用的 `dbApi` |
@@ -66,6 +66,7 @@
 | `id` | text PK | `${taskId}:${path}` |
 | `task_id` | text | 所属任务 |
 | `path` / `name` | text | 文件远端路径与文件名 |
+| `final_path` | text | 流水线算出的最终路径（成功重命名 / 移动之后）；未改名时与 `path` 相同，旧数据为空串时按 `path` 处理 |
 | `keyword` | text | 搜索关键词（由文件名解析） |
 | `status` | text | `pending` / `running` / `success` / `failed` / `skipped` |
 | `plugin_id` / `title` | text | 命中的插件与条目标题 |
@@ -114,6 +115,8 @@
 - `taskStats(): TaskStats`：按 status 分组聚合，输出 `{ total, pending, running, success, failed }`。
 - `replaceResourceDir(connectionId, dirPath, items): number`：在一个事务里先按 `(connectionId, dirPath)` 删除、再按 `path` 删除，最后批量插入，返回写入条数。重复扫描同一目录是幂等的（不会翻倍）。
 - `getResourceById(id): ResourceItem | null`、`listResourceByDir(connectionId, dirPath): ResourceItem[]`（按 name 升序）、`countResource(): number`、`deleteResourceByConnection(connectionId): number`。
+- `listResourceByKind(kind): ResourceItem[]`：按连接与路径升序取某一类资源（影视墙用它拉全部视频）；`maxResourceIndexedAt(): number`：索引里最新的 `indexed_at`，没有任何资源时为 0。
+- `listScrapeWithConnection(status?): { item: ScrapeFileItem; connectionId: string }[]`：`scrape_file ⨝ task` 取回所属存储（`scrape_file` 本身没有 `connection_id`），可选按状态过滤，按 `updatedAt` 倒序。影视墙用它把磁盘视频配对到刮削记录。
 
 IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）：
 
@@ -128,7 +131,7 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 
 渲染层通过 `dbApi`（`@/api` 再导出）以 `dbApi.log.list(...)` / `dbApi.task.stats()` 形式调用。
 
-资源索引与逐文件刮削结果**不额外开 IPC 通道**：它们只被主进程自己用（`storage://` 协议处理、任务终态重建、删除数据源时清理），渲染层拿到的封面地址就是 `storage://` URL（见 [../resource/01-resource-index.md](../resource/01-resource-index.md)）。将来做媒体库页面时再补索引查询通道。
+资源索引与逐文件刮削结果在 `db` 域之外**只有影视墙会读**：`db` 域不为它们开 IPC 通道，影视墙走独立的 `media` 域通道 `media:wall` / `media:detail`（见 [../page/04-media-wall-page.md](../page/04-media-wall-page.md)）；封面地址仍是 `storage://` URL（见 [../resource/01-resource-index.md](../resource/01-resource-index.md)）。其余场景（`storage://` 协议处理、任务终态重建、删除数据源时清理）都由主进程自己使用这两个仓储。
 
 ## 迁移
 

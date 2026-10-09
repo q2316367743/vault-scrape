@@ -46,42 +46,49 @@ const emit = defineEmits<{
           :class="{ 'is-active': connection.id === activeId }"
           @click="emit('select', connection.id)"
         >
-          <component :is="PROTOCOL_ICONS[connection.protocol]" class="connection-icon" />
-          <div class="connection-info">
-            <div class="connection-name">{{ connection.name }}</div>
-            <div class="connection-desc">{{ describeConnection(connection) }}</div>
-          </div>
-          <t-tag class="connection-tag" theme="primary" variant="light">
-            {{ FILE_PROTOCOL_LABELS[connection.protocol] }}
-          </t-tag>
-          <t-tag class="connection-tag" variant="light-outline">
-            {{ describeScrapers(connection) }}
-          </t-tag>
-          <t-tag v-if="connection.nsfw" class="connection-tag" theme="danger" variant="light">
-            NSFW
-          </t-tag>
+          <div class="connection-main">
+            <component :is="PROTOCOL_ICONS[connection.protocol]" class="connection-icon" />
+            <div class="connection-name" :title="connection.name">{{ connection.name }}</div>
 
-          <div class="connection-actions">
-            <t-tooltip content="测试连通">
-              <t-button variant="text" size="small" @click.stop="emit('test', connection)">
-                <template #icon><link-icon /></template>
-              </t-button>
-            </t-tooltip>
-            <t-tooltip content="编辑">
-              <t-button variant="text" size="small" @click.stop="emit('edit', connection)">
-                <template #icon><edit1-icon /></template>
-              </t-button>
-            </t-tooltip>
-            <t-tooltip content="删除">
-              <t-button
-                variant="text"
-                size="small"
-                theme="danger"
-                @click.stop="emit('remove', connection)"
-              >
-                <template #icon><delete-icon /></template>
-              </t-button>
-            </t-tooltip>
+            <div class="connection-actions">
+              <t-tooltip content="测试连通">
+                <t-button variant="text" size="small" @click.stop="emit('test', connection)">
+                  <template #icon><link-icon /></template>
+                </t-button>
+              </t-tooltip>
+              <t-tooltip content="编辑">
+                <t-button variant="text" size="small" @click.stop="emit('edit', connection)">
+                  <template #icon><edit1-icon /></template>
+                </t-button>
+              </t-tooltip>
+              <t-tooltip content="删除">
+                <t-button
+                  variant="text"
+                  size="small"
+                  theme="danger"
+                  @click.stop="emit('remove', connection)"
+                >
+                  <template #icon><delete-icon /></template>
+                </t-button>
+              </t-tooltip>
+            </div>
+          </div>
+
+          <div class="connection-meta">
+            <div class="connection-desc" :title="describeConnection(connection)">
+              {{ describeConnection(connection) }}
+            </div>
+            <div class="connection-tags">
+              <t-tag size="small" theme="primary" variant="light">
+                {{ FILE_PROTOCOL_LABELS[connection.protocol] }}
+              </t-tag>
+              <t-tag size="small" variant="light-outline">
+                {{ describeScrapers(connection) }}
+              </t-tag>
+              <t-tag v-if="connection.nsfw" size="small" theme="danger" variant="light">
+                NSFW
+              </t-tag>
+            </div>
           </div>
         </li>
       </ul>
@@ -94,6 +101,7 @@ const emit = defineEmits<{
 .connection-panel {
   display: flex;
   flex-direction: column;
+  // 与插件页左栏保持同一宽度约定（见 docs/ui/01-renderer-shell.md）
   width: 300px;
   flex-shrink: 0;
   overflow: hidden;
@@ -136,15 +144,22 @@ const emit = defineEmits<{
   list-style: none;
 }
 
+// 两段式：第一行图标 + 名称（操作按钮只在悬停 / 选中时出现），第二行描述与标签
 .connection-item {
-  position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 2px;
   padding: 8px 10px;
   border-radius: var(--fluent-radius-smooth);
   cursor: pointer;
   transition: background var(--fluent-transition-fast);
+}
+
+.connection-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .connection-item:hover {
@@ -166,30 +181,40 @@ const emit = defineEmits<{
   color: var(--td-brand-color);
 }
 
-.connection-info {
+.connection-name {
   flex: 1;
   min-width: 0;
-}
-
-.connection-name {
   overflow: hidden;
   font-size: 13px;
+  font-weight: 500;
   color: var(--td-text-color-primary);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.connection-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 24px;
+}
+
 .connection-desc {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
-  margin-top: 2px;
   font-size: 11px;
   color: var(--td-text-color-placeholder);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.connection-tag {
+.connection-tags {
+  display: flex;
   flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
 }
 
 .connection-actions {

@@ -30,6 +30,7 @@ src/
 │       ├── setting/         # 设置类型：shared / path / scrape / network / translate / naming / download / file / index
 │       ├── file/            # 文件类型：error / path / entry / connection / request / transfer / result / index
 │       ├── resource/        # 资源索引类型：ResourceKind / ResourceItem / storage:// 地址的拼装与解析
+│       ├── media/           # 影视墙类型：墙面条目 / 详情请求与结果 / NFO 反向解析 / 错误与信封
 │       ├── plugin/          # 插件类型：asset / movie / manifest / env / define / normalize / error / result / index
 │       ├── log.ts           # 日志类型与查询条件
 │       ├── dialog.ts        # 系统文件/目录选择框（Electron dialog）的入参与结果契约
@@ -42,6 +43,7 @@ src/
 │       ├── modules/dialog/  # 对话框域：把 Electron dialog 的「打开 / 保存」框收窄后暴露给渲染层
 │       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
 │       ├── modules/http/    # HTTP 域：axios 单例 + 请求拦截器按网络设置注入代理
+│       ├── modules/media/   # 媒体域：影视墙取数（资源索引 ⨝ 刮削记录）与影片详情（含同名 NFO 解析）+ IPC
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
 │       ├── modules/resource/ # 资源域：把目录扫描结果写进 resource 索引表，并注册 storage:// 私有协议提供静态资源（本地直读 / 远端缓存）
 │       ├── modules/scrape/  # 刮削域：任务编排 + 单文件流水线 + 根目录扫描 + IPC 与进度推送
@@ -51,7 +53,7 @@ src/
 ├── preload/
 │   ├── index.ts             # contextBridge 暴露 electron 与 preload
 │   ├── index.d.ts           # window 全局类型声明
-│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin / scrape）
+│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin / scrape / media）
 └── renderer/
     ├── index.html
     └── src/
