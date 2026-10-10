@@ -1,9 +1,9 @@
 /**
  * 工具箱页面用到的小工具：资源类型归属与「当前下载设置是否会下载」判定。
  *
- * 映射口径与 `@common/types/plugin/asset.ts` 的注释保持一致：
- * thumb→downloadThumb、poster→downloadPoster、fanart→downloadFanart、
- * still→downloadStill、trailer→downloadTrailer。
+ * 判定复用 `@common/types/scrape/asset.ts` 的 `downloadFlagOf`：
+ * thumb/poster/fanart/still/trailer 各自对应下载开关，
+ * banner / logo 没有开关、始终下载。
  */
 import {
   COVER_ASSET_KINDS,
@@ -11,15 +11,8 @@ import {
   type PluginAsset,
   type PluginAssetKind
 } from '@common/types/plugin'
+import { downloadFlagOf } from '@common/types/scrape/asset'
 import type { SettingDownload } from '@common/types/setting'
-
-const DOWNLOAD_SWITCH: Readonly<Record<PluginAssetKind, keyof SettingDownload>> = {
-  thumb: 'downloadThumb',
-  poster: 'downloadPoster',
-  fanart: 'downloadFanart',
-  still: 'downloadStill',
-  trailer: 'downloadTrailer'
-}
 
 /** 资源类型的中文标签 */
 export function assetKindLabel(kind: PluginAssetKind): string {
@@ -33,7 +26,7 @@ export function assetSourceLabel(kind: PluginAssetKind): string {
 
 /** 当前下载设置是否会下载该类型 */
 export function isAssetDownloaded(kind: PluginAssetKind, download: SettingDownload): boolean {
-  return download[DOWNLOAD_SWITCH[kind]] === true
+  return downloadFlagOf(download, kind)
 }
 
 /** 资产表格的一行 */

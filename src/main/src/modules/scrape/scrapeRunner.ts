@@ -113,15 +113,20 @@ function snapshotSettings(): ScrapeSettingsSnapshot {
   }
 }
 
-/** 任务要沿用的资料库策略：改名 / 移动 / 写 NFO / 图片落盘位置全部来自资料库 */
-function libraryPolicy(library: MediaLibrary): ScrapeLibraryPolicy {
+/**
+ * 任务要沿用的资料库策略：整理方式与本地优先来自资料库。
+ *
+ * `connectionId` 用来挑出该连接下的资料库目录，清理空目录时不会误删它们。
+ */
+function libraryPolicy(library: MediaLibrary, connectionId: string): ScrapeLibraryPolicy {
   return {
     libraryId: library.id,
-    imageSaveMode: library.imageSaveMode,
-    writeNfo: library.writeNfo,
-    renameEnabled: library.renameEnabled,
+    localFirst: library.localFirst,
     moveEnabled: library.moveEnabled,
-    moveDirectory: library.moveDirectory
+    moveDirectory: library.moveDirectory,
+    libraryRoots: library.paths
+      .filter((path) => path.connectionId === connectionId)
+      .map((path) => normalizeRemotePath(path.path))
   }
 }
 
@@ -295,7 +300,7 @@ async function execute(
   running = { taskId: task.id, controller }
   const log = createScrapeRunLog(task.name)
   const plugins = assertUsablePlugins(scraperIds)
-  const policy = libraryPolicy(library)
+  const policy = libraryPolicy(library, task.connectionId)
   const settings = snapshotSettings()
   let hardFailure = false
   let client: Awaited<ReturnType<typeof getFileClient>>

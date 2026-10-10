@@ -69,6 +69,8 @@ export interface MediaItemInput extends MediaItemScanPatch {
 export interface MediaSourceScanPatch {
   itemId?: string
   libraryId?: string
+  /** 文件被移动后就地改写；身份按 (connectionId, path) 解析，id 不变 */
+  path?: string
   name?: string
   extname?: string
   mime?: string
@@ -351,44 +353,35 @@ export function insertSource(input: MediaSourceInput, scanId: string): void {
 
 /** 按「连接 + 路径」写入或刷新媒体源；重扫只刷新扫描拥有的列 */
 export function upsertSource(input: MediaSourceInput, scanId: string): void {
-  const now = Date.now()
-  db()
-    .insert(mediaSourceTable)
-    .values({
-      id: input.id,
+  // 身份按 (connectionId, path) 解析，不重算哈希：刮削会把文件移进同名文件夹，
+  // 并就地改写 media_source.path 而 **保持 id 不变**。若按哈希重算 id，
+  // 就会插入一条「id 已被占用、路径却是新路径」的行，直接撞主键
+  // （UNIQUE constraint failed: media_source.id）。
+  const existing = findSourceByPath(input.connectionId, input.path) ?? getSource(input.id)
+  if (existing) {
+    // 第二条分支是历史遗留的「id 属于这条路经、行里记着别的路径」：把它改回来
+    updateSource(existing.id, {
       itemId: input.itemId,
       libraryId: input.libraryId,
-      connectionId: input.connectionId,
       path: input.path,
       name: input.name,
       extname: input.extname,
       mime: input.mime,
       size: input.size,
       modifiedAt: input.modifiedAt,
-      indexedAt: now,
+      indexedAt: Date.now(),
       scanId
     })
-    .onConflictDoUpdate({
-      target: [mediaSourceTable.connectionId, mediaSourceTable.path],
-      set: {
-        itemId: input.itemId,
-        libraryId: input.libraryId,
-        name: input.name,
-        extname: input.extname,
-        mime: input.mime,
-        size: input.size,
-        modifiedAt: input.modifiedAt,
-        indexedAt: now,
-        scanId
-      }
-    })
-    .run()
+    return
+  }
+  insertSource(input, scanId)
 }
 
 export function updateSource(id: string, patch: MediaSourceScanPatch): void {
   const set: Partial<MediaSourceRow> = {}
   if (patch.itemId !== undefined) set.itemId = patch.itemId
   if (patch.libraryId !== undefined) set.libraryId = patch.libraryId
+  if (patch.path !== undefined) set.path = patch.path
   if (patch.name !== undefined) set.name = patch.name
   if (patch.extname !== undefined) set.extname = patch.extname
   if (patch.mime !== undefined) set.mime = patch.mime

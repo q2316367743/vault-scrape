@@ -80,7 +80,7 @@
 - `title` 口径 = `item.scrapedAt > 0 ? item.name : stripExtension(item.name)`——刮削时插件写回的标题就存在条目 `name` 上，所以「刮过」的条目显示插件标题，没刮过的显示去扩展名的文件名。
 - 刮削分类已下线：旧的「`scrapedAt > 0` 或 `hasNfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起删除；**刮削队列**仍是另一个口径——`listPendingMovieItems` 只取 `scrapedAt === 0`，所以「有 NFO / 有封面但没真刮过」的条目照样能被「刮削本库」选中重刮（见[资料库](../media/01-media-library.md) §5）。
 
-- 封面 `coverUrl`：按 `MEDIA_COVER_IMAGE_TYPE_ORDER`（主图 → 缩略图 → 背景图 → 剧照 → 其他）逐类找，同一类里先条目自己的图片、再**父目录条目**的图片，取到第一张就返回。目录级 `poster` / `cover` / `folder` 在扫描时挂在目录条目上，刮削器写的 `[基名-]thumb.jpg`、`extrafanart/stillN.jpg` 也已在扫描时入库，所以「有快照没封面」会自动回退到快照。地址 `buildMediaUrl(image.connectionId, image.id, 文件名)`；一张都没有则空串（卡片显示占位）。
+- 封面 `coverUrl`：按 `MEDIA_COVER_IMAGE_TYPE_ORDER`（主图 → 缩略图 → 背景图 → 剧照 → 其他）逐类找，同一类里先条目自己的图片、再**父目录条目**的图片，取到第一张就返回。目录级 `poster` / `cover` / `folder` 在扫描时挂在目录条目上，刮削器写的 `[基名-]thumb.jpg`、`extrafanart/stillN.jpg` 也已在扫描时入库，所以「有快照没封面」会自动回退到快照。地址 `buildMediaUrl(image.connectionId, image.id, 文件名)`；一张都没有则空串（卡片显示占位）。注意 `image.id` 有两种形态（扫描图 32 位十六进制 / 刮削图 UUID），主进程 `handleMediaRequest()` 的 `MEDIA_ID_PATTERN` 形态校验必须两种都放行，否则刮削封面会静默 404（`notFound()` 分支不打日志），表现为「封面全都不显示」——见[资料库 · 确定性 ID](../media/01-media-library.md)。
 - 播放 `playUrl`：`buildMediaUrl(source.connectionId, source.id, source.name)`——用的是**媒体源 id**，渲染层因此拿不到磁盘路径。
 
 **播放**（`storage://` 协议 + 自建 Range 服务端，`src/main/src/modules/media/mediaProtocol.ts`）：
@@ -92,7 +92,7 @@
   - 有 `Range` → `206` + `Content-Range: bytes s-e/total`；
   - `start` 越界 → `416` + `Content-Range: bytes */total`；
   - 支持 `bytes=start-end` / `bytes=start-` / `bytes=-suffix` 尾部探测（非 faststart 的 MP4 要靠最后一种去文件尾读 moov）；多区间与非法值退化成 200 全量，不做 `multipart/byteranges`。
-- 取值路径：本机连接（`protocol === 'local'`）直读；远端视频 / 图片先落到 `~/.vault-scrape/cache/media/<媒体ID>`（总量上限 512MB，超了按 mtime 由旧到新剪到 80%）再读；`imageSaveMode='appdata'` 的图片走伪连接 `appdata`，协议层复核目标路径确实在 `~/.vault-scrape/media/images` 之下后用 `net.fetch(pathToFileURL)` 直读。
+- 取值路径：本机连接（`protocol === 'local'`）直读；远端视频 / 图片先落到 `~/.vault-scrape/cache/media/<媒体ID>`（总量上限 512MB，超了按 mtime 由旧到新剪到 80%）再读。刮削产物（视频与全部图片）都落在影片自己的文件夹里，没有独立的图片存储位置。
 - 区间读与流适配：`FileClient.readRange(path, start, end)`（**闭区间，含 end**）返回 node 流，再用 `modules/file/streamToWeb.ts` 的 `toWebStream` 适配成 `Response` 的 body（队列积压时 `pause()` 源流、`pull` 时 `resume()`，下游 `cancel` 时 `destroy()` 源流）。
 - 任何异常都记一条去重 warn（同一媒体 60s 内只记一条）并返回 404，不在渲染层抛异常；**唯一的例外是下面的路径自愈**。
 - **播放期路径自愈**（`src/main/src/modules/media/mediaLocator.ts`）：`media_source.path` 只在扫描与刮削改名 / 移动时更新，用户在文件管理器里手工把 `.mp4` 挪走又不重扫时，`client.stat()` 会抛 ENOENT——以前直接变 404（封面还在原地，所以表现为「图片正常、视频 404」）。现在 `handleRangeRequest`（媒体源与存储页路径预览共用的区间请求入口）把 `stat` 包进 try/catch，命中 `isNotFoundError(error)` 且请求来自**媒体源**时按「文件名等价（trim + 忽略大小写）+ 字节数相同」找回：
@@ -124,11 +124,11 @@
 | 媒体目录 | 多行编辑器 `LibraryDirectoryEditor.vue`：每行「存储下拉 + 选择目录 + 路径回显」，未选存储时选择按钮禁用并 `t-tooltip` 提示「请先选择存储」；换存储会清空该行路径；只剩一行时删除按钮禁用；底部「添加媒体目录」+ 说明「一个资料库可以包含多个存储上的多个目录，扫描时会全部递归遍历」 |
 | 选择目录 | 走资料库自己的 `RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`（`fileApi.list({ connectionId, path })`，**只列目录**，带面包屑与「上级目录」，路径全程是**连接内路径**（`/` = 连接根），点「选择当前目录」把当前路径回调回该行）；弹窗 footer 左侧跟着内容组件 `defineExpose` 出来的当前路径、右侧是「取消 / 选择当前目录」（契约见 `src/renderer/src/utils/modal/ModalContent.ts`）；**不复用本机目录选择器** |
 | 刮削器 | 通用多选控件 `CheckboxSelect`（`@/components/CheckboxSelect.vue`：外框 + 搜索框 + 可滚动 checkbox 列表，`v-model` 是 `string[]`，契约见 [ui/03](../ui/03-checkbox-select.md)），候选项来自 `useScraperOptions`（`pluginApi.list()` 过滤 `enabled && loadError === ''`）；说明「不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削」；已保存但当前不可用的 id 不进候选，会被补进选项数据、label 标注「（已失效）」显示，取消勾选才会从配置里清除（不会被静默清空）；**新建时默认勾选内置 `R18_OFFLINE_PLUGIN_ID`（`r18-offline`），插件不可用时保持不勾** |
-| 库级选项 | NSFW 保护 / 写入 NFO / 重命名文件 / 移动文件（**开启时才显示「目标目录」输入**，关闭时存空串）/ 图片保存位置（`LIBRARY_IMAGE_SAVE_MODE_LABELS`） |
+| 库级选项 | NSFW 保护 / 「文件过滤」`minFileSizeMb`（`t-input-number`，`:min="0"`、`:step="100"`，说明「小于该体积（MB）的视频不参与扫描与刮削；填 0 表示不过滤」）/ 「优先读取本地 NFO 和图片」`localFirst`（开关，文案「优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息」）/ 移动文件（**开启时才显示「目标目录」输入**，关闭时存空串）；**写 NFO、按命名规则重命名、图片与影片同目录都是固定行为，表单里没有对应开关** |
 
 - 提交前校验顺序：名称 → 至少一行媒体目录 → 每行都选了存储 → 同库内不出现重复目录 → 每行都选了目录；两条兜底文案「请先到「存储」页新建数据源」「请为每个媒体目录选择存储」，重复目录报「存在重复的根目录，请合并后再保存」。
 - 提交走 `libraryApi.save`（新建不带 `id`），失败经 `LibraryResult` 回显中文原因（跨库目录重叠的报错由主进程给，见[资料库 · 目录重叠规则](../media/01-media-library.md)）。
-- 新建时渲染层默认值：`type = 'movie'`、`writeNfo = true`、NSFW / 重命名 / 移动均关闭、`imageSaveMode = 'media'`。
+- 新建时渲染层默认值：`type = 'movie'`、`minFileSizeMb = 0`、`localFirst = false`、NSFW / 移动均关闭。
 
 ## 6. 目录结构
 
@@ -160,7 +160,7 @@ src/renderer/src/windows/main/pages/media/
 
 - `pages/media/` 下**不再有平铺文件**（RL-09：页面目录分层），跨首页与内容页共用的组件放 `pages/media/components/`。
 - 原来页面私有的 `mediaUtils.ts` 已上移为 `src/renderer/src/utils/format.ts`（`formatSize` / `formatTime` / `formatDuration`，未知值统一显示「—」），引用点统一用 `@/utils/format`；工作台也在用同一份，所以不要再在页面里复制。
-- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情 / 逐级浏览取数）、`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaAppData.ts`（伪连接 `appdata` 与图片根目录）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
+- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情 / 逐级浏览取数）、`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
 - 本机路径与连接内路径互转仍走 `src/renderer/src/utils/remotePath.ts`（`toRemoteDir` / `toDisplayDir`）。
 
 ## 7. NSFW 保护
@@ -209,6 +209,7 @@ src/renderer/src/windows/main/pages/media/
 - 整墙一次全量拉取，没有分页 / 虚拟滚动：视频数量很大（数千）时首屏渲染会变慢，后续按需再加分页或虚拟列表；首页两排只取前 24 条（推荐排是均匀取样，不是随机）。
 - 内容页没有库下拉筛选：换库要回首页点卡片或改地址栏，交互上比旧版「一个下拉切库」多一步。
 - 播放是「直接放磁盘上的原文件」：不做转码、不做字幕与外挂音轨、**不记忆播放进度**（本轮明确不做播放历史，所以既没有「继续观看」，详情页也总是从头开始），多版本 / 多线路切换没有入口。
+- **不支持 MPEG-TS 封装**：内置播放器就是 Chromium 的 `<video>`，桌面版不解 MPEG-TS（`.ts` / `.m2ts`，或扩展名被写成 `.mp4` 的 TS 流——`ffprobe` 报 `mpegts`、文件头 `47 40 11 10`），改 `Content-Type` 也没用（解封装器只嗅探字节流）。这类文件播放时必然落到 §4 的 `fallbackText` 兜底层，**本版本不做转封装**，只能先用 `ffmpeg -i 原文件 -c copy -movflags +faststart 新文件.mp4` 转成真 MP4 再看。扫描是按扩展名判 MIME 的（`mediaIndexer` 用 `guessMimeType`），所以库里这类文件的 `mime` 会记成 `video/mp4`，与实际封装不符。
 - 远端（WebDAV / SMB）视频按区间实时读，不再整文件落本机缓存：好处是点开即播、不占磁盘，代价是每次拖动都要向远端重新要数据，网络差时会有缓冲等待；后续若要顺滑可以加一小段本地分片缓存。
 - 没有「重新配对」这一步：整墙直接读条目与媒体源，刮削成功即写库，不需要重建索引；磁盘上消失的文件要靠资料库抽屉的「扫描」清理（本轮没有文件系统监控）。**唯一例外**是播放期的路径自愈（§4）：同名同大小、只是被挪了目录的视频能在起播时自己找回，改名 / 删除仍要重扫。
 - 封面只认两级：条目自己的 `primary` 图片，以及**父目录条目**的 `primary` 图片（扫描时把目录级 `poster` / `cover` / `folder` 挂在目录条目上）。旧版按文件名在索引里找封面的「同目录产出」兜底已随资源索引删除；一个目录里有多个视频（例如一季剧集）时会共用父目录的封面。

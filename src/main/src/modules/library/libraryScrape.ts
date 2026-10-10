@@ -5,6 +5,7 @@
  * - 刮削器只取 `library.scrapers`，不再回落连接配置；**空数组 = 该库不刮削**，
  *   手动刮削时直接抛 `pluginMissing`；
  * - 同目录同番号只保留先出现的那条，重复的标记 duplicateOf；
+ * - 小于 `library.minFileSizeMb` 的视频不参与刮削（与扫描的体积过滤同一口径）；
  * - 库内没有待刮削文件时抛 `notFound`（中文提示），由 IPC 边界转信封。
  */
 import type { LibraryTaskResult, MediaLibrary, MediaLibraryPath } from '@common/types/library'
@@ -40,13 +41,16 @@ function owningPath(library: MediaLibrary, connectionId: string, path: string): 
 }
 
 /** 组装待刮削候选：番号以磁盘文件名解析为准，识别不到时退回条目上的番号 */
-function collectCandidates(libraryId: string): LibraryScrapeCandidate[] {
+function collectCandidates(library: MediaLibrary): LibraryScrapeCandidate[] {
+  const minBytes = Math.max(0, library.minFileSizeMb) * 1024 * 1024
   const firstByKey = new Map<string, string>()
   const candidates: LibraryScrapeCandidate[] = []
-  for (const item of listPendingMovieItems(libraryId)) {
+  for (const item of listPendingMovieItems(library.id)) {
     const sources = listSourcesByItem(item.id)
     const source = sources.find((row) => row.path === item.path) ?? sources[0]
     if (!source) continue
+    // 体积过滤与扫描一致：读不到体积（0）时不排除
+    if (minBytes > 0 && source.size > 0 && source.size < minBytes) continue
     const parsed = extractKeyword(item.name)
     const num = normalizeNum(parsed.num.length > 0 ? parsed.num : item.num)
     const key = `${dirnameRemotePath(source.path)}\n${num.length > 0 ? num : parsed.cleaned}`
@@ -70,7 +74,7 @@ function collectCandidates(libraryId: string): LibraryScrapeCandidate[] {
 
 /** 待刮削条目（自动刮削判断与扫描进度里的 pending 都用它） */
 export function pendingEntries(libraryId: string): ScrapeScanEntry[] {
-  return collectCandidates(libraryId)
+  return collectCandidates(requireLibrary(libraryId))
 }
 
 /**
@@ -83,7 +87,7 @@ export function planLibraryScrape(libraryId: string, itemIds?: readonly string[]
   const library = requireLibrary(libraryId)
   const wanted = itemIds === undefined ? null : new Set(itemIds)
   const groups = new Map<string, { connectionId: string; dirPath: string; entries: ScrapeScanEntry[] }>()
-  for (const candidate of collectCandidates(libraryId)) {
+  for (const candidate of collectCandidates(library)) {
     if (wanted && !wanted.has(candidate.itemId)) continue
     const owner = owningPath(library, candidate.connectionId, candidate.path)
     if (!owner) continue

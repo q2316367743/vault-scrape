@@ -9,8 +9,11 @@
  * - `type` 是资料库类型：目前只落地「影视」（`movie`），书籍等类型只在类型层预留；
  * - `scrapers` **可以为空**：空数组表示这个库不刮削，扫描只负责索引；
  *   非空时全部必须是「插件 ID + 已启用」的刮削器，运行时不可用会单独报错；
- * - 扫描是「递归遍历每个目录 + 按路径 upsert 条目 + 清理磁盘上已消失的条目」；
- *   刮削只针对库内**尚未刮削**的条目；
+ * - 扫描是「递归遍历每个目录 + 按路径 upsert 条目 + 清理磁盘上已消失的条目」，
+ *   `minFileSizeMb` 以下的视频直接不入库；
+ * - 刮削只针对库内**尚未刮削**的条目，产出固定写成 Jellyfin 目录规范
+ *   （文件夹 / 视频 / NFO 同名，图片与影片同目录），这两件事没有开关；
+ * - `localFirst` 为真时先读本地 NFO 与本地图片，只从互联网补缺失项；
  * - 删除库只删配置与库内条目：磁盘文件不动。
  */
 import type { ScrapeTaskSnapshot } from '../scrape'
@@ -27,16 +30,6 @@ export const LIBRARY_TYPE_LABELS: Readonly<Record<LibraryType, string>> = {
 /** 资料库类型的中文名；脏数据回落类型本身 */
 export function libraryTypeLabel(type: LibraryType): string {
   return LIBRARY_TYPE_LABELS[type] ?? type
-}
-
-/** 图片落盘位置：与影片同目录，或应用数据目录 */
-export type LibraryImageSaveMode = 'media' | 'appdata'
-
-export const LIBRARY_IMAGE_SAVE_MODES: readonly LibraryImageSaveMode[] = ['media', 'appdata']
-
-export const LIBRARY_IMAGE_SAVE_MODE_LABELS: Readonly<Record<LibraryImageSaveMode, string>> = {
-  media: '与影片同目录',
-  appdata: '应用数据目录'
 }
 
 /** 资料库里的一个媒体目录 */
@@ -65,16 +58,14 @@ export interface MediaLibrary {
   paths: MediaLibraryPath[]
   /** 该库的影片默认开启 NSFW 保护 */
   nsfwProtection: boolean
-  /** 刮削完成后把元数据写成同目录的 `movie.nfo` */
-  writeNfo: boolean
-  /** 刮削完成后按插件标题重命名文件 */
-  renameEnabled: boolean
-  /** 刮削完成后把文件移动到 `moveDirectory` */
+  /** 扫描时排除小于该体积（MB）的视频；0 表示不过滤 */
+  minFileSizeMb: number
+  /** 优先读取本地 NFO 与本地图片，只从互联网上补缺失的信息 */
+  localFirst: boolean
+  /** 刮削完成后把整个影片文件夹移动到 `moveDirectory`（不勾选就在原目录整理） */
   moveEnabled: boolean
   /** 移动目标目录（连接内路径；用于该库的多个连接时按目标归属的连接解释） */
   moveDirectory: string
-  /** 图片落盘位置 */
-  imageSaveMode: LibraryImageSaveMode
   /** 上次扫描完成时间；0 表示从未扫描 */
   lastScanAt: number
   /** 上次刮削任务启动时间；0 表示从未刮削 */
@@ -91,11 +82,10 @@ export interface MediaLibraryDraft {
   scrapers: string[]
   paths: MediaLibraryPathDraft[]
   nsfwProtection: boolean
-  writeNfo: boolean
-  renameEnabled: boolean
+  minFileSizeMb: number
+  localFirst: boolean
   moveEnabled: boolean
   moveDirectory: string
-  imageSaveMode: LibraryImageSaveMode
 }
 
 /** 墙面筛选与列表展示用的库摘要（计数与封面由影视墙读模型给出） */

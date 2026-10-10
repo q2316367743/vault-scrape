@@ -44,10 +44,10 @@ src/
 │       ├── modules/dialog/  # 对话框域：把 Electron dialog 的「打开 / 保存」框收窄后暴露给渲染层
 │       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
 │       ├── modules/http/    # HTTP 域：axios 单例 + 请求拦截器按网络设置注入代理
-│       ├── modules/media/   # 媒体域：扫描索引引擎（mediaIndexer，按传入的 extensions 判视频）+ storage:// 协议与 Range 流式（mediaProtocol）+ 播放期路径自愈（mediaLocator）+ 首页 / 整墙 / 详情 / 逐级浏览读模型（mediaWall）+ appdata 图片路径（mediaAppData）+ IPC
+│       ├── modules/media/   # 媒体域：扫描索引引擎（mediaIndexer，按传入的 extensions 判视频）+ storage:// 协议与 Range 流式（mediaProtocol）+ 播放期路径自愈（mediaLocator）+ 首页 / 整墙 / 详情 / 逐级浏览读模型（mediaWall）+ IPC
 │       ├── modules/library/ # 资料库域：配置落 sqlite（类型 / 多根目录 / 空刮削器 = 不刮削 / 库级选项）+ 目录重叠校验（libraryStore.normalizePaths）+ 扫描编排与取消（libraryScan，按库类型取后缀、扫后自动刮削）+ 待刮削候选与任务启动（libraryScrape）+ 进度广播 + IPC
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
-│       ├── modules/scrape/  # 刮削域：任务编排 + 单文件流水线 + 资料库候选入口 + 单文件资源落盘（scrapeLocalAsset）+ IPC 与进度推送
+│       ├── modules/scrape/  # 刮削域：任务编排 + 单文件流水线（产物规范 scrapeLayout / 本地 NFO 与图片 scrapeLocalMeta）+ 资料库候选入口 + IPC 与进度推送
 │       ├── modules/setting/ # 设置域：落盘实现 + IPC
 │       ├── utils/           # 主进程通用工具：secretCodec（safeStorage 编解码，插件与文件域共用）
 │       └── registerIpc.ts   # 汇总注册各域 IPC

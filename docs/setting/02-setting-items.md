@@ -37,7 +37,7 @@
 | `requestDelay` | 每次请求之间的延迟（秒） | `1` | 数字输入，最小 0 |
 | `restAfterCount` | 连续刮削多少条后休息，0 表示不休息 | `50` | 数字输入，最小 0 |
 | `restDuration` | 休息时长（秒） | `60` | 数字输入，最小 0 |
-| `fanartDirName` | 剧照目录名（刮削结果中存放剧照的子目录名） | `'extrafanart'` | 输入框 |
+| `fanartDirName` | 剧照目录名：既是刮削结果里存放剧照（`still`）的子目录名，也是「优先读取本地图片」时查找本地剧照的目录名 | `'extrafanart'` | 输入框 |
 
 ## 4. 网络连接（`network`）
 
@@ -64,8 +64,7 @@
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
-| `folderTemplate` | 文件夹模板 | `'{num}'` | 输入框 |
-| `fileTemplate` | 文件名模板 | `'{num} {title}'` | 输入框 |
+| `fileTemplate` | 名称模板：**影片文件夹名 / 影片文件名 / NFO 文件名三者共用这一个结果** | `'{num} {title} ({year}) [{providerId}]'` | 输入框 |
 | `assetNaming` | 附属文件命名：`fixed`（固定命名） / `movie`（跟随影片文件名） | `'fixed'` | 下拉选择 |
 | `nfoTitleTemplate` | NFO 标题模板 | `'{num} {title}'` | 输入框 |
 | `actorMaxCount` | 演员名最大数量 | `5` | 数字输入，最小 1 |
@@ -73,8 +72,7 @@
 | `actorFallbackToMaker` | 演员为空时使用片商或卖家（`{actor}` 回退，可用 `{actorFallbackPrefix}{actor}` 显示来源） | `false` | 开关 |
 | `releaseDateFormat` | 发行日期格式（dayjs 格式串） | `'YYYY-MM-DD'` | 输入框 |
 | `partStyle` | 分盘样式：`origin`（保持原始后缀） / `cd`（CD1/CD2） / `part`（PART1/PART2） / `disc`（DISC1/DISC2） | `'origin'` | 下拉选择 |
-| `folderMaxLength` | 文件夹名最大长度 | `120` | 数字输入，最小 1 |
-| `fileNameMaxLength` | 文件名最大长度 | `120` | 数字输入，最小 1 |
+| `fileNameMaxLength` | 名称最大长度（文件夹名与文件名同源，共用这一个上限） | `120` | 数字输入，最小 1 |
 | `chinaSubtitleTag` | 中文字幕标记 | `'中文字幕'` | 输入框 |
 | `umrTag` | UMR 标记 | `'UMR'` | 输入框 |
 | `leakTag` | 流出标记 | `'流出'` | 输入框 |
@@ -106,9 +104,8 @@
 | `keepFanart` | 保留已有背景图 | `true` |
 | `keepStill` | 保留已有剧照 | `true` |
 | `keepTrailer` | 保留已有预告片 | `true` |
-| `generateNfo` | 生成 NFO | `true` |
-| `nfoFileNaming` | NFO 文件命名：`both`（同时生成两种） / `movie`（仅 movie.nfo） / `filename`（仅文件名.nfo） | `'both'` |
-| `keepNfo` | 保留已有 NFO | `true` |
+
+NFO **一定会写**，因此没有「生成 NFO」/「NFO 文件命名」/「保留已有 NFO」这三项：NFO 固定写到与影片同名的 `<名称>.nfo`。
 
 角标类型与角标位置两行仅在 `posterTagBadge` 开启时显示；角标类型为可多选、可搜索、可新建的下拉框。
 

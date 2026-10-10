@@ -81,9 +81,9 @@
 
 索引：`idx_scrape_file_task`（taskId）、`idx_scrape_file_status`（taskId, status）、`idx_scrape_file_item`（itemId）。
 
-媒体层的五张表（`library` 14 列 / `library_path` 5 列 / `media_item` 26 列 / `media_source` 12 列 / `media_image` 9 列）不在本文重复，逐列说明见 [资料库](../media/01-media-library.md) 的「数据结构」一节。要点：
+媒体层的五张表（`library` 13 列 / `library_path` 5 列 / `media_item` 26 列 / `media_source` 12 列 / `media_image` 9 列）不在本文重复，逐列说明见 [资料库](../media/01-media-library.md) 的「数据结构」一节。要点：
 
-- `library` 表的 `type` 列（`$type<LibraryType>()`，默认 `'movie'`）由迁移 `0001_smooth_micromacro.sql` 加上：类型决定扫描按 `setting.library.extensions` 里的哪份后缀清单识别媒体文件，建库后不可修改。
+- `library` 表的 `type` 列（`$type<LibraryType>()`，默认 `'movie'`）由迁移 `0001_smooth_micromacro.sql` 加上：类型决定扫描按 `setting.library.extensions` 里的哪份后缀清单识别媒体文件，建库后不可修改。库级选项只留 `min_file_size_mb`（体积过滤，默认 0）与 `local_first`（优先本地 NFO 与图片，默认 false）；写 NFO、重命名、图片落同目录是固定规范，没有对应列。
 - 表之间**没有外键**：`library_id` / `item_id` / `parent_id` 都是普通 text 列，级联清理由仓储函数显式完成（`deleteItemsWithoutSource` → `deleteImagesByIds` → `deleteSourcesNotInScan`；删库走 `purgeLibraryMedia`；删连接走 `deleteLibrariesByConnection`）。
 - 唯一索引是去重与 upsert 的落点：`library_path (connection_id, path)`（一条目录只能属于一个库，嵌套与重叠由 `libraryStore.normalizePaths()` 在保存时先用 `isRemotePathInside` 拦下）、`media_source (connection_id, path)`（重扫 `upsertSource` 的冲突目标，**id 不变**）、`media_image (connection_id, path)`。
 - 刮削元数据写在 `media_item` 上（`title` / `num` / `overview` / 评分 / JSON 列 `genres` / `studios` / `tags` / `provider_ids` / `scraped_at` / `scraper_id`），所以重扫只更新 `media_source`，元数据与图片不会丢。

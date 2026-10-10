@@ -1,7 +1,6 @@
 import type {
   AssetNaming,
   BadgeCorner,
-  NfoFileNaming,
   PartStyle,
   ProxyType,
   TranslateLanguage
@@ -37,12 +36,6 @@ export const partStyleOptions: SettingOption<PartStyle>[] = [
   { value: 'cd', label: '统一为 CD1 / CD2' },
   { value: 'part', label: '统一为 PART1 / PART2' },
   { value: 'disc', label: '统一为 DISC1 / DISC2' }
-]
-
-export const nfoFileNamingOptions: SettingOption<NfoFileNaming>[] = [
-  { value: 'both', label: '同时生成两种' },
-  { value: 'movie', label: '仅 movie.nfo' },
-  { value: 'filename', label: '仅文件名.nfo' }
 ]
 
 export const badgeCornerOptions: SettingOption<BadgeCorner>[] = [

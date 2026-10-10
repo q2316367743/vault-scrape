@@ -20,7 +20,7 @@
  */
 import { createHash, randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'fs'
-import { join, resolve, sep } from 'path'
+import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { app, net, protocol } from 'electron'
 import {
@@ -42,7 +42,6 @@ import { appendLog } from '$/db/repo/logRepo'
 import { getImage } from '$/db/repo/mediaImageRepo'
 import { getSource, updateSourcePath } from '$/db/repo/mediaRepo'
 import { getConnection } from '$/modules/file/fileConnectionStore'
-import { APPDATA_CONNECTION_ID, appDataImageRoot } from '$/modules/media/mediaAppData'
 import { resolveInsideRoot } from '$/modules/file/impl/local/localPath'
 import { isNotFoundError } from '$/modules/file/fileErrorUtils'
 import { getFileClient } from '$/modules/file/fileClientManager'
@@ -431,14 +430,6 @@ async function handleMediaRequest(request: Request): Promise<Response> {
   try {
     const target = resolveTarget(connectionId, mediaId)
     if (!target) return notFound()
-    // 应用数据目录（imageSaveMode = 'appdata'）里的图片不在任何连接内，按绝对路径直接读盘；
-    // 路径虽然来自本机库文件，仍复核一次归属，避免脏数据把协议变成任意文件读
-    if (connectionId === APPDATA_CONNECTION_ID) {
-      const file = resolve(target.path)
-      const root = resolve(appDataImageRoot())
-      if (!file.startsWith(root + sep)) return notFound()
-      return await net.fetch(pathToFileURL(file).toString())
-    }
     const connection = getConnection(connectionId)
     if (!connection) return notFound()
     if (target.kind === 'video') return await handleRangeRequest(connection, target, request)

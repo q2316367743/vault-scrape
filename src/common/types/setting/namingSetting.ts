@@ -10,11 +10,14 @@ export type PartStyle = 'origin' | 'cd' | 'part' | 'disc'
 
 export const PART_STYLES: readonly PartStyle[] = ['origin', 'cd', 'part', 'disc']
 
-/** 命名规则设置 */
+/**
+ * 命名规则设置。
+ *
+ * 契约：影片文件夹名、视频文件名、NFO 文件名**同源同值**，都由 `fileTemplate` 渲染，
+ * 因此这里没有独立的文件夹模板（见 docs/scrape/01-scrape-module.md 的目录规范）。
+ */
 export interface SettingNaming {
-  /** 文件夹模板 */
-  folderTemplate: string
-  /** 文件名模板 */
+  /** 名称模板：文件夹名 / 视频文件名 / NFO 文件名三者共用一个结果 */
   fileTemplate: string
   /** 附属文件命名：固定命名 / 跟随影片文件名 */
   assetNaming: AssetNaming
@@ -30,9 +33,7 @@ export interface SettingNaming {
   releaseDateFormat: string
   /** 分盘样式 */
   partStyle: PartStyle
-  /** 文件夹名最大长度 */
-  folderMaxLength: number
-  /** 文件名最大长度 */
+  /** 名称最大长度（文件夹名与文件名同源，共用这一个上限） */
   fileNameMaxLength: number
   /** 中文字幕标记 */
   chinaSubtitleTag: string
@@ -48,8 +49,7 @@ export interface SettingNaming {
 
 export function buildSettingNaming(): SettingNaming {
   return {
-    folderTemplate: '{num}',
-    fileTemplate: '{num} {title}',
+    fileTemplate: '{num} {title} ({year}) [{providerId}]',
     assetNaming: 'fixed',
     nfoTitleTemplate: '{num} {title}',
     actorMaxCount: 5,
@@ -57,7 +57,6 @@ export function buildSettingNaming(): SettingNaming {
     actorFallbackToMaker: false,
     releaseDateFormat: 'YYYY-MM-DD',
     partStyle: 'origin',
-    folderMaxLength: 120,
     fileNameMaxLength: 120,
     chinaSubtitleTag: '中文字幕',
     umrTag: 'UMR',
@@ -72,7 +71,6 @@ export function normalizeSettingNaming(raw: unknown): SettingNaming {
   const source = toSource(raw)
   if (!source) return base
   return {
-    folderTemplate: readString(source, 'folderTemplate', base.folderTemplate),
     fileTemplate: readString(source, 'fileTemplate', base.fileTemplate),
     assetNaming: readEnum(source, 'assetNaming', ASSET_NAMINGS, base.assetNaming),
     nfoTitleTemplate: readString(source, 'nfoTitleTemplate', base.nfoTitleTemplate),
@@ -81,7 +79,6 @@ export function normalizeSettingNaming(raw: unknown): SettingNaming {
     actorFallbackToMaker: readBoolean(source, 'actorFallbackToMaker', base.actorFallbackToMaker),
     releaseDateFormat: readString(source, 'releaseDateFormat', base.releaseDateFormat),
     partStyle: readEnum(source, 'partStyle', PART_STYLES, base.partStyle),
-    folderMaxLength: readNumber(source, 'folderMaxLength', base.folderMaxLength, 1),
     fileNameMaxLength: readNumber(source, 'fileNameMaxLength', base.fileNameMaxLength, 1),
     chinaSubtitleTag: readString(source, 'chinaSubtitleTag', base.chinaSubtitleTag),
     umrTag: readString(source, 'umrTag', base.umrTag),

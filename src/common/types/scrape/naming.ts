@@ -4,8 +4,10 @@
  * 契约：
  * - 纯函数，主进程与渲染层预览共用；
  * - 占位符词表：{num} {title} {actor} {actorFallbackPrefix} {maker} {label} {series}
- *   {date} {year} {month} {day} {studio} {director} {duration} {resolution} {count}；
- * - 渲染结果先清洗非法字符，长度截断由调用方按目标（文件名/文件夹名）决定。
+ *   {date} {year} {month} {day} {studio} {director} {duration} {resolution} {count}
+ *   {providerId}；
+ * - 渲染结果先清洗非法字符，再删掉值为空留下的空括号片段（`()` / `[]`），
+ *   长度截断由调用方按目标决定（文件夹名与文件名同源同值）。
  */
 import type { PluginMovieDetail } from '../plugin'
 import type { PartStyle, SettingNaming } from '../setting'
@@ -13,6 +15,20 @@ import type { PartStyle, SettingNaming } from '../setting'
 const ILLEGAL_PATTERN = /[\\/:*?"<>|\u0000-\u001f]/g
 const SPACE_PATTERN = /\s+/g
 const DATE_PATTERN = /(\d{4})\D{0,2}(\d{1,2})\D{0,2}(\d{1,2})/
+const EMPTY_GROUP_PATTERN = /\(\s*\)|\[\s*\]|（\s*）|【\s*】/g
+
+/**
+ * 外部 ID 片段：Jellyfin 的 `[<provider>id-<value>]` 约定。
+ *
+ * 插件 ID 去掉尾部 `-offline` 后作为 provider 名（`r18-offline` → `r18id-xxx`）；
+ * 缺 ID 时返回空串，模板里的 `[{providerId}]` 会被空片段清理掉。
+ */
+export function providerTagOf(pluginId: string, id: string): string {
+  const value = id.trim()
+  const provider = pluginId.trim().replace(/-offline$/i, '')
+  if (value.length === 0 || provider.length === 0) return ''
+  return `${provider}id-${value}`
+}
 
 /** 清洗文件名非法字符，折叠空白与收尾的点 */
 export function sanitizeName(value: string): string {
@@ -85,13 +101,14 @@ export function renderTemplate(
     director: (detail.director ?? '').trim(),
     duration: typeof detail.duration === 'number' && detail.duration > 0 ? String(detail.duration) : '',
     resolution: '',
-    count: actors.length > 0 ? String(actors.length) : ''
+    count: actors.length > 0 ? String(actors.length) : '',
+    providerId: (detail.providerId ?? '').trim()
   }
   const rendered = template.replace(/\{([a-zA-Z]+)\}/g, (token, key: string) => {
     const value = values[key]
     return value === undefined ? token : value
   })
-  return sanitizeName(rendered)
+  return sanitizeName(rendered.replace(EMPTY_GROUP_PATTERN, ' '))
 }
 
 /** 占位符词表，供渲染层提示条与文档使用 */
@@ -111,7 +128,8 @@ export const NAMING_PLACEHOLDERS: readonly string[] = [
   '{director}',
   '{duration}',
   '{resolution}',
-  '{count}'
+  '{count}',
+  '{providerId}'
 ]
 
 /**

@@ -68,8 +68,12 @@ export const MEDIA_SCHEME = 'storage'
 
 export const MEDIA_URL_PREFIX = `${MEDIA_SCHEME}://`
 
-/** 媒体 ID（`sha1(前缀 + 连接 ID + 路径)` 的前 32 位十六进制） */
-export const MEDIA_ID_PATTERN = /^[0-9a-f]{32}$/
+/**
+ * 媒体 ID：扫描出来的 `sha1(前缀 + 连接 ID + 路径)` 前 32 位十六进制，
+ * 或刮削产物图落库时的 `randomUUID()`。两种形态都只含十六进制字符与连字符，
+ * 不含路径分隔符，可以直接当私有协议的一段路径。
+ */
+export const MEDIA_ID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/
 
 /** 一次媒体源索引的写入形状（对应 `media_source` 表） */
 export interface MediaSourceItem {

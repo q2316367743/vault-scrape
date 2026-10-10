@@ -9,13 +9,7 @@
 import { randomUUID } from 'node:crypto'
 import { asc, eq, inArray } from 'drizzle-orm'
 import { LIBRARY_TYPES } from '@common/types/library'
-import type {
-  LibraryImageSaveMode,
-  LibraryType,
-  MediaLibrary,
-  MediaLibraryPath,
-  MediaLibraryPathDraft
-} from '@common/types/library'
+import type { LibraryType, MediaLibrary, MediaLibraryPath, MediaLibraryPathDraft } from '@common/types/library'
 import { FILE_ROOT } from '@common/types/file'
 import { normalizeRemotePath } from '@common/types/file/path'
 import { db } from '../client'
@@ -28,11 +22,12 @@ export interface LibraryWriteInput {
   type: LibraryType
   scrapers: string[]
   nsfwProtection: boolean
-  writeNfo: boolean
-  renameEnabled: boolean
+  /** 扫描时排除小于该体积（MB）的视频；0 表示不过滤 */
+  minFileSizeMb: number
+  /** 优先读取本地 NFO 与本地图片，只从互联网上补缺失的信息 */
+  localFirst: boolean
   moveEnabled: boolean
   moveDirectory: string
-  imageSaveMode: LibraryImageSaveMode
 }
 
 /** 库类型白名单回落：脏数据（历史行、手工改库）一律当「影视」 */
@@ -62,11 +57,10 @@ function toLibrary(row: LibraryRow, paths: MediaLibraryPath[]): MediaLibrary {
     scrapers: parseScrapers(row.scrapers),
     paths,
     nsfwProtection: row.nsfwProtection,
-    writeNfo: row.writeNfo,
-    renameEnabled: row.renameEnabled,
+    minFileSizeMb: row.minFileSizeMb,
+    localFirst: row.localFirst,
     moveEnabled: row.moveEnabled,
     moveDirectory: row.moveDirectory,
-    imageSaveMode: row.imageSaveMode,
     lastScanAt: row.lastScanAt,
     lastScrapeAt: row.lastScrapeAt,
     createdAt: row.createdAt,
@@ -149,11 +143,10 @@ export function insertLibrary(input: LibraryWriteInput): MediaLibrary {
     type: input.type,
     scrapers: JSON.stringify(input.scrapers),
     nsfwProtection: input.nsfwProtection,
-    writeNfo: input.writeNfo,
-    renameEnabled: input.renameEnabled,
+    minFileSizeMb: input.minFileSizeMb,
+    localFirst: input.localFirst,
     moveEnabled: input.moveEnabled,
     moveDirectory: input.moveDirectory,
-    imageSaveMode: input.imageSaveMode,
     lastScanAt: 0,
     lastScrapeAt: 0,
     createdAt: now,
@@ -175,11 +168,10 @@ export function updateLibrary(id: string, input: LibraryWriteInput): MediaLibrar
       type: input.type,
       scrapers: JSON.stringify(input.scrapers),
       nsfwProtection: input.nsfwProtection,
-      writeNfo: input.writeNfo,
-      renameEnabled: input.renameEnabled,
+      minFileSizeMb: input.minFileSizeMb,
+      localFirst: input.localFirst,
       moveEnabled: input.moveEnabled,
       moveDirectory: input.moveDirectory,
-      imageSaveMode: input.imageSaveMode,
       updatedAt: Date.now()
     })
     .where(eq(libraryTable.id, id))

@@ -7,6 +7,8 @@
  *   （见 components/RemoteDirDialog.tsx），不做任何本机路径换算；
  * - 类型只在新建时可选，编辑已有资料库时锁定（已有条目是按原类型索引的）；
  * - 刮削器**可以一个都不选**：留空表示这个库不刮削，扫描只负责索引；
+ * - 写 NFO、按命名规则重命名、图片与影片同目录都是固定行为，表单没有开关；
+ *   这里只暴露「体积过滤」（minFileSizeMb，0 = 不过滤）和「优先读取本地 NFO 和图片」（localFirst）；
  * - 必填校验在这里提示，存储是否存在、目录是否嵌套等最终判定在 `library:save`。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -20,11 +22,8 @@ import {
   type FileConnection
 } from '@common/types/file'
 import {
-  LIBRARY_IMAGE_SAVE_MODES,
-  LIBRARY_IMAGE_SAVE_MODE_LABELS,
   LIBRARY_TYPES,
   LIBRARY_TYPE_LABELS,
-  type LibraryImageSaveMode,
   type LibraryType,
   type MediaLibrary,
   type MediaLibraryDraft,
@@ -59,11 +58,10 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
   const scrapers = ref<string[]>([...(options.library?.scrapers ?? [])])
   const rows = ref<LibraryPathRow[]>([])
   const nsfwProtection = ref(options.library?.nsfwProtection ?? false)
-  const writeNfo = ref(options.library?.writeNfo ?? true)
-  const renameEnabled = ref(options.library?.renameEnabled ?? false)
   const moveEnabled = ref(options.library?.moveEnabled ?? false)
   const moveDirectory = ref(options.library?.moveDirectory ?? '')
-  const imageSaveMode = ref<LibraryImageSaveMode>(options.library?.imageSaveMode ?? 'media')
+  const minFileSizeMb = ref(options.library?.minFileSizeMb ?? 0)
+  const localFirst = ref(options.library?.localFirst ?? false)
   const saving = ref(false)
   let rowSeed = 0
 
@@ -81,11 +79,6 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
 
   /** 类型不可改：已有条目按原类型的后缀索引，中途换类型会留下扫不到的孤儿条目 */
   const typeLocked = computed(() => !isCreate)
-
-  const imageSaveOptions = LIBRARY_IMAGE_SAVE_MODES.map((value) => ({
-    value,
-    label: LIBRARY_IMAGE_SAVE_MODE_LABELS[value]
-  }))
 
   const staleScrapers = computed(() => (scraperLoading.value ? [] : unavailable(scrapers.value)))
 
@@ -203,11 +196,10 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
       scrapers: [...scrapers.value],
       paths,
       nsfwProtection: nsfwProtection.value,
-      writeNfo: writeNfo.value,
-      renameEnabled: renameEnabled.value,
       moveEnabled: moveEnabled.value,
       moveDirectory: moveEnabled.value ? moveDirectory.value.trim() : '',
-      imageSaveMode: imageSaveMode.value
+      minFileSizeMb: minFileSizeMb.value,
+      localFirst: localFirst.value
     }
     saving.value = true
     const result = await libraryApi.save(
@@ -235,17 +227,15 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
     scrapers,
     rows,
     nsfwProtection,
-    writeNfo,
-    renameEnabled,
     moveEnabled,
     moveDirectory,
-    imageSaveMode,
+    minFileSizeMb,
+    localFirst,
     saving,
     scraperOptions,
     scraperLoading,
     staleScrapers,
     connectionOptions,
-    imageSaveOptions,
     addPath,
     removePath,
     onConnectionChange,

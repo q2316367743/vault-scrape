@@ -45,6 +45,10 @@
         <p class="form-note">
           不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削；不同资料库可能存放不同厂商的内容，这里只勾选覆盖该库范围的刮削器
         </p>
+        <p class="form-note">
+          刮削完成后一定会按命名规则把影片放进同名文件夹（文件夹、影片、NFO 三者同名）、写入
+          NFO，并把图片放在影片同目录，没有开关
+        </p>
         <p v-if="staleScrapers.length > 0" class="form-note">
           已失效的插件仍留在列表里并标注「（已失效）」，取消勾选即可丢弃
         </p>
@@ -60,18 +64,20 @@
     </div>
 
     <div class="form-row">
-      <span class="form-label">写入 NFO</span>
+      <span class="form-label">文件过滤</span>
       <div class="form-control form-control-inline">
-        <t-switch v-model="writeNfo" />
-        <span class="form-note">刮削完成后把元数据写成影片同目录的 movie.nfo</span>
+        <t-input-number v-model="minFileSizeMb" class="form-control-number" :min="0" :step="100" />
+        <span class="form-note">小于该体积（MB）的视频不参与扫描与刮削；填 0 表示不过滤</span>
       </div>
     </div>
 
     <div class="form-row">
-      <span class="form-label">重命名文件</span>
+      <span class="form-label">优先本地</span>
       <div class="form-control form-control-inline">
-        <t-switch v-model="renameEnabled" />
-        <span class="form-note">刮削完成后按插件给出的标题重命名视频文件</span>
+        <t-switch v-model="localFirst" />
+        <span class="form-note">
+          优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息
+        </span>
       </div>
     </div>
 
@@ -89,11 +95,6 @@
         <t-input v-model="moveDirectory" placeholder="连接内路径，例如 /电影/已整理" />
         <p class="form-note">库内存在多个存储时，按目标目录所属的连接解释</p>
       </div>
-    </div>
-
-    <div class="form-row">
-      <span class="form-label">图片保存</span>
-      <t-select v-model="imageSaveMode" class="form-control" :options="imageSaveOptions" />
     </div>
 
     <p v-if="connections.length === 0" class="form-hint form-hint-warn">
@@ -133,17 +134,15 @@ const {
   scrapers,
   rows,
   nsfwProtection,
-  writeNfo,
-  renameEnabled,
   moveEnabled,
   moveDirectory,
-  imageSaveMode,
+  minFileSizeMb,
+  localFirst,
   saving,
   scraperOptions,
   scraperLoading,
   staleScrapers,
   connectionOptions,
-  imageSaveOptions,
   addPath,
   removePath,
   onConnectionChange,
@@ -220,6 +219,11 @@ defineExpose({ submit: onSubmit, saving })
 
 .type-select {
   width: 240px;
+}
+
+.form-control-number {
+  width: 140px;
+  flex: 0 0 auto;
 }
 
 .form-control-inline .form-note {

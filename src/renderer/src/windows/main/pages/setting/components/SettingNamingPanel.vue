@@ -12,16 +12,10 @@ const { setting } = storeToRefs(useSettingNamingStore())
 
   <t-list class="setting-list" split size="small">
     <t-list-item>
-      <t-list-item-meta title="文件夹模板" description="决定刮削后文件夹的名字" />
-      <template #action>
-        <div class="setting-field">
-          <t-input v-model="setting.folderTemplate" placeholder="{num}" />
-        </div>
-      </template>
-    </t-list-item>
-
-    <t-list-item>
-      <t-list-item-meta title="文件名模板" description="决定影片文件的名字" />
+      <t-list-item-meta
+        title="文件名模板"
+        description="决定影片文件夹、影片文件与 NFO 的名字（三者同名）"
+      />
       <template #action>
         <div class="setting-field">
           <t-input v-model="setting.fileTemplate" placeholder="{num} {title}" />
@@ -91,21 +85,6 @@ const { setting } = storeToRefs(useSettingNamingStore())
       <template #action>
         <div class="setting-field">
           <t-select v-model="setting.partStyle" :options="partStyleOptions" />
-        </div>
-      </template>
-    </t-list-item>
-
-    <t-list-item>
-      <t-list-item-meta title="文件夹名最大长度" description="超出部分将被截断" />
-      <template #action>
-        <div class="setting-field">
-          <t-input-number
-            v-model="setting.folderMaxLength"
-            :min="1"
-            :max="255"
-            theme="normal"
-            suffix="字符"
-          />
         </div>
       </template>
     </t-list-item>

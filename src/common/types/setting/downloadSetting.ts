@@ -10,11 +10,6 @@ export const BADGE_CORNERS: readonly BadgeCorner[] = [
   'bottom-right'
 ]
 
-/** NFO 文件命名方式 */
-export type NfoFileNaming = 'both' | 'movie' | 'filename'
-
-export const NFO_FILE_NAMINGS: readonly NfoFileNaming[] = ['both', 'movie', 'filename']
-
 /** 下载选项 */
 export interface SettingDownload {
   /** 下载横版缩略图 */
@@ -43,12 +38,6 @@ export interface SettingDownload {
   keepStill: boolean
   /** 保留已有预告片 */
   keepTrailer: boolean
-  /** 生成 NFO */
-  generateNfo: boolean
-  /** NFO 文件命名 */
-  nfoFileNaming: NfoFileNaming
-  /** 保留已有 NFO */
-  keepNfo: boolean
 }
 
 export function buildSettingDownload(): SettingDownload {
@@ -65,10 +54,7 @@ export function buildSettingDownload(): SettingDownload {
     keepPoster: true,
     keepFanart: true,
     keepStill: true,
-    keepTrailer: true,
-    generateNfo: true,
-    nfoFileNaming: 'both',
-    keepNfo: true
+    keepTrailer: true
   }
 }
 
@@ -89,9 +75,6 @@ export function normalizeSettingDownload(raw: unknown): SettingDownload {
     keepPoster: readBoolean(source, 'keepPoster', base.keepPoster),
     keepFanart: readBoolean(source, 'keepFanart', base.keepFanart),
     keepStill: readBoolean(source, 'keepStill', base.keepStill),
-    keepTrailer: readBoolean(source, 'keepTrailer', base.keepTrailer),
-    generateNfo: readBoolean(source, 'generateNfo', base.generateNfo),
-    nfoFileNaming: readEnum(source, 'nfoFileNaming', NFO_FILE_NAMINGS, base.nfoFileNaming),
-    keepNfo: readBoolean(source, 'keepNfo', base.keepNfo)
+    keepTrailer: readBoolean(source, 'keepTrailer', base.keepTrailer)
   }
 }

@@ -105,13 +105,13 @@ src/renderer/src/windows/main/pages/storage/
 storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
 ```
 
-- `buildFilePreviewUrl(connectionId, path, modifiedAt)` 构造（`modifiedAt > 0` 时带 `?v=` 破浏览器缓存），`parseFilePreviewUrl(url)` 解析回 `{ connectionId, path }`；`FILE_PREVIEW_SEGMENT = 'path'` 是路径形式的固定段，用来与 `[0-9a-f]{32}` 的媒体 ID 区分开。
+- `buildFilePreviewUrl(connectionId, path, modifiedAt)` 构造（`modifiedAt > 0` 时带 `?v=` 破浏览器缓存），`parseFilePreviewUrl(url)` 解析回 `{ connectionId, path }`；`FILE_PREVIEW_SEGMENT = 'path'` 是路径形式的固定段，用来与媒体 ID（32 位十六进制或刮削图的 UUID，见[资料库 · 确定性 ID](../media/01-media-library.md)）区分开。
 - `parseFilePreviewUrl` 内部走 `normalizeRemotePath`（越界抛 `invalidPath`），解析不出或指向连接根都返回 `null`。
 - 主进程 `handleMediaRequest()` 开头先试路径形式：命中即 `handleFilePreviewRequest(target, request)`——校验连接 ID → 取连接与客户端 → `client.stat(path)`（不是文件或空文件 → 404）→ 按 kind 分派：
   - `video` / `audio`：走 `handleRangeRequest()`，即媒体源那条**区间流式**通道（`Range` 解析、206 / 416、拖动进度条），因此大视频不需要整文件下载；
   - `local`：`resolveInsideRoot(connection.rootPath, path)` 后 `net.fetch`，并强制按 `guessMimeType` 补 `Content-Type`（`file://` 拿不到可靠的 MIME）；
   - 远端（WebDAV / SMB）：按 `sha1(connectionId + '\n' + path)` 作缓存键 `ensureCached` 到 `~/.vault-scrape/cache/media/` 再 `net.fetch`，沿用 512MB 上限与按 mtime 剪枝。
-- **安全边界**：路径永远由渲染层按「连接 ID + 连接内路径」构造，主进程只允许它落在该连接的根目录内（`resolveInsideRoot` / `normalizeRemotePath` 越界即失败），因此这个形式**不能**被用来读任意本机文件；`appdata` 伪连接那条绝对路径分支只对内部伪连接生效。
+- **安全边界**：路径永远由渲染层按「连接 ID + 连接内路径」构造，主进程只允许它落在该连接的根目录内（`resolveInsideRoot` / `normalizeRemotePath` 越界即失败），因此这个形式**不能**被用来读任意本机文件。没有内部伪连接分支：图片一律与影片同目录（见[资料库](../media/01-media-library.md)），刮削产物不再有应用数据目录。
 - 读取失败只记一条去重 warn 并返回 404，播放器因此落到 `fallbackText` 兜底层。
 
 ### 7.2 NSFW 与 nfo

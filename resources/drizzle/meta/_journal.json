@@ -22,6 +22,20 @@
       "when": 1791606099844,
       "tag": "0002_damp_mandarin",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1791634396523,
+      "tag": "0003_add_library_filter_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1791634405031,
+      "tag": "0004_drop_legacy_library_columns",
+      "breakpoints": true
     }
   ]
 }

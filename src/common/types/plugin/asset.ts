@@ -4,22 +4,33 @@
  * 契约：
  * - 插件不直接下载，只返回「链接 + 请求方法 + 请求头」，
  *   防盗链所需的 UA / Referer / Cookie 由插件在 headers 里给出；
- * - `kind` 与下载设置的五个开关一一对应，由宿主决定实际下载哪些内容。
+ * - `thumb` / `poster` / `fanart` / `still` / `trailer` 与下载设置的开关一一对应，
+ *   由宿主决定实际下载哪些内容；
+ * - `banner` / `logo` 是 Jellyfin 目录规范里的固定产物，没有独立开关：
+ *   插件给了就下载，磁盘上已有同名文件时不覆盖。
  */
 
-/** 资源用途，对应下载设置里的五个下载开关 */
-export type PluginAssetKind = 'thumb' | 'poster' | 'fanart' | 'still' | 'trailer'
+/** 资源用途 */
+export type PluginAssetKind = 'thumb' | 'poster' | 'fanart' | 'banner' | 'logo' | 'still' | 'trailer'
 
 export const PLUGIN_ASSET_KINDS: readonly PluginAssetKind[] = [
   'thumb',
   'poster',
   'fanart',
+  'banner',
+  'logo',
   'still',
   'trailer'
 ]
 
 /** 封面类资源：由插件的 covers() 返回 */
-export const COVER_ASSET_KINDS: readonly PluginAssetKind[] = ['poster', 'thumb', 'fanart']
+export const COVER_ASSET_KINDS: readonly PluginAssetKind[] = [
+  'poster',
+  'thumb',
+  'fanart',
+  'banner',
+  'logo'
+]
 
 /** 花絮类资源：由插件的 extras() 返回 */
 export const EXTRA_ASSET_KINDS: readonly PluginAssetKind[] = ['still', 'trailer']
@@ -28,6 +39,8 @@ export const PLUGIN_ASSET_KIND_LABELS: Readonly<Record<PluginAssetKind, string>>
   thumb: '横版缩略图',
   poster: '海报',
   fanart: '背景图',
+  banner: '横幅',
+  logo: '徽标',
   still: '剧照',
   trailer: '预告片'
 }

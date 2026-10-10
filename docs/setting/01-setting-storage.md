@@ -46,7 +46,7 @@ interface SettingSchema {
   "app": { "nsfwProtection": false, "actorAvatarDir": "" },
   "library": { "extensions": { "movie": ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "ts", "m2ts", "mpg", "mpeg", "rmvb"] } },
   "scrape": { "concurrency": 3, "requestDelay": 1, "restAfterCount": 50, "restDuration": 60, "fanartDirName": "extrafanart" },
-  "naming": { "folderTemplate": "{num}", "fileTemplate": "{num} {title}", "...": "..." }
+  "naming": { "fileTemplate": "{num} {title} ({year}) [{providerId}]", "assetNaming": "fixed", "...": "..." }
 }
 ```
 

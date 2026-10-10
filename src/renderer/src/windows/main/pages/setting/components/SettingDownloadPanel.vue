@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { useSettingDownloadStore } from '@/windows/main/store'
-import { badgeCornerOptions, nfoFileNamingOptions } from '../settingOptions'
+import { badgeCornerOptions } from '../settingOptions'
 
 const { setting } = storeToRefs(useSettingDownloadStore())
 </script>
@@ -106,29 +106,6 @@ const { setting } = storeToRefs(useSettingDownloadStore())
       <t-list-item-meta title="保留已有预告片" description="本地已存在时不覆盖" />
       <template #action>
         <div class="setting-field"><t-switch v-model="setting.keepTrailer" /></div>
-      </template>
-    </t-list-item>
-
-    <t-list-item>
-      <t-list-item-meta title="生成 NFO" description="刮削时生成影片信息文件" />
-      <template #action>
-        <div class="setting-field"><t-switch v-model="setting.generateNfo" /></div>
-      </template>
-    </t-list-item>
-
-    <t-list-item>
-      <t-list-item-meta title="NFO 文件命名" description="决定 NFO 的文件名" />
-      <template #action>
-        <div class="setting-field">
-          <t-select v-model="setting.nfoFileNaming" :options="nfoFileNamingOptions" />
-        </div>
-      </template>
-    </t-list-item>
-
-    <t-list-item>
-      <t-list-item-meta title="保留已有 NFO" description="本地已存在时不覆盖" />
-      <template #action>
-        <div class="setting-field"><t-switch v-model="setting.keepNfo" /></div>
       </template>
     </t-list-item>
   </t-list>

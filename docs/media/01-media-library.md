@@ -39,15 +39,14 @@
 | `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口）；另有一种**路径形式** `storage://{连接ID}/path/{连接内路径}`，给存储页预览未入库的任意文件用（见 [存储页 §7.1](../page/02-storage-page.md)） |
 | `src/common/types/file/preview.ts` | 存储页预览地址的公共纯函数：`FILE_PREVIEW_SEGMENT`、`buildFilePreviewUrl()`、`parseFilePreviewUrl()`、`filePreviewKindOf()`（路径形式只在这里构造与解析，主进程侧只复核路径必须落在连接根内） |
 | `src/main/src/modules/media/mediaLocator.ts` | 播放期按「文件名 + 字节数」在资料库范围内找回被移动的视频（见 §4.5） |
-| `src/main/src/modules/media/mediaAppData.ts` | 伪连接 `appdata` 与 `~/.vault-scrape/media/images` 根目录 |
-| `src/main/src/modules/scrape/scrapeLocalAsset.ts` | `imageSaveMode='appdata'` 的图片落到条目目录 |
+
 | `src/renderer/src/windows/main/pages/media/` | 影视墙首页 / 内容页 / 详情页与资料库抽屉、表单（抽屉与表单在 `media/library/`） |
 | `src/renderer/src/windows/main/pages/setting/components/SettingLibraryPanel.vue` | 「设置 → 资料库」面板：逐类型编辑媒体后缀 |
 | `resources/drizzle/0001_smooth_micromacro.sql` | `library` 加 `type` 列的迁移（`ALTER TABLE \`library\` ADD \`type\` text DEFAULT 'movie' NOT NULL;`） |
 
 ## 3. 数据结构
 
-`library` 表（14 列，`src/main/src/db/schema/library.ts`）：
+`library` 表（13 列，`src/main/src/db/schema/library.ts`）：
 
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
@@ -56,11 +55,10 @@
 | `type` | text | 库类型，`$type<LibraryType>()`，默认 `'movie'`（迁移 `0001_smooth_micromacro.sql` 加列）；**建库后不可改** |
 | `scrapers` | text | 刮削器插件 id 数组（JSON 数组），**空数组表示该库不刮削** |
 | `nsfw_protection` | integer | NSFW 保护，默认 `true`（草稿未显式给 `false` 时按 `true`） |
-| `write_nfo` | integer | 写入 NFO，默认 `true` |
-| `rename_enabled` | integer | 成功后重命名，默认 `false`（仅显式 `true` 才开） |
+| `min_file_size_mb` | integer | 扫描 / 刮削时排除小于该体积（MB）的视频，默认 `0`（不过滤） |
+| `local_first` | integer | 优先读取本地 NFO 与本地图片、只补缺失信息，默认 `false` |
 | `move_enabled` | integer | 成功后移动，默认 `false` |
 | `move_directory` | text | 移动目标目录（连接内路径，空串 = 连接根） |
-| `image_save_mode` | text | `media`（影片同目录）/ `appdata`（应用数据目录），默认 `media`；非法值回落 `media` |
 | `last_scan_at` | integer | 上次扫描完成时间；取消的扫描**不更新** |
 | `last_scrape_at` | integer | 上次刮削时间 |
 | `created_at` / `updated_at` | integer | 毫秒时间戳 |
@@ -86,14 +84,14 @@
 契约类型（`src/common/types/library/index.ts`）：
 
 - `LibraryType = 'movie'`；`LIBRARY_TYPES = ['movie']`；`LIBRARY_TYPE_LABELS = { movie: '影视' }`；`libraryTypeLabel(type)` 对脏数据回落显示 `type` 本身。
-- `MediaLibrary`：`{ id, name, type, scrapers, paths: MediaLibraryPath[], nsfwProtection, writeNfo, renameEnabled, moveEnabled, moveDirectory, imageSaveMode, lastScanAt, lastScrapeAt, createdAt, updatedAt }`——**顶层没有 `connectionId` / `rootPath`**，目录在 `paths` 里；`path` 一律是**连接内绝对路径**（`/` = 连接根）。
+- `MediaLibrary`：`{ id, name, type, scrapers, paths: MediaLibraryPath[], nsfwProtection, minFileSizeMb, localFirst, moveEnabled, moveDirectory, lastScanAt, lastScrapeAt, createdAt, updatedAt }`——**顶层没有 `connectionId` / `rootPath`**，目录在 `paths` 里；`path` 一律是**连接内绝对路径**（`/` = 连接根）。
 - `MediaLibraryPath`：`{ id, connectionId, path }`；草稿里是 `MediaLibraryPathDraft`（无 `id`）。
 - `MediaLibraryDraft`：`id` 缺省 = 新建；`type` 也在这里。
 - `MediaLibrarySummary extends MediaLibrary`：多出 `videoCount`（`countMovieItems`）与 **`coverUrls: string[]`**——封面拼贴用的最多 4 张 `storage://` 地址，按**最近添加**排序，空数组时卡片退化成文字封面（`libraryStore.coverUrlsOf()`，常量 `COVER_URL_LIMIT = 4`）。
 - `LibraryScanResult`：`{ library, indexedFiles, indexedVideos, removedItems, skippedDirs, pending, message, autoScrape, autoScrapeSkipped }`——注意是 `removedItems`（被清掉的条目数），不是旧的 `removedFiles`。
 - `LibraryProgressEvent`：`{ libraryId, phase: 'scan', scannedDirs, indexedFiles, currentPath, finished, cancelled }`。
 - `LibraryTaskResult`：`{ taskId, total }`。
-- `LibraryImageSaveMode`：`'media' | 'appdata'`，标签在 `LIBRARY_IMAGE_SAVE_MODE_LABELS`（「与影片同目录」/「应用数据目录」）。
+- `minFileSizeMb` / `localFirst` 是库上的普通字段：前者是「小于该体积（MB）的视频不参与扫描与刮削」的过滤阈值（`0` = 不过滤，落库前经 `normalizeMinFileSizeMb` 取整），后者是「优先读取本地 NFO 与本地图片」。**没有** `writeNfo` / `renameEnabled` / `imageSaveMode` 这三个开关，也没有 `LibraryImageSaveMode` 这套类型——写 NFO、按命名规则重命名、图片与影片同目录都是固定行为（见 [刮削模块](../scrape/01-scrape-module.md)）。
 
 ## 4. 扫描（`libraryScan.ts` + `mediaIndexer.ts`）
 
@@ -127,11 +125,18 @@
 | 媒体源 | `source\n{connectionId}\n{path}` | 与条目一一对应（本阶段一源） |
 | 图片 | `image\n{connectionId}\n{path}` | |
 
+**例外：刮削产物图的 ID 是 `randomUUID()`**。`mediaImageRepo.replaceItemImages()`（刮削成功后整组替换某个条目的图片，见 [刮削模块](../scrape/01-scrape-module.md)）先删旧行、再用 `upsertImage({ id: randomUUID(), … })` 写入；`upsertImage` 的 `onConflictDoUpdate` 刻意不改 `id`，所以重扫既有 UUID 行也保持 UUID。于是 `media_image.id` 实际有两种形态：
+
+- 扫描入库（`indexImages`）：32 位小写十六进制；
+- 刮削入库（`replaceItemImages`）：带连字符的 UUID。
+
+读取侧 `MEDIA_ID_PATTERN`（`src/common/types/media/source.ts`）**必须两种都放行**：私有协议 `storage://{连接ID}/{媒体ID}/{文件名}` 的解析在 `mediaProtocol.handleMediaRequest()` 里先用它做形态校验，只认 32 位十六进制会把所有刮削图打成 404（影视墙封面、资料库封面四宫格一起挂）。两种形态都只含十六进制字符与连字符，不放宽路径安全边界。
+
 - `movie` 条目**已存在时只更新 `parentId` 与 `hasNfo`**（都是扫描拥有的列，后者记同目录有没有 NFO）——文件名与番号交给刮削结果，重扫不会把刮削出来的标题覆盖回文件名。
 - `media_source` 走 `upsertSource`（冲突目标是唯一索引 `(connection_id, path)`），只刷新扫描拥有的列：`item_id` / `library_id` / `name` / `extname` / `mime` / `size` / `modified_at` / `indexed_at` / `scan_id`；**`id` 不变**。
-- 图片：只有**命中词表**的图片会入库（词表即刮削器 `resolveAssetFile` 写出来的那些名字），其余名字（`logo` / `banner` / `landscape` 等）一律忽略：
+- 图片：只有**命中词表**的图片会入库（词表即刮削器 `resolveAssetName` 写出来的那些名字：`poster` / `backdrop` / `thumb` / `banner` / `logo` / `fanartN`），其余名字（`landscape`、用户自建的任意名字等）一律忽略：
   - 与视频**同名**（去掉扩展名一致）的图片挂到该影片，按该文件的用途定 `type`；
-  - 目录级**固定名**按用途定 `type` 并挂目录条目：`poster` / `cover` / `folder` → `primary`，`thumb` / `thumb1` → `thumb`，`fanart` / `backdrop` / `background` → `backdrop`，`still` / `still1` / `screenshot` → `still`（剧照）；
+  - 目录级**固定名**按用途定 `type` 并挂目录条目：`poster` / `cover` / `folder` → `primary`，`thumb` / `thumb1` / `thumbs2` → `thumb`，`fanart` / `fanart1` / `backdrop` / `background` → `backdrop`，`still` / `still1` / `screenshots2` → `still`（剧照），`banner` → `banner`，`logo` / `clearlogo` → `logo`；
   - `<视频基名>-<固定名>` 这种**前缀名**（刮削器 `naming.assetNaming = 'movie'` 或 `forceMovieStyle` 时的产物，如 `ABC-123-thumb.jpg`）按同一词表定用途，并挂到基名对应的影片条目；
   - `extrafanart` / `extrathumbs` 子目录里的图算**上一层目录**影片的产出（锚点取父目录；父目录本身也是 extra 目录时再上一层，用于多集作品的 `S2`）；
   - 影片挂到所在目录的 `folder` 条目，所以「目录级固定名」通常落在影片的父条目上，读封面时按 4.4 之后的兜底链取。
@@ -170,11 +175,11 @@
 
 ## 5. 刮削（`libraryScrape.ts`）
 
-- **候选**：本库里 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）。`pendingEntries(libraryId)` 顺便做去重：同目录 + 同番号只留第一条，其余带上 `duplicateOf = 先出现者的名称`（任务里会被置为 `skipped`）。番号以 `extractKeyword(item.name)` 的解析结果为准，解析为空才退回条目上的 `num`。
+- **候选**：本库里 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）。`collectCandidates(library)` 先做**体积过滤**：库级 `minFileSizeMb > 0` 时，媒体源体积小于该阈值的跳过（`source.size > 0 && size < minBytes`；读不到体积的 `0` 放行，避免把未知当小文件），与扫描的体积过滤同一口径；`pendingEntries(libraryId)` 顺便做去重：同目录 + 同番号只留第一条，其余带上 `duplicateOf = 先出现者的名称`（任务里会被置为 `skipped`）。番号以 `extractKeyword(item.name)` 的解析结果为准，解析为空才退回条目上的 `num`。
 - **空刮削器 = 不刮削**：`runPlan()` 在 `plan.library.scrapers.length === 0` 时抛 `LibraryError('pluginMissing', '该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择')`。不会再回落到存储的刮削器（连接上已没有该字段）。配了但都不可用时仍是 `资料库配置的刮削器均不可用，请重新选择`。
 - **任务名**：`资料库 · <库名称>`。
 - **一次只跑一组**：`planLibraryScrape(libraryId, itemIds?)` 按 `(connectionId, 所属根目录)` 把候选分组（任务表只支持一个「连接 + 目录」，同一任务只能有一个 `dirPath` 基准），**只取条目最多的那一组**启动，其余条目保持 `scrapedAt = 0` 留待下次（要再点一次「刮削」才会轮到下一组）。没有可跑的组时返回 `null`：`library:scrape` 报 `notFound`「资料库里没有待刮削的影片」，按 id 刮削报「所选影片已不在待刮削列表中」。
-- **策略在任务启动时从资料库快照**：`renameEnabled` / `moveEnabled` / `moveDirectory` / `writeNfo` / `imageSaveMode` 全库级，`scraperIds` 取该库的 `scrapers`。
+- **策略在任务启动时从资料库快照**：`moveEnabled` / `moveDirectory` / `localFirst` 全库级（`libraryPolicy()` 还会带上库的 `id` 与当前连接的媒体目录清单），`scraperIds` 取该库的 `scrapers`；**写 NFO、按命名规则重命名、图片落影片同目录是固定行为，不再有对应开关**（`minFileSizeMb` 只作用于候选收集，不进任务策略）。
 - **单文件成功后**：`updateItemMetadata(itemId, …)` 写回条目元数据（标题 / 番号 / 简介 / 评分 / 类型 / 外部 ID 等），`replaceItemImages(itemId, images)` 整体替换条目图片；改名 / 移动则就地 `updateSourcePath(source.id, …)`，**媒体源 id 不变**（磁盘上 `storage://` 地址因此不会失效）。
 - **进度复用刮削模块**：库侧不新增 `scrape:*` 进度通道，任务列表、`scrape:progress`、取消 / 继续全部走[刮削模块](../scrape/01-scrape-module.md)。
 - **重启后的「继续」**：`taskScrapers` / `taskLibraries` 是内存映射，重启即丢；`resumeScrapeTask` 先用 `findLibraryByPath(task.connectionId, task.dirPath)` 按 `(connectionId, dirPath)` 找回所属库，再回落该库的 `scrapers`；找不到库时抛 `pluginMissing`「找不到任务所属的资料库，请重新选择刮削器」。
@@ -217,12 +222,13 @@
 | --- | --- | --- |
 | `type` | `'movie'` | 库类型（当前只有「影视」）；决定扫描用哪份后缀清单，**建库后不可修改** |
 | `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：墙面卡片与详情页按「全局 NSFW 开关 + 存储 `nsfw` 标记 + 库级 `nsfwProtection`」任一命中即遮罩（`MediaWallItem.nsfwProtected` 由墙面下发） |
-| `writeNfo` | `true` | 刮削后是否写 NFO |
-| `renameEnabled` | `false` | 是否按命名模板重命名视频 |
-| `moveEnabled` | `false` | 是否把视频移到 `moveDirectory` |
-| `moveDirectory` | `''` | 移动目标目录（连接内路径；空串 = 连接根）；未开移动时该字段存空串 |
-| `imageSaveMode` | `media` | `media` = 图片落在影片同目录；`appdata` = 落在 `~/.vault-scrape/media/images/<itemId>/`，用伪连接 `appdata` 经 `storage://` 读取 |
+| `minFileSizeMb` | `0` | 小于该体积（MB）的视频不参与扫描与刮削；`0` = 不过滤。表单里是数字输入（步进 100） |
+| `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息 |
+| `moveEnabled` | `false` | 是否把影片移到 `moveDirectory`（开不开都会先落进影片自己的同名文件夹） |
+| `moveDirectory` | `''` | 移动目标目录（连接内路径；空串 = 原地不动，影片留在所在目录下的同名文件夹里） |
 | `scrapers` | 新建时默认勾 `r18-offline` | 刮削器插件 id 列表；**空数组 = 不刮削**（扫描照常，只是不自动刮削、不能手动刮削） |
+
+固定的刮削产物规范（没有对应开关，见 [刮削模块](../scrape/01-scrape-module.md)）：影片一定被重命名并按命名规则放进**同名文件夹**，文件夹名 / 影片文件名 / NFO 文件名三者一致；一定写 `<名字>.nfo`（带封面等图片标签）；图片一定与影片同目录（`poster` / `backdrop` / `thumb` / `banner` / `logo` + `extrafanart/`）。
 
 ## 8. 与「工作台 / 影视墙 / 存储页」的关系
 
@@ -236,7 +242,6 @@
 | --- | --- |
 | 资料库配置与全部索引 | `~/.vault-scrape/db/vault-scrape.db`（`library` / `library_path` / `media_item` / `media_source` / `media_image`） |
 | 远端视频 / 图片缓存 | `~/.vault-scrape/cache/media/<媒体ID>`（上限 512MB，超了按 mtime 剪到 80%） |
-| `imageSaveMode='appdata'` 的图片 | `~/.vault-scrape/media/images/<itemId>/` |
 | 刮削运行日志 | `~/.vault-scrape/log/scrape/<任务名>-YYYYMMDD-HHmmss.log`（开关见设置页） |
 | ~~旧资料库配置~~ | `~/.vault-scrape/media/libraries.json` **已废弃，不再读写** |
 | 旧的整库文件 | 上一版本的本机库已归档为 `vault-scrape.db.old-20261010`，下次启动新建空库并依次执行 `0000_heavy_hardball.sql` + `0001_smooth_micromacro.sql`（见 [SQLite 存储](../data/01-sqlite-storage.md)） |
@@ -275,7 +280,9 @@
 16. 多媒体目录一次一组：给一个库挂两个目录、各放若干未刮削影片，点一次「刮削」→ 任务只包含条目最多的那一组，另一组条目 `scrapedAt` 仍为 0；再点一次「刮削」才轮到它。
 17. 改后缀影响扫描、但不影响已入库条目：把某个后缀从清单删掉再扫，该类型的媒体源被清理、条目从墙上消失；重新加回去再扫，文件重新入库（是**新条目**，原来的刮削元数据不会自动回来）。
 18. 重启后「继续」：刮削任务跑到一半取消 → 重启应用 → 在工作台点「继续」，任务应能找回所属库与刮削器并接着跑（`taskLibraries` / `taskScrapers` 内存态丢失后按 `(connectionId, dirPath)` 回落）。
-19. `imageSaveMode='appdata'`：把库的图片保存位置设成「应用数据目录」后刮削，图片落到 `~/.vault-scrape/media/images/<itemId>/`，且在影视墙上能正常显示（伪连接 `appdata`）。
+19. **体积过滤**：库里放两个视频（一大一小），把「文件过滤」设成比小文件大的 MB 数 → 保存后扫描：小文件不入库（`indexedVideos` 不含它），点「刮削」时它也不在候选里（一直 `scrapedAt = 0` 但不会被处理）；把过滤改回 0 再扫一次 → 它正常入库并能刮削。数字框里填负数 / 清空失焦 → 落成 `0`（不过滤），不会写 NaN 进库。
+19.1 **优先本地 NFO 与图片**：手工在影片同目录放一份 `movie.nfo`（只写 `title` / `plot`）与 `poster.jpg`，勾上「优先读取本地 NFO 文件中的信息和本地图片」后刮削 → 结果行插件列显示「本地 NFO」、日志里没有联网请求，影片被重命名进同名文件夹，`poster.jpg` 与本地 NFO 的信息被保留，缺失的字段（演员、片商等）与缺失的图片才走互联网；把该开关关掉再对一个本地已有 NFO 的文件刮削 → 一律以互联网结果为准。
+19.2 **固定产物形态**：对任意一个影片刮削（新建库默认设置即可）→ 磁盘上应出现 `<名字>/`，里面有 `<名字>.<ext>`、`<名字>.nfo`（内容含 `<thumb aspect="poster">` 等图片标签）、`poster.jpg` 等图片；三者名字完全一致；勾上「移动」并选一个目标目录再刮削 → 整个文件夹被挪到目标目录下，`media_source.path` 就地更新（源 `id` 不变）。
 20. 删除资料库：确认文案写明只删配置与库内影片记录；删完该库从首页横排 / 内容页消失、它的影片从墙上移除，磁盘文件仍在。
 21. 删除一个存储：刷新影视墙，该存储名下的资料库全部消失，库内影片也从墙上移除（级联删除媒体行）；刮削任务记录保留。
 22. 子目录读不到时不误删：让某个子目录暂时读不到（如远端权限或短时断连）后点「扫描」→ 提示「跳过 N 个读不到的目录」，**该目录下的影片不会从墙上消失**，也不会出现「清理 N 个失效条目」；恢复后再扫仍正常。

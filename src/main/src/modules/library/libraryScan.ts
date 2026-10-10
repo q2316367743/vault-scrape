@@ -5,6 +5,7 @@
  * - **全局单例**：同一时刻只允许一个资料库扫描，第二个请求直接返回 `busy`；
  * - 每个媒体目录独立 BFS（见 `mediaIndexer`），全部扫完才做一次清理；
  * - 哪些后缀算视频由设置里该库类型的清单决定（`libraryExtensionsOf`）；
+ * - 体积小于资料库 `minFileSizeMb` 的视频不入库（门槛传给 `mediaIndexer`）；
  * - 用户取消时**不清理、不更新 `lastScanAt`**，抛 `cancelled`（渲染层显示「扫描已取消」）；
  * - 自动刮削失败（没配插件、已有任务在跑）不影响扫描结果，只在返回值里回报原因。
  */
@@ -105,6 +106,7 @@ export async function scanLibrary(libraryId: string): Promise<LibraryScanResult>
       const result = await indexLibraryPath(library, libPath, {
         scanId,
         extensions,
+        minFileSizeMb: library.minFileSizeMb,
         isCancelled: () => cancelled,
         onDir: (progress) => {
           scannedDirs = baseDirs + progress.scannedDirs

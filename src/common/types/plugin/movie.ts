@@ -53,4 +53,10 @@ export interface PluginMovieDetail {
   tags?: string[]
   /** 多集作品才有 */
   episodes?: PluginEpisode[]
+  /**
+   * 外部 ID 片段（`r18id-abc00123` 这种）：**由宿主按插件 ID + `id` 填**，插件不需要返回。
+   *
+   * 命名模板里的 `{providerId}` 与 NFO 的 providerIds 都用它。
+   */
+  providerId?: string
 }

@@ -41,12 +41,7 @@ export {
   type AssetNaming,
   type PartStyle
 } from './namingSetting'
-export {
-  BADGE_CORNERS,
-  NFO_FILE_NAMINGS,
-  type BadgeCorner,
-  type NfoFileNaming
-} from './downloadSetting'
+export { BADGE_CORNERS, type BadgeCorner } from './downloadSetting'
 
 /**
  * 设置的完整形态：按功能域分组，落盘为单个 settings.json。

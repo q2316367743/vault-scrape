@@ -86,7 +86,7 @@ interface PluginEpisode {
 封面与花絮常有防盗链，必须带上特定 UA / Referer / Cookie，所以每一项返回的是**链接 + 请求方法 + 请求头**：
 
 ```ts
-type PluginAssetKind = 'thumb' | 'poster' | 'fanart' | 'still' | 'trailer'
+type PluginAssetKind = 'thumb' | 'poster' | 'fanart' | 'banner' | 'logo' | 'still' | 'trailer'
 
 interface PluginAsset {
   kind: PluginAssetKind
@@ -99,7 +99,7 @@ interface PluginAsset {
 }
 ```
 
-- `covers()` 只产出**封面类**（`poster` / `thumb` / `fanart`），`extras()` 只产出**花絮类**（`still` / `trailer`）；越界的 kind 会被宿主丢弃；
+- `covers()` 只产出**封面类**（`poster` / `thumb` / `fanart` / `banner` / `logo`），`extras()` 只产出**花絮类**（`still` / `trailer`）；越界的 kind 会被宿主丢弃；
 - 剧集花絮用 `episode` 标注归属（第几集），单集花絮的视频同样可以下载；
 - 插件**对下载开关零感知**，宿主按 `kind` 与下载设置做过滤：
 
@@ -108,6 +108,8 @@ interface PluginAsset {
 | `thumb` | 横版缩略图 | `download.downloadThumb` | 封面 |
 | `poster` | 海报 | `download.downloadPoster` | 封面 |
 | `fanart` | 背景图 | `download.downloadFanart` | 封面 |
+| `banner` | 横幅 | 无开关，给了就下载 | 封面 |
+| `logo` | 徽标 | 无开关，给了就下载 | 封面 |
 | `still` | 剧照 | `download.downloadStill` | 花絮 |
 | `trailer` | 预告片 | `download.downloadTrailer` | 花絮 |
 

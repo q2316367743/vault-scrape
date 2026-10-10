@@ -4,11 +4,13 @@
  * 契约：
  * - 每条资料库目录独立调用 `indexLibraryPath`，游标队列 BFS（上限 200k 条、32 层）；
  * - 根目录列目录失败直接抛错；子目录失败计入 `skippedDirs` 继续扫；
- * - 条目 ID 是确定性的（sha1 前 32 位），重扫按路径 upsert：只刷新扫描拥有的列，
- *   刮削元数据（name/num/元数据列/scrapedAt）一律保留；
+ * - 条目 ID 是确定性的（sha1 前 32 位），但重扫按「连接 + 路径」认身份（`findItemByPath`）：
+ *   刮削会把文件移进同名文件夹并就地改写库里的路径（id 不变），只有按路径认才既不会
+ *   造出重复条目、也不会丢掉已刮好的元数据；只刷新扫描拥有的列，刮削元数据一律保留；
  * - 图片按「连接 + 路径」唯一：与视频同名的图片挂影片条目当主图；目录级固定名
- *   （poster / fanart / thumb / still…）与 `<视频名>-<固定名>` 前缀名按用途挂影片或目录条目；
+ *   （poster / backdrop / thumb / banner / logo / fanartN…）与 `<视频名>-<固定名>` 前缀名按用途挂影片或目录条目；
  *   `extrafanart` / `extrathumbs` 子目录里的图算上一层目录影片的产出；
+ * - 资料库设了最小体积（MB）时，小于它的视频不入库（体积未知的 0 字节条目仍然入库）；
  * - 同目录有 `movie.nfo` 或与视频同名的 `.nfo` 时把 `hasNfo = 1` 记在影片条目上，
  *   仅作为「磁盘上有没有 NFO」的事实标记（影视墙不再按它分类）；
  * - 哪些后缀算视频由调用方按资料库设置传入（`IndexPathOptions.extensions`），
@@ -33,9 +35,9 @@ import { deleteImagesByIds, listImagesByLibrary, upsertImage } from '$/db/repo/m
 import {
   deleteItemsWithoutSource,
   deleteSourcesNotInScan,
+  findItemByPath,
   getItem,
   insertItem,
-  insertSource,
   updateItem,
   upsertSource
 } from '$/db/repo/mediaRepo'
@@ -47,12 +49,16 @@ export const MAX_SCAN_DEPTH = 32
 
 /** 目录级主图名（与视频不同名时挂目录条目） */
 const DIR_PRIMARY_NAMES: ReadonlySet<string> = new Set(['poster', 'cover', 'folder'])
-/** 目录级背景图名 */
-const DIR_BACKDROP_NAMES: ReadonlySet<string> = new Set(['fanart', 'backdrop', 'background'])
+/** 目录级背景图名（`fanart` / `fanart1` / `fanarts2`… 也按背景图算） */
+const DIR_BACKDROP_NAMES: ReadonlySet<string> = new Set(['backdrop', 'background'])
+const DIR_FANART_NAMES = /^fanarts?\d*$/
 /** 目录级缩略图名（`thumb` / `thumb1` / `thumbs2`…） */
 const DIR_THUMB_NAMES = /^thumbs?\d*$/
 /** 目录级剧照名（`still` / `still1` / `screenshots2`…） */
 const DIR_STILL_NAMES = /^(?:still|screenshot)s?\d*$/
+/** 目录级横幅 / 徽标名（Jellyfin 的 Banner / Logo） */
+const DIR_BANNER_NAMES: ReadonlySet<string> = new Set(['banner'])
+const DIR_LOGO_NAMES: ReadonlySet<string> = new Set(['logo', 'clearlogo'])
 /** 剧照 / 缩略图子目录：里面的图片属于**上一层**目录里的影片 */
 const EXTRA_ART_DIR_NAMES: ReadonlySet<string> = new Set(['extrafanart', 'extrathumbs'])
 
@@ -60,8 +66,11 @@ const EXTRA_ART_DIR_NAMES: ReadonlySet<string> = new Set(['extrafanart', 'extrat
 function imageTypeOfBaseName(base: string): MediaImageType | null {
   if (DIR_PRIMARY_NAMES.has(base)) return 'primary'
   if (DIR_BACKDROP_NAMES.has(base)) return 'backdrop'
+  if (DIR_FANART_NAMES.test(base)) return 'backdrop'
   if (DIR_THUMB_NAMES.test(base)) return 'thumb'
   if (DIR_STILL_NAMES.test(base)) return 'still'
+  if (DIR_BANNER_NAMES.has(base)) return 'banner'
+  if (DIR_LOGO_NAMES.has(base)) return 'logo'
   return null
 }
 
@@ -117,6 +126,8 @@ export interface IndexPathOptions {
   scanId: string
   /** 该资料库识别为影片的后缀清单（小写、无点，来自 `libraryExtensionsOf`） */
   extensions: readonly string[]
+  /** 只索引体积不小于该值（MB）的视频；0 或省略表示不过滤 */
+  minFileSizeMb?: number
   onDir?: (progress: IndexDirProgress) => void
   isCancelled?: () => boolean
 }
@@ -168,6 +179,19 @@ function isVideoExtension(extensions: readonly string[], extname: string): boole
   return extensions.includes(ext)
 }
 
+/** 把「最小体积（MB）」换算成字节门槛；非法值按不过滤处理 */
+function minBytesOf(minFileSizeMb: number | undefined): number {
+  if (minFileSizeMb === undefined || !Number.isFinite(minFileSizeMb) || minFileSizeMb <= 0) return 0
+  return minFileSizeMb * 1024 * 1024
+}
+
+/** 视频是否达到最小体积；体积未知（0 字节）时放行，避免连接不报 size 就扫不到东西 */
+function isBigEnoughVideo(file: FileEntry, minBytes: number): boolean {
+  if (minBytes <= 0) return true
+  if (file.size <= 0) return true
+  return file.size >= minBytes
+}
+
 /**
  * 按需创建目录条目并串起父子层级，返回目录条目 ID（连接根不建条目，返回空串）。
  */
@@ -202,8 +226,10 @@ function indexVideo(
   entry: FileEntry,
   hasNfo: number
 ): void {
-  const itemId = movieItemId(connectionId, entry.path)
-  const existing = getItem(itemId)
+  // 条目身份按 (connectionId, path) 认，不重算哈希：刮削把文件移进同名文件夹后
+  // 会就地改写库里的路径（id 保持不变），重算哈希会造出重复条目、并丢掉已写好的元数据
+  const existing = findItemByPath(connectionId, entry.path)
+  const itemId = existing?.id ?? movieItemId(connectionId, entry.path)
   if (existing) {
     // 重扫只修父子关系与 NFO 证据，文件名与番号交给刮削结果
     updateItem(itemId, { parentId, hasNfo })
@@ -232,8 +258,8 @@ function indexVideo(
     size: entry.size,
     modifiedAt: entry.modifiedAt
   }
-  if (existing) upsertSource(source, scanId)
-  else insertSource(source, scanId)
+  // 源一律走 upsertSource：它内部按 (connectionId, path) 解析身份，能自愈历史遗留的错位行
+  upsertSource(source, scanId)
 }
 
 /** 一个目录能给图片提供的落点 */
@@ -250,10 +276,13 @@ interface ImageTarget {
 function buildImageTarget(
   parentId: string,
   files: readonly FileEntry[],
-  extensions: readonly string[]
+  extensions: readonly string[],
+  minBytes: number
 ): ImageTarget {
   const videoBases = new Map<string, string>()
-  const videos = files.filter((file) => isVideoExtension(extensions, file.extname))
+  const videos = files.filter(
+    (file) => isVideoExtension(extensions, file.extname) && isBigEnoughVideo(file, minBytes)
+  )
   for (const video of videos) videoBases.set(stripExtension(video.name).toLowerCase(), video.path)
   return { parentId, videoBases, singleVideoPath: videos.length === 1 ? videos[0].path : '' }
 }
@@ -362,6 +391,7 @@ export async function indexLibraryPath(
 ): Promise<IndexPathResult> {
   const result = emptyResult()
   const client = await getFileClient(libPath.connectionId)
+  const minBytes = minBytesOf(options.minFileSizeMb)
   const folderCache = new Map<string, string>()
   /** 已扫过的目录 → 图片落点（extra 目录要回头找上一层目录） */
   const targetByDir = new Map<string, ImageTarget>()
@@ -393,11 +423,12 @@ export async function indexLibraryPath(
     result.scannedDirs += 1
     const parentId = ensureFolderItem(library, libPath.connectionId, node.path, folderCache)
     const files = entries.filter((entry) => entry.type === 'file')
-    const target = buildImageTarget(parentId, files, options.extensions)
+    const target = buildImageTarget(parentId, files, options.extensions, minBytes)
     targetByDir.set(node.path, target)
     const nfoBases = collectNfoBases(files)
     for (const file of files) {
       if (!isVideoExtension(options.extensions, file.extname)) continue
+      if (!isBigEnoughVideo(file, minBytes)) continue
       indexVideo(library, libPath.connectionId, options.scanId, parentId, file, hasNfoEvidence(file, nfoBases))
       result.indexedVideos += 1
       result.indexedFiles += 1

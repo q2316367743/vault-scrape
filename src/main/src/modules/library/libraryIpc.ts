@@ -8,7 +8,6 @@
  */
 import { ipcMain } from 'electron'
 import {
-  LIBRARY_IMAGE_SAVE_MODES,
   LIBRARY_TYPES,
   LibraryError,
   describeLibraryError,
@@ -24,6 +23,7 @@ import {
 import {
   readBoolean,
   readEnum,
+  readNumber,
   readString,
   readStringArray,
   toSource
@@ -77,13 +77,12 @@ function readDraft(payload: unknown): MediaLibraryDraft {
     type: readEnum(draft, 'type', LIBRARY_TYPES, 'movie'),
     scrapers: readStringArray(draft, 'scrapers', []),
     paths,
-    // 缺字段时的缺省值与 schema 保持一致：NSFW 保护与写 NFO 默认开，其余默认关
+    // 缺字段时的缺省值与 schema 保持一致：NSFW 保护默认开、体积过滤默认关、移动默认关
     nsfwProtection: readBoolean(draft, 'nsfwProtection', true),
-    writeNfo: readBoolean(draft, 'writeNfo', true),
-    renameEnabled: readBoolean(draft, 'renameEnabled', false),
+    minFileSizeMb: readNumber(draft, 'minFileSizeMb', 0),
+    localFirst: readBoolean(draft, 'localFirst', false),
     moveEnabled: readBoolean(draft, 'moveEnabled', false),
-    moveDirectory: readString(draft, 'moveDirectory', ''),
-    imageSaveMode: readEnum(draft, 'imageSaveMode', LIBRARY_IMAGE_SAVE_MODES, 'media')
+    moveDirectory: readString(draft, 'moveDirectory', '')
   }
 }
 

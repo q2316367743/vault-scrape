@@ -38,9 +38,8 @@ import {
 } from '$/db/repo/libraryRepo'
 import { getConnection } from '$/modules/file/fileConnectionStore'
 import { normalizeRemotePath } from '@common/types/file/path'
-import { LIBRARY_IMAGE_SAVE_MODES, LIBRARY_TYPES } from '@common/types/library'
+import { LIBRARY_TYPES } from '@common/types/library'
 import type {
-  LibraryImageSaveMode,
   LibraryType,
   MediaLibrary,
   MediaLibraryDraft,
@@ -133,13 +132,15 @@ function normalizePaths(draft: MediaLibraryDraft): MediaLibraryPathDraft[] {
   return paths
 }
 
+/** 最小体积：小于 0 / 非有限值一律按 0（不过滤） */
+function normalizeMinFileSizeMb(value: number): number {
+  if (!Number.isFinite(value) || value <= 0) return 0
+  return Math.floor(value)
+}
+
 function normalizeMoveDirectory(value: string): string {
   const text = (value ?? '').trim()
   return text.length === 0 ? '' : normalizePath(text)
-}
-
-function normalizeImageSaveMode(value: LibraryImageSaveMode): LibraryImageSaveMode {
-  return LIBRARY_IMAGE_SAVE_MODES.includes(value) ? value : 'media'
 }
 
 export function listLibraries(): MediaLibrary[] {
@@ -208,11 +209,10 @@ export function saveLibrary(draft: MediaLibraryDraft): MediaLibrary {
     scrapers: normalizeScrapers(draft.scrapers),
     paths: normalizePaths(draft),
     nsfwProtection: draft.nsfwProtection !== false,
-    writeNfo: draft.writeNfo !== false,
-    renameEnabled: draft.renameEnabled === true,
+    minFileSizeMb: normalizeMinFileSizeMb(draft.minFileSizeMb),
+    localFirst: draft.localFirst === true,
     moveEnabled: draft.moveEnabled === true,
-    moveDirectory: normalizeMoveDirectory(draft.moveDirectory),
-    imageSaveMode: normalizeImageSaveMode(draft.imageSaveMode)
+    moveDirectory: normalizeMoveDirectory(draft.moveDirectory)
   }
   if (draft.id) {
     if (!readLibrary(draft.id)) throw new LibraryError('notFound', '资料库不存在')
