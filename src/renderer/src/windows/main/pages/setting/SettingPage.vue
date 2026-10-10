@@ -8,7 +8,6 @@ import SettingFilePanel from './components/SettingFilePanel.vue'
 import SettingLibraryPanel from './components/SettingLibraryPanel.vue'
 import SettingNamingPanel from './components/SettingNamingPanel.vue'
 import SettingNetworkPanel from './components/SettingNetworkPanel.vue'
-import SettingPathPanel from './components/SettingPathPanel.vue'
 import SettingScrapePanel from './components/SettingScrapePanel.vue'
 import SettingTranslatePanel from './components/SettingTranslatePanel.vue'
 
@@ -25,9 +24,6 @@ const active = ref(typeof route.query.group === 'string' ? route.query.group : '
     <t-tabs v-model="active" class="setting-tabs" theme="normal">
       <t-tab-panel value="app" label="应用设置">
         <setting-app-panel />
-      </t-tab-panel>
-      <t-tab-panel value="path" label="目录与路径">
-        <setting-path-panel />
       </t-tab-panel>
       <t-tab-panel value="library" label="资料库">
         <setting-library-panel />

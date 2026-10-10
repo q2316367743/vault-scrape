@@ -2,30 +2,20 @@
 
 本文档按功能域列出全部设置项、默认值与落盘键。定义文件在 `src/common/types/setting/`，界面在 `src/renderer/src/windows/main/pages/setting/components/`。
 
-落盘键与分组（`SettingGroupKey`）：`app` / `path` / `library` / `scrape` / `network` / `translate` / `naming` / `download` / `file`（共九组，设置页标签顺序与 `SETTING_GROUP_KEYS` 一致，`app` 为第一个分组）。站点账号参数不在设置页，由插件在 `env` 里声明、在插件页的配置区块填写，见第 10 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
+落盘键与分组（`SettingGroupKey`）：`app` / `library` / `scrape` / `network` / `translate` / `naming` / `download` / `file`（共八组，设置页标签顺序与 `SETTING_GROUP_KEYS` 一致，`app` 为第一个分组）。站点账号参数不在设置页，由插件在 `env` 里声明、在插件页的配置区块填写，见第 9 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 
 ## 1. 应用设置（`app`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
 | `nsfwProtection` | NSFW 保护总开关：开启后，影视墙与详情页的敏感图片一律遮罩；「存储 `nsfw` 标记」与「资料库 `nsfwProtection`」也同样会遮罩（任一命中即生效）；没有存储上下文的页面（如工具搜索）只按本开关生效 | `false` | 开关 |
+| `actorAvatarDir` | 演员头像目录，留空使用默认位置 | `''` | 输入框 + 选择按钮（选择功能待接入） |
 
-应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。存储与资料库侧的配合项是连接上的 `nsfw` 标记与库级 `nsfwProtection`（见[存储管理页面](../page/02-storage-page.md)、[资料库](../media/01-media-library.md)）：**「总开关开启」「该存储被标记为 nsfw」「该资料库开了 nsfwProtection」任一命中就遮罩**，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`（影视墙卡片再叠上主进程下发的 `MediaWallItem.nsfwProtected`）。
+应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。演员头像目录留空表示使用默认位置，目录选择按钮当前为 `MessagePlugin.info('目录选择待接入，请先手动输入绝对路径')` 提示占位。存储与资料库侧的配合项是连接上的 `nsfw` 标记与库级 `nsfwProtection`（见[存储管理页面](../page/02-storage-page.md)、[资料库](../media/01-media-library.md)）：**「总开关开启」「该存储被标记为 nsfw」「该资料库开了 nsfwProtection」任一命中就遮罩**，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`（影视墙卡片再叠上主进程下发的 `MediaWallItem.nsfwProtected`）。
 
 总开关在渲染层是模块级缓存（`protection` ref，一次读取、全应用共享），所以**它必须能被刷新**：`SettingAppStore.ts` 给 `createSettingGroupStore` 传了 `onSaved` 回调，应用分组保存成功后调用 `refreshNsfwProtection()`。刷新点只能挂在「保存成功之后」——落盘有 300ms 防抖，挂在值变化上会读到主进程里还没更新的旧值，反而把保护状态刷成旧值。效果：切换开关约 300ms 后全应用生效，不需要重启或刷新页面，影视墙的遮罩会立刻出现/消失（见[设置存储](../setting/01-setting-storage.md)的「注意事项」）。
 
-## 2. 目录与路径（`path`）
-
-| 字段 | 含义 | 默认值 | 界面 |
-| --- | --- | --- | --- |
-| `actorAvatarDir` | 演员头像目录 | `''` | 输入框 + 选择按钮（选择功能待接入） |
-| `successOutputDir` | 成功输出目录 | `''` | 同上 |
-| `failedOutputDir` | 失败输出目录 | `''` | 同上 |
-| `fanartDirName` | 剧照目录名（刮削结果内的子目录名） | `'extrafanart'` | 输入框 |
-
-路径为空表示使用默认位置。目录选择按钮当前为 `MessagePlugin.info` 提示占位。
-
-## 3. 资料库（`library`）
+## 2. 资料库（`library`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -38,7 +28,7 @@
 - **面板行为**：`t-tag-input`（`:max="LIBRARY_EXTENSION_LIMIT"`、`excess-tips`「最多 64 个后缀」）在**失焦时**清洗并写回；清空后失焦提示「至少要保留一个后缀，已回落默认值」并恢复默认清单；超过 64 个时提示「最多保留 64 个后缀，多余的已丢弃」。保存沿用设置 store 的 300ms 防抖，面板没有独立保存按钮。
 - **归一化注册**在 `src/common/types/setting/index.ts` 的六处：类型导出、`SettingSchema`、`SETTING_GROUP_KEYS`、`settingNormalizers`、`buildSetting()`、`normalizeSetting()`。新增库类型时要同时补 `LIBRARY_TYPE_LABELS`（`src/common/types/library/index.ts`）与 `DEFAULT_LIBRARY_EXTENSIONS`。
 
-## 4. 刮削设置（`scrape`）
+## 3. 刮削设置（`scrape`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -47,8 +37,9 @@
 | `requestDelay` | 每次请求之间的延迟（秒） | `1` | 数字输入，最小 0 |
 | `restAfterCount` | 连续刮削多少条后休息，0 表示不休息 | `50` | 数字输入，最小 0 |
 | `restDuration` | 休息时长（秒） | `60` | 数字输入，最小 0 |
+| `fanartDirName` | 剧照目录名（刮削结果中存放剧照的子目录名） | `'extrafanart'` | 输入框 |
 
-## 5. 网络连接（`network`）
+## 4. 网络连接（`network`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -60,7 +51,7 @@
 
 代理协议与地址在 `proxyEnabled` 为 false 时禁用。`socket5` 当前不受支持：识别到会回落直连并写一条 `warn` 日志，详见 [../http/01-http-client.md](../http/01-http-client.md)。
 
-## 6. 翻译服务（`translate`）
+## 5. 翻译服务（`translate`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -69,7 +60,7 @@
 
 翻译服务本身尚未接入，`enabled` 为 false 时目标语言禁用。
 
-## 7. 命名规则（`naming`）
+## 6. 命名规则（`naming`）
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
@@ -98,7 +89,7 @@
 
 其中 `{count}` 仅用于 `actorOverflowSuffix`。该词表是与刮削实现共同演进的约定，新增占位符时需同时更新提示条与本文档。
 
-## 8. 下载选项（`download`）
+## 7. 下载选项（`download`）
 
 | 字段 | 含义 | 默认值 |
 | --- | --- | --- |
@@ -121,18 +112,15 @@
 
 角标类型与角标位置两行仅在 `posterTagBadge` 开启时显示；角标类型为可多选、可搜索、可新建的下拉框。
 
-## 9. 文件行为（`file`）
+## 8. 文件行为（`file`）
 
 | 字段 | 含义 | 默认值 |
 | --- | --- | --- |
-| `moveAfterSuccess` | 成功后移动文件 | `false` |
-| `moveAfterFailure` | 失败后移动文件 | `false` |
-| `renameAfterSuccess` | 成功后重命名文件 | `false` |
 | `removeEmptyFolder` | 删除空文件夹 | `false` |
 | `scrapeSymlinkDir` | 刮削软链接目录 | `false` |
 | `saveLogToFile` | 保存日志到文件 | `false` |
 
-## 10. 站点账号参数（不在设置页）
+## 9. 站点账号参数（不在设置页）
 
 站点账号参数**不并入 `settings.json`**：刮削源由插件决定，账号类参数（站点地址、Cookie、API Key 等）由插件在自己的 `env` 表里声明，值落在 `~/.vault-scrape/plugin/plugins.json`；环境变量一律按敏感处理，由 `safeStorage` 加密保存且明文永不跨 IPC。
 
@@ -149,3 +137,4 @@
 - 字符串数组字段非数组或元素非字符串 → 默认值（空数组）。
 - `library.extensions` 比普通数组多一层清洗：合法元素也要去空白 / 去前导点 / 转小写 / 去重 / 截断到 `LIBRARY_EXTENSION_LIMIT = 64` 个，清洗后为空则回落该类型的默认清单（`libraryExtensionsOf` 与 `normalizeExtensionList`）。
 - `app.nsfwProtection` 非布尔 → 默认值 `false`。
+- `path` 分组与 `file.moveAfterSuccess` / `file.moveAfterFailure` / `file.renameAfterSuccess` 已移除：读盘时直接忽略这些键（不报错），保存时按 8 个已知分组的归一化器写盘。

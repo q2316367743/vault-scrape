@@ -19,17 +19,16 @@
 | `src/preload/src/modules/setting/setting.ts` | `settingApi` |
 | `src/renderer/src/api/setting.ts` | 渲染层统一出口 |
 | `src/renderer/src/windows/main/store/setting/useSettingGroup.ts` | `createSettingGroupStore()` 工厂 |
-| `src/renderer/src/windows/main/store/setting/SettingXxxStore.ts` | 九个分组的 store（`app` / `path` / `library` / `scrape` / `network` / `translate` / `naming` / `download` / `file`） |
+| `src/renderer/src/windows/main/store/setting/SettingXxxStore.ts` | 八个分组的 store（`app` / `library` / `scrape` / `network` / `translate` / `naming` / `download` / `file`） |
 | `src/renderer/src/windows/main/pages/setting/` | 设置页面与各面板 |
 
 ## 数据结构
 
 ```ts
 interface SettingSchema {
-  app: SettingApp            // 主题与 NSFW 保护
-  path: SettingPath          // 目录与路径
+  app: SettingApp            // 主题 / NSFW 保护 / 演员头像目录
   library: SettingLibrary    // 各资料库类型的媒体后缀清单
-  scrape: SettingScrape      // 刮削节奏
+  scrape: SettingScrape      // 刮削节奏与剧照目录名
   network: SettingNetwork    // 网络连接
   translate: SettingTranslate// 翻译服务
   naming: SettingNaming      // 命名规则
@@ -44,13 +43,14 @@ interface SettingSchema {
 
 ```json
 {
-  "app": { "nsfwProtection": false },
-  "path": { "actorAvatarDir": "", "successOutputDir": "", "failedOutputDir": "", "fanartDirName": "extrafanart" },
+  "app": { "nsfwProtection": false, "actorAvatarDir": "" },
   "library": { "extensions": { "movie": ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "ts", "m2ts", "mpg", "mpeg", "rmvb"] } },
-  "scrape": { "concurrency": 3, "requestDelay": 1, "restAfterCount": 50, "restDuration": 60 },
+  "scrape": { "concurrency": 3, "requestDelay": 1, "restAfterCount": 50, "restDuration": 60, "fanartDirName": "extrafanart" },
   "naming": { "folderTemplate": "{num}", "fileTemplate": "{num} {title}", "...": "..." }
 }
 ```
+
+旧文件里的 `path` 组与已移除的三个 `file` 开关在下次写盘时消失（归一化只按已知分组与字段读取，无需迁移）。
 
 ## API 契约
 

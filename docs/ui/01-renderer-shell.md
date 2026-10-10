@@ -20,7 +20,7 @@
 | `src/renderer/src/components/menu/SideMenu.vue` | 菜单列表容器 |
 | `src/renderer/src/components/menu/SideMenuNode.vue` | 单个菜单节点（递归） |
 | `src/renderer/src/components/PageLayout/PageLayout.vue` | 页面统一容器 |
-| `src/renderer/src/components/PageLayout/SubPageLayout.vue` | 子页面容器：标题左侧返回图标 + `router.back()` |
+| `src/renderer/src/components/PageLayout/SubPageLayout.vue` | 子页面容器：标题左侧返回图标 + `router.back()`，无历史时回落 `fallback` |
 | `src/renderer/src/global/AppState.ts` | 侧栏折叠状态等全局状态 |
 | `src/renderer/src/global/AppTheme.ts` | 主题模式（亮色 / 深色 / 跟随系统）状态与窗口材质同步 |
 | `src/renderer/src/hooks/{UseState.ts,UseLog.ts}` | 通用 hooks |
@@ -77,7 +77,7 @@ export interface SideMenuItem {
 
 所有基础页面都用它包裹，保证标题位置、内边距与滚动行为一致。
 
-**子页面容器 `SubPageLayout.vue`**：props 与 `PageLayout` 完全一致（`title` / `description` / `padded`），转发内容插槽与 `#extra`，并额外在 `#leading` 里渲染一枚 `variant="text" shape="square"` 的 `ChevronLeftIcon` 图标按钮（`aria-label="返回"`，无 tooltip、无文字）。点击即 `router.back()` 回退浏览历史，不认目标路由——因此子页面不用自己写返回逻辑，也不要在 `#extra` 里再放返回按钮；直接以 URL 打开子页时返回按钮不产生跳转属既定语义。按钮 `align-self: center` 抵消页头的 baseline 对齐，`margin-right: -6px` 抵消按钮内边距，视觉上贴着标题。
+**子页面容器 `SubPageLayout.vue`**：props 与 `PageLayout` 一致（`title` / `description` / `padded`），并多一个可选 `fallback?: string`（默认 `'/'`）；转发内容插槽与 `#extra`，并额外在 `#leading` 里渲染一枚 `variant="text" shape="square"` 的 `ChevronLeftIcon` 图标按钮（`aria-label="返回"`，无 tooltip、无文字）。点击即 `router.back()` 回退浏览历史，不认目标路由；若 300ms 内 `route.fullPath` 没有变化（说明没有可回退的历史），改用 `router.replace(fallback)`——影视墙内容页传的就是 `fallback="/media"`，所以直接以 URL 打开子页时点返回会落到 `fallback`，而不是什么都不做。子页面不用自己写返回逻辑，也不要在 `#extra` 里再放返回按钮。按钮 `align-self: center` 抵消页头的 baseline 对齐，`margin-right: -6px` 抵消按钮内边距，视觉上贴着标题。
 
 **左右分栏页面（插件页、存储页）的约定**：传 `:padded="false"`，左栏固定 300px、通高、内部自己滚动，只用 `border-right: 1px solid var(--fluent-sidebar-border)` 分隔，不做卡片（无圆角、无阴影、无四周边框）；两栏 `gap: 0`，右侧栏自己补 `padding: 20px`。这样左侧不再被容器的 20px 内边距挤掉一圈宽度。
 
@@ -110,7 +110,7 @@ export interface SideMenuItem {
 ## 注意事项
 
 - 窗口层面的改动（亚克力材质、自定义标题栏、窗口按钮、`appWindow` IPC、侧栏折叠形态）见 [02-window-chrome.md](./02-window-chrome.md)；本文件只覆盖窗口内部的外壳与主题。
-- 弹窗与抽屉一律用命令式 API（`DialogPlugin` / `DrawerPlugin`），默认 `placement: center`；外壳与内容拆成两个文件——`.tsx` 外壳导出 `openXxx(options)`，内容组件为 `.vue`，通过 `h()` 渲染。禁止 `<t-dialog :visible>` + `v-if` 的声明式写法，也禁止把弹窗内容写在 tsx 里。
+- 弹窗与抽屉一律用命令式 API（`DialogPlugin` / `DrawerPlugin`），默认 `placement: center`；外壳与内容拆成两个文件——`.tsx` 外壳导出 `openXxx(options)`，内容组件为 `.vue`，用 JSX 渲染（`tsconfig.web.json` 已配 `jsx: preserve` + `jsxImportSource: vue`，**不要在 `.tsx` 里用 `h()` 拼 VNode**）。**操作按钮由外壳的 `footer` 提供**（JSX 渲染 `tdesign` 的 `Button`，固定底部不随内容滚动），内容组件不含按钮，只用 `defineExpose` 暴露 `ModalContentExpose`（`src/renderer/src/utils/modal/ModalContent.ts` 的 `submit` / `saving` / `canSubmit`）供外壳的模板 ref 读取；`footer: false` 只用于没有操作按钮的场景（如只读抽屉）。禁止 `<t-dialog :visible>` + `v-if` 的声明式写法，也禁止把弹窗内容写在 tsx 里。
 - 组件存放：与页面强相关的组件放该页面目录下的 `components/`；只有真正通用的组件（如 `PageLayout`、`menu`）才放 `src/renderer/src/components/`，业务组件不得进入该目录。
 - 页面/store 不直接访问 `window.preload`，统一经 `@/api` 出口。
 - 不使用 `unplugin-auto-import`：所有 API 与组合式函数显式 import，避免依赖需要运行 dev/build 才能生成的声明文件。

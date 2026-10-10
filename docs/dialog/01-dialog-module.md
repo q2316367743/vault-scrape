@@ -126,7 +126,7 @@ form.rootPath = result.filePaths[0]
 
 | 位置 | 现状 |
 | --- | --- |
-| 设置 → 目录与路径（演员头像 / 剧照 / 下载目录） | `SettingPathPanel.vue` 的 `pickDirectory()` 仍是 `MessagePlugin.info('目录选择待接入，请先手动输入绝对路径')` |
+| 设置 → 应用设置（演员头像目录） | `SettingAppPanel.vue` 的 `pickDirectory()` 仍是 `MessagePlugin.info('目录选择待接入，请先手动输入绝对路径')` |
 | 存储 → 上传 / 下载的本机路径 | `PathDialogContent.vue` 仍是纯输入框 |
 | 「保存」框 | 已有 `dialog:save` 通道，暂无消费方（可用于导出、另存为等） |
 

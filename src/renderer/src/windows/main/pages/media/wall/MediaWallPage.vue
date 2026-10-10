@@ -1,5 +1,9 @@
 <template>
-  <page-layout :title="pageTitle" description="磁盘上的视频聚成一堵墙，标题与封面来自刮削记录与同目录 NFO">
+  <sub-page-layout
+    :title="pageTitle"
+    fallback="/media"
+    description="磁盘上的视频聚成一堵墙，标题与封面来自刮削记录与同目录 NFO"
+  >
     <template #extra>
       <t-button variant="outline" :loading="loading" @click="load">
         <template #icon><refresh-icon /></template>
@@ -9,11 +13,6 @@
 
     <div class="media-wall">
       <div class="wall-toolbar">
-        <t-button variant="text" @click="goHome">
-          <template #icon><chevron-left-icon /></template>
-          返回
-        </t-button>
-        <span class="wall-title">{{ pageTitle }}</span>
         <t-input
           v-model="keyword"
           class="wall-search"
@@ -27,10 +26,6 @@
           placeholder="排序"
           @change="onSortChange"
         />
-        <t-button theme="primary" variant="outline" @click="openDrawer">
-          <template #icon><collection-icon /></template>
-          资料库
-        </t-button>
         <span class="wall-summary">{{ summary }}</span>
       </div>
 
@@ -53,7 +48,7 @@
         description="点上方「资料库」扫描后，影片会自动出现在这里"
       />
     </div>
-  </page-layout>
+  </sub-page-layout>
 </template>
 <script setup lang="ts">
 /**
@@ -66,15 +61,12 @@
  *   抽屉里任何变更都让本页重拉一次，保证计数与卡片同步；
  * - 卡片的 NSFW 遮罩由卡片自己按所属存储 + 库级标记判定，本页只负责把连接信息传下去。
  */
-import { computed, onMounted, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ChevronLeftIcon, CollectionIcon, RefreshIcon } from 'tdesign-icons-vue-next'
+import { RefreshIcon } from 'tdesign-icons-vue-next'
 import { libraryApi } from '@/api'
-import PageLayout from '@/components/PageLayout/PageLayout.vue'
+import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import { useFileConnections } from '@/hooks/UseFileConnections'
 import type { FileConnection } from '@common/types/file'
 import MediaWallCard from '../components/MediaWallCard.vue'
-import { openLibraryDrawer } from '../library/components/LibraryDrawer'
 import { useMediaWall } from './composables/useMediaWall'
 import { formatTime } from '@/utils/format'
 
@@ -91,7 +83,6 @@ const SORT_OPTIONS: WallOption[] = [
 ]
 
 const route = useRoute()
-const router = useRouter()
 
 function queryText(value: unknown): string {
   return typeof value === 'string' ? value : ''
@@ -131,10 +122,6 @@ function onSortChange(value: unknown): void {
   }
 }
 
-function goHome(): void {
-  void router.push({ name: '影视墙' })
-}
-
 /** 从地址栏进来时只有 ID，库名要自己查一次；抽屉里改过名字也要跟着更新 */
 async function loadLibraryName(): Promise<void> {
   if (libraryId.value.length === 0) {
@@ -144,15 +131,6 @@ async function loadLibraryName(): Promise<void> {
   const result = await libraryApi.list()
   if (!result.ok) return
   libraryName.value = result.data.find((library) => library.id === libraryId.value)?.name ?? ''
-}
-
-function openDrawer(): void {
-  openLibraryDrawer({
-    onChanged: () => {
-      void loadLibraryName()
-      void load()
-    }
-  })
 }
 
 watch(
@@ -179,11 +157,6 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-}
-
-.wall-title {
-  font-size: 14px;
-  color: var(--td-text-color-primary);
 }
 
 .wall-search {

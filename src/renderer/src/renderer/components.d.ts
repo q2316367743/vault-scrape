@@ -52,6 +52,7 @@ declare module 'vue' {
     TTagInput: typeof import('tdesign-vue-next')['TagInput']
     TTextarea: typeof import('tdesign-vue-next')['Textarea']
     TTooltip: typeof import('tdesign-vue-next')['Tooltip']
+    TTransfer: typeof import('tdesign-vue-next')['Transfer']
   }
 }
 
@@ -97,4 +98,5 @@ declare global {
   const TTagInput: typeof import('tdesign-vue-next')['TagInput']
   const TTextarea: typeof import('tdesign-vue-next')['Textarea']
   const TTooltip: typeof import('tdesign-vue-next')['Tooltip']
+  const TTransfer: typeof import('tdesign-vue-next')['Transfer']
 }

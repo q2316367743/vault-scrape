@@ -1,4 +1,4 @@
-import { readBoolean, toSource } from './shared'
+import { readBoolean, readString, toSource } from './shared'
 
 /** 应用设置：与具体功能域无关的界面与全局开关 */
 export interface SettingApp {
@@ -7,11 +7,14 @@ export interface SettingApp {
    * 没有存储上下文的页面（如工具搜索）只按本开关生效
    */
   nsfwProtection: boolean
+  /** 演员头像目录，留空表示使用默认位置 */
+  actorAvatarDir: string
 }
 
 export function buildSettingApp(): SettingApp {
   return {
-    nsfwProtection: false
+    nsfwProtection: false,
+    actorAvatarDir: ''
   }
 }
 
@@ -20,6 +23,7 @@ export function normalizeSettingApp(raw: unknown): SettingApp {
   const source = toSource(raw)
   if (!source) return base
   return {
-    nsfwProtection: readBoolean(source, 'nsfwProtection', base.nsfwProtection)
+    nsfwProtection: readBoolean(source, 'nsfwProtection', base.nsfwProtection),
+    actorAvatarDir: readString(source, 'actorAvatarDir', base.actorAvatarDir)
   }
 }

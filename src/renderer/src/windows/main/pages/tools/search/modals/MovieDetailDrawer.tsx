@@ -1,4 +1,3 @@
-import { h } from 'vue'
 import { DrawerPlugin } from 'tdesign-vue-next'
 import MovieDetailDrawerContent from './MovieDetailDrawerContent.vue'
 
@@ -23,10 +22,8 @@ export function openMovieDetailDrawer(options: MovieDetailDrawerOptions): void {
     size: '680px',
     footer: false,
     destroyOnClose: true,
-    body: () =>
-      h(MovieDetailDrawerContent, {
-        pluginId: options.pluginId,
-        movieId: options.movieId
-      })
+    body: () => (
+      <MovieDetailDrawerContent pluginId={options.pluginId} movieId={options.movieId} />
+    )
   })
 }

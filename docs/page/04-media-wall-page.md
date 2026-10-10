@@ -47,10 +47,10 @@
 
 ## 3. 内容页（`wall/MediaWallPage.vue`）
 
-`PageLayout :title="pageTitle"`，`#extra` 只放「刷新」。
+内容页容器是 `SubPageLayout`（`:title="pageTitle"`、`fallback="/media"`），返回图标按钮在标题左侧，`#extra` 只放「刷新」。
 
 - **标题**：`libraryId` 为空 → 「全部影片」；否则优先显示库名（`libraryApi.list()` 里查到的名字），查不到时兜底「资料库」。
-- **返回**：工具条最左是 `variant="text"` 的「返回」按钮（`ChevronLeftIcon`），回首页（`{ name: '影视墙' }`）。
+- **内容工具条**（`.wall-toolbar`）：只剩搜索 / 排序 / 「资料库」按钮 / 摘要，不再有「返回」按钮与重复的标题；返回按钮由页头提供（`SubPageLayout` 的 `#leading` 里那枚 `variant="text" shape="square"` + `ChevronLeftIcon`）。
 - **搜索**：`t-input`（width 260，placeholder「搜索标题、番号或文件名」，`v-model="keyword"`）——**输入即过滤，不回车跳转**；初值取 `route.query.keyword`（首页搜索框带过来的词）。
 - **排序**：`t-select`（width 180），四个选项来自 `useMediaWall` 的 `SORT_OPTIONS`：
 
@@ -112,16 +112,16 @@
 - 「扫描」成功提示「「名称」扫描完成：索引 X 个文件（视频 Y 个），移除 Z 个，待刮削 W 个」；自动刮削启动时提示「已自动开始刮削「名称」：N 个文件，进度见工作台」，被跳过时提示「未自动刮削：原因」。「刮削」成功提示「已为「名称」排队 N 个文件，进度见工作台任务列表」。
 - **删除只删配置与库内媒体行**：确认文案原文「将删除资料库「X」的配置与库内影片记录，磁盘文件不会被删除。一条媒体目录只属于一个资料库，删除后这些影片会从影视墙上消失。」任何改动通过 `onChanged` 让页面重新 `load()`。
 
-**表单弹窗**（`openLibraryFormDialog({ library?, connections, onSaved })`；外壳 `library/components/LibraryFormDialog.tsx` → `DialogPlugin`，宽 560px；内容 `LibraryFormContent.vue`，状态机抽在 `library/composables/useLibraryForm.ts`）：
+**表单抽屉**（`openLibraryFormDrawer({ library?, connections, onSaved })`；外壳 `library/components/LibraryFormDrawer.tsx` → `DrawerPlugin`，宽 800px，从右侧滑出；内容 `LibraryFormContent.vue` 只留字段，状态机抽在 `library/composables/useLibraryForm.ts`，底部 footer 常驻「取消 / 保存」，保存按钮的 `loading` 取自内容组件 `defineExpose` 的 `saving`）：
 
 | 字段 | 契约 |
 | --- | --- |
 | 名称 | 必填，空则「请填写资料库名称」 |
 | 类型 | `t-select`，选项来自 `LIBRARY_TYPES` / `LIBRARY_TYPE_LABELS`；**新建可选，编辑态 disabled**（说明文案「类型创建后不可修改」），理由：条目已按原类型后缀索引，中途换类型会留下孤儿条目 |
 | 媒体目录 | 多行编辑器 `LibraryDirectoryEditor.vue`：每行「存储下拉 + 选择目录 + 路径回显」，未选存储时选择按钮禁用并 `t-tooltip` 提示「请先选择存储」；换存储会清空该行路径；只剩一行时删除按钮禁用；底部「添加媒体目录」+ 说明「一个资料库可以包含多个存储上的多个目录，扫描时会全部递归遍历」 |
-| 选择目录 | 走资料库自己的 `RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`（`fileApi.list({ connectionId, path })`，**只列目录**，带面包屑与「上级目录」，路径全程是**连接内路径**（`/` = 连接根），点「选择当前目录」把当前路径回调回该行）；**不复用本机目录选择器** |
-| 刮削器 | `t-select multiple`，候选项来自 `useScraperOptions`（`pluginApi.list()` 过滤 `enabled && loadError === ''`），placeholder「可留空」；说明「不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削」；配置里已失效的 id 仍以 `theme="warning"` 标签列出；**新建时默认勾选内置 `R18_OFFLINE_PLUGIN_ID`（`r18-offline`），插件不可用时保持不勾** |
-| 库级选项 | NSFW 保护 / 写入 NFO / 成功后重命名 / 成功后移动（**开启时才显示「目标目录」输入**，关闭时存空串）/ 图片保存位置（`LIBRARY_IMAGE_SAVE_MODE_LABELS`） |
+| 选择目录 | 走资料库自己的 `RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`（`fileApi.list({ connectionId, path })`，**只列目录**，带面包屑与「上级目录」，路径全程是**连接内路径**（`/` = 连接根），点「选择当前目录」把当前路径回调回该行）；弹窗 footer 左侧跟着内容组件 `defineExpose` 出来的当前路径、右侧是「取消 / 选择当前目录」（契约见 `src/renderer/src/utils/modal/ModalContent.ts`）；**不复用本机目录选择器** |
+| 刮削器 | `t-transfer` 穿梭框（左「可用刮削器」/ 右「已选刮削器」，带搜索框；`TTransfer` 已手工补进 `components.d.ts`），候选项来自 `useScraperOptions`（`pluginApi.list()` 过滤 `enabled && loadError === ''`）；说明「不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削」；已保存但当前不可用的 id 不进候选，会被补进穿梭框数据、在右侧标注「（已失效）」显示，移动条目时不会被静默清空；**新建时默认勾选内置 `R18_OFFLINE_PLUGIN_ID`（`r18-offline`），插件不可用时保持不勾** |
+| 库级选项 | NSFW 保护 / 写入 NFO / 重命名文件 / 移动文件（**开启时才显示「目标目录」输入**，关闭时存空串）/ 图片保存位置（`LIBRARY_IMAGE_SAVE_MODE_LABELS`） |
 
 - 提交前校验顺序：名称 → 至少一行媒体目录 → 每行都选了存储 → 同库内不出现重复目录 → 每行都选了目录；两条兜底文案「请先到「存储」页新建数据源」「请为每个媒体目录选择存储」，重复目录报「存在重复的根目录，请合并后再保存」。
 - 提交走 `libraryApi.save`（新建不带 `id`），失败经 `LibraryResult` 回显中文原因（跨库目录重叠的报错由主进程给，见[资料库 · 目录重叠规则](../media/01-media-library.md)）。
@@ -138,7 +138,7 @@ src/renderer/src/windows/main/pages/media/
 │   ├── components/LibraryCard.vue        # 资料库卡片：coverUrls 四宫格 + 计数
 │   └── composables/useMediaHome.ts       # 调 mediaApi.home()，持有 libraries / rows / 摘要
 ├── wall/                                 # /media/library（内容页）
-│   ├── MediaWallPage.vue                 # 标题 + 返回 + 搜索 + 排序 + 摘要 + 网格
+│   ├── MediaWallPage.vue                 # 页头（`SubPageLayout` 返回 + 标题）+ 搜索 + 排序 + 摘要 + 网格
 │   └── composables/useMediaWall.ts       # 取数、去重、搜索过滤与排序
 ├── detail/                               # /media/detail（详情页）
 │   ├── MediaDetailPage.vue               # 播放器 + 磁盘事实 + NFO 元信息
@@ -150,7 +150,7 @@ src/renderer/src/windows/main/pages/media/
     ├── components/
     │   ├── LibraryDrawer.tsx / LibraryDrawerContent.vue
     │   ├── LibraryListItem.vue           # 抽屉里的一行
-    │   ├── LibraryFormDialog.tsx / LibraryFormContent.vue
+    │   ├── LibraryFormDrawer.tsx / LibraryFormContent.vue
     │   ├── LibraryDirectoryEditor.vue    # 媒体目录多行编辑器
     │   └── RemoteDirDialog.tsx / RemoteDirPickerContent.vue   # 连接内目录选择器
     └── composables/{useLibraryForm.ts,useMediaLibraries.ts}
@@ -176,20 +176,20 @@ src/renderer/src/windows/main/pages/media/
 
 1. 首页三排：扫过一个有影片的库后回首页，应能看到「资料库」横排与「最近添加 / 待刮削 / 推荐」三排，行头计数与实际卡片数一致；某一排为空时该排整块不渲染。
 2. 首页搜索回车：输入完整关键词回车 → 跳 `/media/library?libraryId=&keyword=…`，内容页搜索框带出该词且列表已过滤；清空关键词再回车 → 只带 `libraryId`。
-3. 「全部影片」按钮 → 内容页标题为「全部影片」、摘要只有「共 N 部 · 已刮削 M 部」（没有「K 个资料库」）；点返回按钮回首页。
+3. 「全部影片」按钮 → 内容页标题为「全部影片」、摘要只有「共 N 部 · 已刮削 M 部」（没有「K 个资料库」）；点内容页页头左侧返回按钮回首页，直接以 URL 打开该页时点返回落到 `/media`。
 4. 点首页的资料库卡片 → 跳 `/media/library?libraryId=<id>`，标题是库名，列表只剩该库影片；摘要里的「已刮削 M 部」随搜索 / 排序后的可见数量变化（不是整墙口径）。
 5. 资料库卡片封面：给库内最近的 4 个影片刮出封面后回首页，卡片应显示四宫格；不足 4 张按实际张数排；一张都没有时显示文字占位。
 6. 新建资料库的媒体目录：点「选择目录」必须弹出**存储内的目录**对话框（只列目录、有面包屑与「上级目录」、可回连接根），选中后回填的是**连接内路径**；未选存储时按钮禁用并提示「请先选择存储」；选完保存后抽屉里该行显示「存储名 · 目录」。
-7. 类型锁定：新建资料库时类型可选（当前只有「影视」）；保存后重新打开编辑弹窗，类型下拉应为禁用状态（「类型创建后不可修改」）。
+7. 类型锁定：新建资料库时类型可选（当前只有「影视」）；保存后重新打开编辑抽屉，类型下拉应为禁用状态（「类型创建后不可修改」）。
 8. 目录重叠：同一个库内加两条相同目录 → 保存报「存在重复的根目录，请合并后再保存」（不发请求）；把库 A 的目录设成库 B 目录的子目录（或反过来）→ 保存报「媒体目录与资料库「B」的 X 重叠，请改用不重叠的目录」。
 9. 后缀设置：在「设置 → 资料库」里把 `mp4` 从「影视媒体后缀」删掉，重新扫描该库 → `.mp4` 文件不再入库（墙上消失）；清空后缀清单失焦 → 提示「至少要保留一个后缀，已回落默认值」。
-10. 空刮削器：把某库的刮削器全部取消（placeholder 是「可留空」）后保存 → 抽屉里该行标签显示「不刮削」且「刮削」按钮禁用（悬停提示「该资料库未配置刮削器，不执行刮削」）；点「扫描」仍能正常扫描，扫描完成后提示「未自动刮削：该资料库未配置刮削器，已跳过刮削」，墙面照常更新。
+10. 空刮削器：把某库的刮削器全部取消（把右侧「已选刮削器」全部移回左侧）后保存 → 抽屉里该行标签显示「不刮削」且「刮削」按钮禁用（悬停提示「该资料库未配置刮削器，不执行刮削」）；点「扫描」仍能正常扫描，扫描完成后提示「未自动刮削：该资料库未配置刮削器，已跳过刮削」，墙面照常更新。
 11. 点「扫描」：抽屉顶部出现扫描条（已遍历目录数、索引文件数、当前目录），期间所有行动作禁用；完成后「影片 N 部」「上次扫描」更新，`skippedDirs` / 截顶会在提示里以中文说明。
 12. 扫描期间再点一次「扫描」（或另一个库的「扫描」）→ 报「已有扫描任务在运行，请稍候」；点「取消扫描」→ 返回「扫描已取消」，且**本次不做清理、`上次扫描` 不变**。
 13. 自动刮削四种跳过原因：关掉「刮削设置 → 扫描后自动刮削」→「设置中已关闭「扫描后自动刮削」」；空刮削器 →「该资料库未配置刮削器，已跳过刮削」；没有未刮削影片 →「没有待刮削的影片」；已有任务在跑 →「已有刮削任务在运行，可稍后手动刮削」。
 14. 做过扫描 / 刮削后进内容页：该库目录下的视频都应上墙，未刮削的卡片显示文件名占位与「未刮削」角标；卡片角标显示资料库名，存储被删时退化成「存储已删除」而不报错。
 15. 刮削成功后刷新：卡片标题变成插件标题、封面出现、角标变「已刮削」。
-16. 在资料库表单里开启「成功后移动文件」并设置「目标目录」，再刮削一次：移动后的视频仍能播放、标题与封面不丢（`updateSourcePath` 就地更新了 `media_source.path`，媒体源 id 没变），详情页的「所在目录」显示新位置。
+16. 在资料库表单里开启「移动文件」并填写「目标目录」，再刮削一次：移动后的视频仍能播放、标题与封面不丢（`updateSourcePath` 就地更新了 `media_source.path`，媒体源 id 没变），详情页的「所在目录」显示新位置。
 17. 从磁盘删掉一个视频后到资料库抽屉点「扫描」：扫描完成后对应卡片从墙上消失（本轮没有文件系统监控，只有扫描会清理）。
 18. 内容页搜索框输入番号 / 标题 / 文件名片段实时过滤（不需要回车）；切排序顺序变化（默认已刮削优先）。
 19. 在抽屉里删除一个资料库：确认文案说明只删配置与库内影片记录，删完该库从首页横排与内容页消失；磁盘文件都还在。

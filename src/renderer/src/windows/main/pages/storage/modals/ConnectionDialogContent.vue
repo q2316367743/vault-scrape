@@ -2,7 +2,9 @@
 /**
  * 连接弹窗的内容组件（外壳见同目录 ConnectionDialog.tsx）。
  *
- * 表单状态与提交逻辑都委托给 `useConnectionForm`，本文件只负责字段排布。
+ * 表单状态与提交逻辑都委托给 `useConnectionForm`，本文件只负责字段排布；
+ * 「测试连接」「保存」两个按钮在外壳 footer，这里用 `defineExpose` 把动作与状态交出去
+ * （见 `@/utils/modal/ModalContent`）。
  */
 import { type FileConnection } from '@common/types/file'
 import { PROTOCOL_HINTS } from '../storageUtils'
@@ -10,7 +12,7 @@ import { useConnectionForm } from '../composables/useConnectionForm'
 import ConnectionPolicyField from './ConnectionPolicyField.vue'
 
 const props = defineProps<{ connection?: FileConnection }>()
-const emit = defineEmits<{ close: []; success: [connection: FileConnection] }>()
+const emit = defineEmits<{ success: [connection: FileConnection] }>()
 
 const {
   protocol,
@@ -27,6 +29,9 @@ const {
   connection: props.connection,
   onSaved: (connection) => emit('success', connection)
 })
+
+/** 交给外壳 footer：左侧「测试连接」+ 右侧「保存」，状态用于按钮 loading（契约见 ModalContentExpose） */
+defineExpose({ submit: onSubmit, saving, test: onTest, testing })
 </script>
 
 <template>
@@ -108,14 +113,6 @@ const {
     </div>
 
     <connection-policy-field v-model:nsfw="form.nsfw" />
-
-    <footer class="form-actions">
-      <t-button variant="outline" :loading="testing" @click="onTest">测试连接</t-button>
-      <div class="form-actions-right">
-        <t-button variant="outline" @click="emit('close')">取消</t-button>
-        <t-button theme="primary" :loading="saving" @click="onSubmit">保存</t-button>
-      </div>
-    </footer>
   </div>
 </template>
 
@@ -147,17 +144,5 @@ const {
   font-size: 12px;
   line-height: 1.5;
   color: var(--td-text-color-placeholder);
-}
-
-.form-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 20px;
-}
-
-.form-actions-right {
-  display: flex;
-  gap: 8px;
 }
 </style>

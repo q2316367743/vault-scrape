@@ -43,7 +43,6 @@ import type {
   SettingDownload,
   SettingFile,
   SettingNaming,
-  SettingPath,
   SettingScrape
 } from '@common/types/setting'
 import { replaceItemImages, type MediaImageDraft } from '$/db/repo/mediaImageRepo'
@@ -74,7 +73,6 @@ export interface ScrapeSettingsSnapshot {
   download: SettingDownload
   naming: SettingNaming
   file: SettingFile
-  path: SettingPath
 }
 
 /** 任务启动时冻结的资料库策略：改名 / 移动 / 写 NFO / 图片落盘都由它决定 */
@@ -355,13 +353,6 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
 
   const { detail, pluginId, assets } = await collectFromPlugins(context, enabled)
   if (!detail) {
-    if (settings.file.moveAfterFailure) {
-      const failedDir = resolveOutputDir(settings.path.failedOutputDir, context.dirPath)
-      if (failedDir !== context.dirPath) {
-        await client.mkdir(failedDir, { recursive: true })
-        await client.move(entry.path, joinRemotePath(failedDir, entry.name), { overwrite: false })
-      }
-    }
     return {
       status: 'failed',
       pluginId: '',
@@ -390,7 +381,7 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
         videoBase: assetBase,
         forceMovieStyle: !policy.renameEnabled,
         naming: settings.naming,
-        fanartDirName: settings.path.fanartDirName
+        fanartDirName: settings.scrape.fanartDirName
       })
       const imageType = IMAGE_KIND_TYPE[kind]
       try {

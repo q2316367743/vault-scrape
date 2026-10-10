@@ -72,5 +72,14 @@ const { setting } = storeToRefs(useSettingScrapeStore())
         </div>
       </template>
     </t-list-item>
+
+    <t-list-item>
+      <t-list-item-meta title="剧照目录名" description="刮削结果里存放剧照的子目录名" />
+      <template #action>
+        <div class="setting-field">
+          <t-input v-model="setting.fanartDirName" placeholder="extrafanart" clearable />
+        </div>
+      </template>
+    </t-list-item>
   </t-list>
 </template>

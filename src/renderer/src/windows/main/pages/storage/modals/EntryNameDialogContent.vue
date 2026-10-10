@@ -1,25 +1,34 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+/**
+ * 单名称输入弹窗的内容组件（外壳见同目录 EntryNameDialog.tsx）。
+ *
+ * 输入与「非空才可提交」的判断在这里，取消 / 确定按钮在外壳 footer；
+ * 这里用 `defineExpose` 把提交动作与可提交状态交出去（见 `@/utils/modal/ModalContent`）。
+ */
+import { computed, ref } from 'vue'
 
 const props = withDefaults(
   defineProps<{
     label: string
     defaultValue?: string
     placeholder?: string
-    confirmText?: string
   }>(),
-  { defaultValue: '', placeholder: '', confirmText: '确定' }
+  { defaultValue: '', placeholder: '' }
 )
 
-const emit = defineEmits<{ close: []; success: [name: string] }>()
+const emit = defineEmits<{ success: [name: string] }>()
 
 const value = ref(props.defaultValue)
+const canSubmit = computed(() => value.value.trim().length > 0)
 
 function onSubmit(): void {
   const name = value.value.trim()
   if (name.length === 0) return
   emit('success', name)
 }
+
+/** 交给外壳 footer 的取消 / 确定按钮；回车同样走 submit */
+defineExpose({ submit: onSubmit, canSubmit })
 </script>
 
 <template>
@@ -34,12 +43,6 @@ function onSubmit(): void {
         @enter="onSubmit"
       />
     </div>
-    <footer class="dialog-actions">
-      <t-button variant="outline" @click="emit('close')">取消</t-button>
-      <t-button theme="primary" :disabled="value.trim().length === 0" @click="onSubmit">
-        {{ confirmText }}
-      </t-button>
-    </footer>
   </div>
 </template>
 
@@ -59,12 +62,5 @@ function onSubmit(): void {
 
 .dialog-control {
   flex: 1;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
 }
 </style>

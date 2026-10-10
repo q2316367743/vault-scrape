@@ -56,7 +56,7 @@
 - 环境变量在插件页右栏的**配置区块**（`components/PluginConfigPanel.vue`）填写：只在插件声明了环境变量（`hasEnv`）时渲染，内置插件与没写 `env` 的脚本插件都不会出现空区域；选中插件后按声明表渲染多行文本域，保存以插件为单位；环境变量一律按敏感处理，明文永不回传，文本域留空表示保持已保存的值。保存成功后用主进程返回的 `PluginSummary` 上抛（`PluginDetail` 的 `changed` → 页面的 `applySummary`），列表上的「待填写变量」标签即时更新，不整表刷新。
 - 安装（导入 / 保存源码）时会在沙箱里执行一次脚本，读取 `env` 声明并写入索引，不联网、不调用四个方法；声明表即配置区块的数据源。
 - 影片详情是命令式抽屉（现位于 `pages/tools/search/`）：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
-- 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，保存时主进程先编译校验再落盘）。
+- 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，只有编辑器本体；底部 footer 的「取消 / 保存」由外壳渲染，保存动作与 `saving` / `canSubmit` 由内容组件 `defineExpose` 暴露，见 `src/renderer/src/utils/modal/ModalContent.ts`；保存时主进程先编译校验再落盘）。
 - 导入支持在系统文件选择框里一次多选多个 `.js`；同名（`meta.id`）只保留最新——先比 `meta.version`，版本相同再比源文件 mtime，批内与本机已安装的旧版本都不落盘，只用 `MessagePlugin.info` 提示「已跳过 N 个旧版本插件」；仅当版本相同且未覆盖时弹 `DialogPlugin.confirm`，确认后带 `overwrite: true` 重试；导入的系统文件选择框由主进程弹出。
 - 契约、沙箱白名单、超时、存储与错误码见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 - 内置插件（当前只有 `r18-offline`「R18 离线数据包」）用 `PluginSummary.source === 'builtin'` 区分：列表与详情都带「内置」标签，没有源码文件，因此详情页隐藏「编辑代码」「删除」，源文件一行显示「内置实现（无源码文件）」。
@@ -74,13 +74,13 @@
 
 ## 设置
 
-- 页面 `SettingPage.vue`：顶部横向 `t-tabs`（TDesign Vue Next 的 `t-tabs` 没有竖排模式，因此分组以顶部标签呈现），9 个 `t-tab-panel` 分别承载各面板，默认 `path`，支持 `?group=network` 之类的查询参数直达分组。站点账号类参数不在设置页，见「插件」的配置区块。
-- 面板：`components/Setting{Path,Library,Scrape,Network,Translate,Naming,Download,File}Panel.vue`（`SettingLibraryPanel.vue` 是「资料库」页签：按 `LIBRARY_TYPES` 逐类型用 `t-tag-input` 维护媒体后缀清单，失焦清洗、清空回落默认值，保存沿用 store 的防抖）。
+- 页面 `SettingPage.vue`：顶部横向 `t-tabs`（TDesign Vue Next 的 `t-tabs` 没有竖排模式，因此分组以顶部标签呈现），8 个 `t-tab-panel` 分别承载各面板，默认 `app`，支持 `?group=network` 之类的查询参数直达分组。站点账号类参数不在设置页，见「插件」的配置区块。
+- 面板：`components/Setting{App,Library,Scrape,Network,Translate,Naming,Download,File}Panel.vue`（`SettingLibraryPanel.vue` 是「资料库」页签：按 `LIBRARY_TYPES` 逐类型用 `t-tag-input` 维护媒体后缀清单，失焦清洗、清空回落默认值，保存沿用 store 的防抖）。
 - 面板统一形态：`const { setting } = storeToRefs(useSettingXxxStore())` + `t-list` / `t-list-item` / `t-list-item-meta`（`title` + `description`），控件放 `#action` 插槽里的 `.setting-field` 容器中。
 - `settingOptions.ts` 集中存放下拉选项（`SettingOption<T>` 接口 + 代理协议、目标语言、附属文件命名、分盘样式、NFO 命名、角标位置）。
 - `TemplateHintBar.vue` 是命名规则面板顶部的占位符提示条，点击 chip 复制到剪贴板并弹出成功提示。
 - 保存是自动的：store 内 `watchDebounced` 300ms 深监听，变更即写盘（细节见 [../setting/01-setting-storage.md](../setting/01-setting-storage.md)）。
-- 目录选择按钮为提示占位，待后续接入。
+- 应用设置里的「演员头像目录」是普通输入框 + 选择按钮，目录选择按钮为提示占位，待后续接入。
 
 ## 日志
 
@@ -97,7 +97,7 @@
 
 | 位置 | 待办 |
 | --- | --- |
-| 设置-目录与路径 | 目录选择对话框（当前是普通输入框 + 占位提示；dialog 域 IPC 已就绪，见[系统对话框模块](../dialog/01-dialog-module.md)，接入时直接调 `dialogApi.open({ directory: true })`，或直接复用通用控件 `DirectoryPickerField.vue`——输入框 + 「选择」按钮，内部就是这个调用，存储页「本地磁盘」的根目录字段已经用它） |
+| 设置-应用设置（演员头像目录） | 目录选择对话框（当前是普通输入框 + 占位提示，占位函数在 `SettingAppPanel.vue`；dialog 域 IPC 已就绪，见[系统对话框模块](../dialog/01-dialog-module.md)，接入时直接调 `dialogApi.open({ directory: true })`，或直接复用通用控件 `DirectoryPickerField.vue`——输入框 + 「选择」按钮，内部就是这个调用，存储页「本地磁盘」的根目录字段已经用它） |
 | 存储-上传 / 下载 | 本机文件与目录选择器（当前为本机绝对路径输入框；dialog 域 IPC 已就绪，接入方式同上） |
 | 设置-翻译服务 | 翻译服务实现（当前只有开关与目标语言） |
 | 工作台 | 刮削任务创建、队列与执行控制；消费插件产出的「下载配置」并真正下载（含封面角标、NFO 生成、命名落盘） |

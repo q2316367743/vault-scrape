@@ -3,6 +3,7 @@ import tseslint from '@electron-toolkit/eslint-config-ts'
 import eslintConfigPrettier from '@electron-toolkit/eslint-config-prettier'
 import eslintPluginVue from 'eslint-plugin-vue'
 import vueParser from 'vue-eslint-parser'
+import autoImportGlobals from './.eslintrc-auto-import.json' with { type: 'json' }
 
 export default defineConfig(
   { ignores: ['**/node_modules', '**/dist', '**/out', '**/script'] },
@@ -36,5 +37,13 @@ export default defineConfig(
       ]
     }
   },
-  eslintConfigPrettier
+  eslintConfigPrettier,
+
+  // Auto-import globals for TS and Vue files
+  {
+    files: ['**/*.{ts,mts,tsx,vue}'],
+    languageOptions: {
+      globals: autoImportGlobals.globals
+    }
+  }
 )

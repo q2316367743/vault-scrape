@@ -1,4 +1,4 @@
-import { readBoolean, readNumber, toSource } from './shared'
+import { readBoolean, readNumber, readString, toSource } from './shared'
 
 /** 刮削设置：节奏控制 */
 export interface SettingScrape {
@@ -16,6 +16,8 @@ export interface SettingScrape {
    * 关掉后只能在资料库抽屉里手动点「刮削」，或在工作台里手动勾选。
    */
   autoScrapeAfterScan: boolean
+  /** 剧照目录名（刮削结果内存放剧照的子目录名） */
+  fanartDirName: string
 }
 
 export function buildSettingScrape(): SettingScrape {
@@ -24,7 +26,8 @@ export function buildSettingScrape(): SettingScrape {
     requestDelay: 1,
     restAfterCount: 50,
     restDuration: 60,
-    autoScrapeAfterScan: true
+    autoScrapeAfterScan: true,
+    fanartDirName: 'extrafanart'
   }
 }
 
@@ -37,6 +40,7 @@ export function normalizeSettingScrape(raw: unknown): SettingScrape {
     requestDelay: readNumber(source, 'requestDelay', base.requestDelay),
     restAfterCount: readNumber(source, 'restAfterCount', base.restAfterCount),
     restDuration: readNumber(source, 'restDuration', base.restDuration),
-    autoScrapeAfterScan: readBoolean(source, 'autoScrapeAfterScan', base.autoScrapeAfterScan)
+    autoScrapeAfterScan: readBoolean(source, 'autoScrapeAfterScan', base.autoScrapeAfterScan),
+    fanartDirName: readString(source, 'fanartDirName', base.fanartDirName)
   }
 }

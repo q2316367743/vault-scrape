@@ -2,16 +2,16 @@
 
 ## 🚫 硬性红线（违反即错）
 
-| 编号  | 规则                                                                           |
-|-------|--------------------------------------------------------------------------------|
-| RL‑01 | 语言：允许英文思考，但所有对外输出必须使用中文                                 |
-| RL‑02 | 根目录洁净：禁止在根目录放置业务代码                                           |
-| RL‑03 | 类型安全：禁止使用 `any`；禁止不必要的 `as` 断言                               |
-| RL‑04 | UI 强制：所有 UI 元素必须使用 `tdesign`；禁用原生 `alert` / `select`           |
-| RL‑05 | 文件长度：vue 文件 ≤ 300 行，ts 文件 ≤ 500 行，超出必须拆分                    |
-| RL‑06 | 文档同步：功能实现后，必须将技术文档写入或更新 `docs/` 目录，供后续 AI 参考    |
-| RL-07 | 不需要 build，只需要 typecheck，禁止做任何验证/测试，如需验证/测试，请让我来做 |
-| RL-08 | 未经我的允许，禁止读取 node_modules 目录下文件                                 |
+| 编号  | 规则                                                                                       |
+|-------|--------------------------------------------------------------------------------------------|
+| RL‑01 | 语言：允许英文思考，但所有对外输出必须使用中文                                             |
+| RL‑02 | 根目录洁净：禁止在根目录放置业务代码                                                       |
+| RL‑03 | 类型安全：禁止使用 `any`；禁止不必要的 `as` 断言                                           |
+| RL‑04 | UI 强制：所有 UI 元素必须使用 `tdesign`；禁用原生 `alert` / `select`                       |
+| RL‑05 | 文件长度：vue 文件 ≤ 300 行，ts 文件 ≤ 500 行，超出必须拆分                                |
+| RL‑06 | 文档同步：功能实现后，必须将技术文档写入或更新 `docs/` 目录，供后续 AI 参考                |
+| RL-07 | 不需要 build，只需要 typecheck，禁止做任何验证/测试，如需验证/测试，请让我来做             |
+| RL-08 | 未经我的允许，禁止读取 node_modules 目录下文件                                             |
 | RL-09 | 页面目录分层：禁止在页面目录下平铺多个页面文件，每个页面独占子目录（详见「页面目录组织」） |
 
 ---
@@ -71,10 +71,43 @@
 
 - 弹窗 / 抽屉一律使用 tdesign **命令式 API**：`DialogPlugin`（默认 `placement: 'center'`）或 `DrawerPlugin`（内容较多、需更宽编辑面板时）
 - 每个弹窗拆成两个文件：
-  - `.tsx` **外壳**：导出 `openXxx(options)` 打开函数，内部调用 `DialogPlugin` / `DrawerPlugin`，将 `.vue` 内容组件经
-    `body: () => h(XxxContent, props)` 渲染进弹窗；`destroyOnClose: true`、`footer: false`（操作按钮由内容组件内部提供）
-  - `.vue` **内容**：命名 `XxxContent.vue`，承载表单 / 按钮等全部 UI 与提交状态，通过 `emit('close' / 'success')` 与外壳通信
+  - `.tsx` **外壳**：导出 `openXxx(options)` 打开函数，内部调用 `DialogPlugin` / `DrawerPlugin`；`destroyOnClose: true`；
+    `body: () => <XxxContent … />` 只负责渲染 `.vue` 内容组件，**操作按钮由外壳的 `footer` 提供**（用 JSX 渲染 `tdesign` 的 `Button`）
+  - `.vue` **内容**：命名 `XxxContent.vue`，承载表单 / 列表等主体 UI 与提交状态，**不含操作按钮**；用
+    `defineExpose` 暴露 `src/renderer/src/utils/modal/ModalContent.ts` 里的 `ModalContentExpose`（`submit()` 给外壳主按钮调用，
+    `saving` / `canSubmit` 给按钮绑 `loading` / `disabled`），并用 `emit('success', 载荷)` 回传结果、`emit('close')` 表达
+    「内容自己要求关闭」（保存成功、加载失败等）
+- `.tsx` 外壳一律写 **JSX**，不要用 `h()` 拼 VNode：`tsconfig.web.json` 已配 `jsx: preserve` + `jsxImportSource: vue`，
+  构建侧有 `@vitejs/plugin-vue-jsx`；`tdesign` 组件直接 `import { Button } from 'tdesign-vue-next'` 后在 JSX 里用
+- 外壳用模板 ref 读内容组件的暴露值，不再往内容组件传 `onClose`：
+
+  ```tsx
+  const contentRef = ref<ModalContentExpose | null>(null)
+  const dialog = DialogPlugin({
+    destroyOnClose: true,
+    footer: () => (
+      <div class="flex items-center justify-end gap-8px">
+        <Button variant="outline" onClick={() => dialog.hide()}>
+          取消
+        </Button>
+        <Button
+          theme="primary"
+          loading={contentRef.value?.saving}
+          onClick={() => contentRef.value?.submit()}
+        >
+          保存
+        </Button>
+      </div>
+    ),
+    body: () => <XxxContent ref={contentRef} onSuccess={(payload) => { … }} />
+  })
+  ```
+
+- 按钮必须放 `footer` 的原因：footer 固定在弹窗底部、不随内容滚动，长表单 / 长列表里操作始终可见；写在内容组件
+  `template` 里的 `<footer>` 会跟着内容滚走
+- `footer: false` 只在**没有弹窗级操作按钮（取消 / 保存）**的场景使用（如只读详情抽屉、动作都在内容里的抽屉）
 - 禁止：
+  - 在内容组件 `template` 里写取消 / 保存等操作按钮
   - 整个弹窗（含内容）全部写在 `.tsx` 中
   - 用声明式 `<t-dialog :visible>` + `v-if` 挂载实现业务弹窗
   - 弹窗内容使用 `.tsx` 渲染而非 `.vue` 组件
@@ -88,10 +121,14 @@
 
 6. **页面目录组织**
 
-- 禁止在一个页面目录下平铺多个页面文件：每个页面（含子页面）独占一个子目录，页面 `.vue`、该页私有的 `components/` 与 `composables/` 都放进这个子目录
+- 禁止在一个页面目录下平铺多个页面文件：每个页面（含子页面）独占一个子目录，页面 `.vue`、该页私有的 `components/` 与
+  `composables/` 都放进这个子目录
 - 子目录用页面语义命名（如 `home` / `wall` / `detail`），页面组件名保持 `XxxPage.vue`
-- 跨页面共用的页内组件与组合式，放进「最近的共用层级」新建的独立子目录，禁止复制多份；同一页面目录内多个页面共用时，放该页面目录下的 `components/` / `composables/`
-- 示例（影视墙）：`pages/media/{components,home,wall,detail,library}/`——`home/MediaHomePage.vue` + `home/components/` + `home/composables/`；`wall/MediaWallPage.vue` + `wall/composables/`；`detail/MediaDetailPage.vue`；`components/` 放 home 与 wall 共用的影片卡片；`library/` 放共用的资料库管理（抽屉 / 表单 / 远程目录选择器）
+- 跨页面共用的页内组件与组合式，放进「最近的共用层级」新建的独立子目录，禁止复制多份；同一页面目录内多个页面共用时，放该页面目录下的
+  `components/` / `composables/`
+- 示例（影视墙）：`pages/media/{components,home,wall,detail,library}/`——`home/MediaHomePage.vue` + `home/components/` +
+  `home/composables/`；`wall/MediaWallPage.vue` + `wall/composables/`；`detail/MediaDetailPage.vue`；`components/` 放 home
+  与 wall 共用的影片卡片；`library/` 放共用的资料库管理（抽屉 / 表单 / 远程目录选择器）
 - 从本规则加入之日起，新写或重写的页面目录必须遵守；存量目录不强制回改
 
 7. **单文件组件（SFC）块顺序**
@@ -142,18 +179,21 @@ src/
 
 ### ❌ 错误示例与原因
 
-| 错误示例                                  | 原因                                                        |
-|-------------------------------------------|-------------------------------------------------------------|
-| `src/UserList.vue`                        | 违反 RL‑02，业务代码不应放在根目录                          |
-| `pages/dashboard/api.ts`                  | 违反 RL‑03，API 必须集中在 `@/api`                          |
-| `components/OrderDetailModal.vue`         | 违反组件存放规则，非通用组件不应放在 `src/components`       |
-| 页面中直接使用 `fetch('/api/user')`       | 违反 RL‑03，绕过 `@/api`                                    |
-| 使用 `<select>` 或 `alert()`              | 违反 RL‑05，必须使用 `tdesign`                              |
-| 手写 SVG 图标                             | 违反 UI 约定，应使用 `tdesign` 图标                         |
-| `const data: any = res.data`              | 违反 RL‑04，禁止 `any`                                      |
-| `color: #1677ff;`                         | 违反样式约定，应使用 tdesign CSS Token                      |
-| `FilterModal.vue` 作为弹窗                | 违反约定，弹窗外壳必须用 `.tsx`（`DialogPlugin` 命令式）    |
-| 弹窗内容直接写在 `.tsx` 内                | 违反约定，弹窗内容必须用 `.vue` 组件（`XxxContent.vue`）    |
-| `<t-dialog :visible>` + `v-if` 声明式弹窗 | 违反约定，应使用 `DialogPlugin` / `DrawerPlugin` 命令式 API |
-| 单文件超过 300 行未拆分                   | 违反 RL-06                                                  |
+| 错误示例                                                       | 原因                                                                      |
+|----------------------------------------------------------------|---------------------------------------------------------------------------|
+| `src/UserList.vue`                                             | 违反 RL‑02，业务代码不应放在根目录                                        |
+| `pages/dashboard/api.ts`                                       | 违反 RL‑03，API 必须集中在 `@/api`                                        |
+| `components/OrderDetailModal.vue`                              | 违反组件存放规则，非通用组件不应放在 `src/components`                     |
+| 页面中直接使用 `fetch('/api/user')`                            | 违反 RL‑03，绕过 `@/api`                                                  |
+| 使用 `<select>` 或 `alert()`                                   | 违反 RL‑05，必须使用 `tdesign`                                            |
+| 手写 SVG 图标                                                  | 违反 UI 约定，应使用 `tdesign` 图标                                       |
+| `const data: any = res.data`                                   | 违反 RL‑04，禁止 `any`                                                    |
+| `color: #1677ff;`                                              | 违反样式约定，应使用 tdesign CSS Token                                    |
+| `FilterModal.vue` 作为弹窗                                     | 违反约定，弹窗外壳必须用 `.tsx`（`DialogPlugin` 命令式）                  |
+| 弹窗内容直接写在 `.tsx` 内                                     | 违反约定，弹窗内容必须用 `.vue` 组件（`XxxContent.vue`）                  |
+| 内容组件 `template` 里写 `<footer>` 放取消 / 保存按钮          | 违反约定，操作按钮必须放弹窗 `footer`（外壳用 JSX 渲染 `<Button>`），内容组件用 `defineExpose` 暴露 `submit` / `saving` / `canSubmit` |
+| 外壳写 `footer: false` 却在内容里放操作按钮                    | 违反约定，`footer: false` 只用于没有操作按钮的场景（如只读抽屉）          |
+| `.tsx` 外壳里用 `h('div', …)` / `h(Button, …)` 拼 VNode        | 违反约定，`.tsx` 里一律写 JSX（`<div>` / `<Button>`），`h()` 只在 `.ts` 等非 JSX 文件里用 |
+| `<t-dialog :visible>` + `v-if` 声明式弹窗                      | 违反约定，应使用 `DialogPlugin` / `DrawerPlugin` 命令式 API               |
+| 单文件超过 300 行未拆分                                        | 违反 RL-06                                                                |
 | `pages/media/` 下平铺 `MediaWallPage.vue`、`MediaHomePage.vue` | 违反 RL-09，页面必须各占一个子目录（`media/{home,wall,detail,library}/`） |

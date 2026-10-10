@@ -109,8 +109,7 @@ function snapshotSettings(): ScrapeSettingsSnapshot {
     scrape: setting.scrape,
     download: setting.download,
     naming: setting.naming,
-    file: setting.file,
-    path: setting.path
+    file: setting.file
   }
 }
 

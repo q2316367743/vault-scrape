@@ -36,29 +36,20 @@
     <div class="form-row form-row-top">
       <span class="form-label">刮削器</span>
       <div class="form-control">
-        <t-select
-          v-model="scrapers"
-          :options="scraperOptions"
-          :loading="scraperLoading"
-          multiple
-          clearable
-          placeholder="可留空"
+        <t-transfer
+          :model-value="scrapers"
+          :data="scraperTransferData"
+          :title="['可用刮削器', '已选刮削器']"
+          :search="true"
+          @change="onScrapersChange"
         />
+        <p v-if="scraperLoading" class="form-note">正在读取已安装的插件…</p>
         <p class="form-note">
           不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削；不同资料库可能存放不同厂商的内容，这里只勾选覆盖该库范围的刮削器
         </p>
-        <div v-if="staleScrapers.length > 0" class="stale-row">
-          <span class="form-note">已失效：</span>
-          <t-tag
-            v-for="id in staleScrapers"
-            :key="id"
-            size="small"
-            theme="warning"
-            variant="light-outline"
-          >
-            {{ id }}
-          </t-tag>
-        </div>
+        <p v-if="staleScrapers.length > 0" class="form-note">
+          已失效的插件仍留在右侧并标注「（已失效）」，移回左侧即可丢弃
+        </p>
       </div>
     </div>
 
@@ -110,22 +101,17 @@
     <p v-if="connections.length === 0" class="form-hint form-hint-warn">
       还没有存储，请先到「存储」页新建数据源
     </p>
-
-    <footer class="form-actions">
-      <div class="form-actions-right">
-        <t-button variant="outline" @click="emit('close')">取消</t-button>
-        <t-button theme="primary" :loading="saving" @click="onSubmit">保存</t-button>
-      </div>
-    </footer>
   </div>
 </template>
 <script setup lang="ts">
 /**
- * 资料库表单（外壳见同目录 LibraryFormDialog.tsx）。
+ * 资料库表单（外壳见同目录 LibraryFormDrawer.tsx）。
  *
- * 契约：状态与提交都在 `useLibraryForm`，本组件只负责布局与绑定；
+ * 契约：状态与提交都在 `useLibraryForm`，本组件只负责布局与绑定；取消 / 保存按钮在外壳 footer，
+ * 这里用 `defineExpose` 把 `submit` / `saving` 交出去（见 `@/utils/modal/ModalContent`）。
  * 每个媒体目录一行（存储 + 选择目录 + 已选路径 + 删除），目录只能通过远程目录弹窗挑。
  */
+import { computed } from 'vue'
 import LibraryDirectoryEditor from './LibraryDirectoryEditor.vue'
 import type { FileConnection } from '@common/types/file'
 import type { MediaLibrary } from '@common/types/library'
@@ -138,7 +124,7 @@ const props = defineProps<{
   connections: FileConnection[]
 }>()
 
-const emit = defineEmits<{ close: []; success: [library: MediaLibrary] }>()
+const emit = defineEmits<{ success: [library: MediaLibrary] }>()
 
 const {
   name,
@@ -170,11 +156,31 @@ const {
   onSaved: (library) => emit('success', library)
 })
 
+/**
+ * 穿梭框数据：候选插件 + 配置里已失效的 id。
+ *
+ * `useScraperOptions` 只把「启用且加载成功」的插件作为候选，失效 id 不进来；
+ * 但穿梭框只渲染 `data` 里存在的值，所以要补进来，否则这些 id 会在界面上消失、
+ * 保存时被静默丢弃（违反 useScraperOptions 的「不静默清除用户配置」契约）。
+ */
+const scraperTransferData = computed(() => [
+  ...scraperOptions.value.map((item) => ({ label: item.label, value: item.value })),
+  ...staleScrapers.value.map((id) => ({ label: `${id}（已失效）`, value: id }))
+])
+
+/** 只在两侧之间移动，结果里只会出现字符串 id；非字符串直接丢弃 */
+function onScrapersChange(value: (string | number)[]): void {
+  scrapers.value = value.filter((item): item is string => typeof item === 'string')
+}
+
 /** 换存储时把该行的目录清掉（路径只对原来那个存储有意义） */
 function onRowConnectionChange(row: LibraryPathRow, value: string): void {
   row.connectionId = value
   onConnectionChange(row)
 }
+
+/** 交给外壳 footer 的「保存」按钮：触发校验提交，并让按钮跟上 loading（契约见 ModalContentExpose） */
+defineExpose({ submit: onSubmit, saving })
 </script>
 <style scoped lang="less">
 .library-form {
@@ -235,28 +241,5 @@ function onRowConnectionChange(row: LibraryPathRow, value: string): void {
 
 .form-hint-warn {
   color: var(--td-warning-color);
-}
-
-.stale-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.stale-row .form-note {
-  margin: 0;
-}
-
-.form-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  margin-top: 20px;
-}
-
-.form-actions-right {
-  display: flex;
-  gap: 8px;
 }
 </style>

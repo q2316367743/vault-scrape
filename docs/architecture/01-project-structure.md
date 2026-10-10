@@ -28,7 +28,7 @@
 src/
 ├── common/                  # 主进程与渲染进程共享的纯类型与纯函数（不含运行时依赖）
 │   └── types/
-│       ├── setting/         # 设置类型：shared / path / library（媒体后缀清单）/ scrape / network / translate / naming / download / file / index
+│       ├── setting/         # 设置类型：shared / library（媒体后缀清单）/ scrape / network / translate / naming / download / file / index
 │       ├── file/            # 文件类型：error / path / entry / connection / request / transfer / result / index
 │       ├── media/           # 媒体类型：媒体源 / 图片类型与 storage:// 地址、墙面条目、首页三排、浏览条目、详情请求与结果、NFO 解析、错误与信封
 │       ├── library/         # 资料库类型：MediaLibrary（类型 type / 多根目录 / 库级刮削器，空数组 = 不刮削）/ `LibraryType` 与标签 / 草稿 / 摘要（含 `coverUrls`）/ 扫描与任务结果 / 进度事件 / 错误码与 LibraryResult 信封
@@ -64,7 +64,7 @@ src/
         ├── global/          # 全局状态
         ├── hooks/           # 通用 hooks
         ├── utils/           # 渲染层通用工具（format.ts：体积 / 时间格式化，影视墙与工作台共用；remotePath.ts：本机绝对路径 ↔ 连接内路径；另有 lang / modal）
-        └── windows/main/    # 主窗口：入口、App.vue、router、store、pages（影视墙按 home / wall / detail / library 分层，工作台的浏览与勾选 / 任务面板，存储页的浏览器与传输，设置页九个分组）
+        └── windows/main/    # 主窗口：入口、App.vue、router、store、pages（影视墙按 home / wall / detail / library 分层，工作台的浏览与勾选 / 任务面板，存储页的浏览器与传输，设置页八个分组）
 ```
 
 ### 页面目录分层（RL-09）
@@ -78,7 +78,7 @@ src/renderer/src/windows/main/pages/media/
 ├── wall/{MediaWallPage.vue,composables/useMediaWall.ts}
 ├── detail/{MediaDetailPage.vue,components/*,composables/useMediaDetail.ts,mediaDetailCells.ts,mediaPlayerI18n.ts}
 └── library/                              # home 与 wall 共用的资料库管理
-    ├── components/{LibraryDrawer.tsx,LibraryDrawerContent.vue,LibraryFormDialog.tsx,LibraryFormContent.vue,LibraryDirectoryEditor.vue,LibraryListItem.vue,RemoteDirDialog.tsx,RemoteDirPickerContent.vue}
+    ├── components/{LibraryDrawer.tsx,LibraryDrawerContent.vue,LibraryFormDrawer.tsx,LibraryFormContent.vue,LibraryDirectoryEditor.vue,LibraryListItem.vue,RemoteDirDialog.tsx,RemoteDirPickerContent.vue}
     └── composables/{useLibraryForm.ts,useMediaLibraries.ts}
 ```
 

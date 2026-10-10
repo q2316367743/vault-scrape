@@ -24,12 +24,13 @@
  *
  * 契约：props 与 `PageLayout` 一致；返回语义就是 `router.back()`，不认目标路由，
  * 因此子页面不需要自己写返回逻辑，也不要在 `#extra` 里再放返回按钮。
+ * 回退失败（历史为空或路由没变化）时兜底跳转 `fallback`。
  */
 import { ChevronLeftIcon } from 'tdesign-icons-vue-next'
 import PageLayout from './PageLayout.vue'
 import { useSafeBack } from '@/composables'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     /** 页面标题 */
     title: string
@@ -37,11 +38,13 @@ withDefaults(
     description?: string
     /** 内容区是否保留 20px 内边距 */
     padded?: boolean
+    /** 回退失败时的兜底路由 */
+    fallback?: string
   }>(),
-  { padded: true }
+  { padded: true, fallback: '/' }
 )
 
-const goBack = useSafeBack()
+const goBack = useSafeBack(props.fallback)
 </script>
 
 <style scoped lang="less">

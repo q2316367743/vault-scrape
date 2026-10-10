@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+/**
+ * 纯文本编辑器弹窗的内容组件（外壳见同目录 TextEditorDialog.tsx）。
+ *
+ * 读取、写入与 loading / saving 状态都在这里；取消 / 保存按钮在外壳 footer，
+ * 这里用 `defineExpose` 把动作与状态交出去（见 `@/utils/modal/ModalContent`），
+ * 加载失败与保存成功由本组件 `emit('close')` 请外壳关闭。
+ */
+import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   /** 文件名，仅用于提示文案 */
@@ -13,6 +20,8 @@ const emit = defineEmits<{ close: [] }>()
 const content = ref('')
 const loading = ref(false)
 const saving = ref(false)
+/** 加载完成前不允许保存，避免用空内容覆盖原文件 */
+const canSubmit = computed(() => !loading.value)
 
 onMounted(async () => {
   loading.value = true
@@ -31,6 +40,9 @@ async function onSave(): Promise<void> {
   saving.value = false
   if (ok) emit('close')
 }
+
+/** 交给外壳 footer 的取消 / 保存按钮 */
+defineExpose({ submit: onSave, saving, canSubmit })
 </script>
 
 <template>
@@ -44,10 +56,6 @@ async function onSave(): Promise<void> {
       :autosize="{ minRows: 16, maxRows: 26 }"
       placeholder="文件内容"
     />
-    <footer class="editor-actions">
-      <t-button variant="outline" :disabled="saving" @click="emit('close')">取消</t-button>
-      <t-button theme="primary" :loading="saving" :disabled="loading" @click="onSave">保存</t-button>
-    </footer>
   </div>
 </template>
 
@@ -64,12 +72,5 @@ async function onSave(): Promise<void> {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
   line-height: 1.6;
-}
-
-.editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
 }
 </style>

@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * 插件源码编辑器内容：编辑纯 JS 脚本，保存时由主进程先编译校验再落盘。
+ * 插件源码编辑器内容（外壳见同目录 PluginEditorDialog.tsx）：编辑纯 JS 脚本，保存时由主进程先编译校验再落盘。
  *
  * 契约：只允许纯 JS（无 import / require / TS），可用能力以沙箱白名单为准。
+ * 取消 / 保存按钮在外壳 footer，这里用 `defineExpose` 把动作与状态交出去（见 `@/utils/modal/ModalContent`）。
  */
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 const props = defineProps<{
   /** 插件 ID，仅用于提示文案 */
@@ -25,6 +26,8 @@ const SAMPLE_HINT =
 const content = ref('')
 const loading = ref(false)
 const saving = ref(false)
+/** 加载完成前不允许保存，避免用空源码覆盖原插件 */
+const canSubmit = computed(() => !loading.value)
 
 onMounted(async () => {
   loading.value = true
@@ -43,6 +46,9 @@ async function onSave(): Promise<void> {
   saving.value = false
   if (ok) emit('close')
 }
+
+/** 交给外壳 footer 的取消 / 保存按钮 */
+defineExpose({ submit: onSave, saving, canSubmit })
 </script>
 
 <template>
@@ -54,10 +60,6 @@ async function onSave(): Promise<void> {
       :autosize="{ minRows: 20, maxRows: 32 }"
       :placeholder="`插件「${id}」的源码`"
     />
-    <footer class="editor-actions">
-      <t-button variant="outline" :disabled="saving" @click="emit('close')">取消</t-button>
-      <t-button theme="primary" :loading="saving" :disabled="loading" @click="onSave">保存</t-button>
-    </footer>
   </div>
 </template>
 
@@ -79,12 +81,5 @@ async function onSave(): Promise<void> {
   font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
   font-size: 12px;
   line-height: 1.6;
-}
-
-.editor-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 16px;
 }
 </style>

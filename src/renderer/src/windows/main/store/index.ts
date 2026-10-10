@@ -1,5 +1,4 @@
 export * from './setting/SettingAppStore'
-export * from './setting/SettingPathStore'
 export * from './setting/SettingLibraryStore'
 export * from './setting/SettingScrapeStore'
 export * from './setting/SettingNetworkStore'

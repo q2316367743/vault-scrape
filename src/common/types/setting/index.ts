@@ -8,7 +8,6 @@ import {
 } from './librarySetting'
 import { normalizeSettingNaming, buildSettingNaming, type SettingNaming } from './namingSetting'
 import { normalizeSettingNetwork, buildSettingNetwork, type SettingNetwork } from './networkSetting'
-import { normalizeSettingPath, buildSettingPath, type SettingPath } from './pathSetting'
 import { normalizeSettingScrape, buildSettingScrape, type SettingScrape } from './scrapeSetting'
 import {
   normalizeSettingTranslate,
@@ -18,7 +17,6 @@ import {
 
 export type {
   SettingApp,
-  SettingPath,
   SettingScrape,
   SettingNetwork,
   SettingTranslate,
@@ -56,7 +54,6 @@ export {
  */
 export interface SettingSchema {
   app: SettingApp
-  path: SettingPath
   library: SettingLibrary
   scrape: SettingScrape
   network: SettingNetwork
@@ -70,7 +67,6 @@ export type SettingGroupKey = keyof SettingSchema
 
 export const SETTING_GROUP_KEYS: readonly SettingGroupKey[] = [
   'app',
-  'path',
   'library',
   'scrape',
   'network',
@@ -85,7 +81,6 @@ export const settingNormalizers: {
   readonly [K in SettingGroupKey]: (raw: unknown) => SettingSchema[K]
 } = {
   app: normalizeSettingApp,
-  path: normalizeSettingPath,
   library: normalizeSettingLibrary,
   scrape: normalizeSettingScrape,
   network: normalizeSettingNetwork,
@@ -98,7 +93,6 @@ export const settingNormalizers: {
 export function buildSetting(): SettingSchema {
   return {
     app: buildSettingApp(),
-    path: buildSettingPath(),
     library: buildSettingLibrary(),
     scrape: buildSettingScrape(),
     network: buildSettingNetwork(),
@@ -114,7 +108,6 @@ export function normalizeSetting(raw: unknown): SettingSchema {
   const source = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {}
   return {
     app: settingNormalizers.app(source.app),
-    path: settingNormalizers.path(source.path),
     library: settingNormalizers.library(source.library),
     scrape: settingNormalizers.scrape(source.scrape),
     network: settingNormalizers.network(source.network),

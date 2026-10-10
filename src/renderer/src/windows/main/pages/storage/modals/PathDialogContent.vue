@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+/**
+ * 单路径输入弹窗的内容组件（外壳见同目录 PathDialog.tsx）。
+ *
+ * 输入、「非空才可提交」与覆盖开关都在这里，取消 / 确定按钮在外壳 footer；
+ * 这里用 `defineExpose` 把提交动作与可提交状态交出去（见 `@/utils/modal/ModalContent`）。
+ */
+import { computed, ref } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -7,22 +13,25 @@ const props = withDefaults(
     defaultValue?: string
     placeholder?: string
     hint?: string
-    confirmText?: string
     withOverwrite?: boolean
   }>(),
-  { defaultValue: '', placeholder: '', hint: '', confirmText: '确定', withOverwrite: false }
+  { defaultValue: '', placeholder: '', hint: '', withOverwrite: false }
 )
 
-const emit = defineEmits<{ close: []; success: [path: string, overwrite: boolean] }>()
+const emit = defineEmits<{ success: [path: string, overwrite: boolean] }>()
 
 const value = ref(props.defaultValue)
 const overwrite = ref(false)
+const canSubmit = computed(() => value.value.trim().length > 0)
 
 function onSubmit(): void {
   const target = value.value.trim()
   if (target.length === 0) return
   emit('success', target, overwrite.value)
 }
+
+/** 交给外壳 footer 的取消 / 确定按钮；回车同样走 submit */
+defineExpose({ submit: onSubmit, canSubmit })
 </script>
 
 <template>
@@ -43,13 +52,6 @@ function onSubmit(): void {
       <t-switch v-model="overwrite" size="small" />
       <span>目标已存在时覆盖</span>
     </label>
-
-    <footer class="dialog-actions">
-      <t-button variant="outline" @click="emit('close')">取消</t-button>
-      <t-button theme="primary" :disabled="value.trim().length === 0" @click="onSubmit">
-        {{ confirmText }}
-      </t-button>
-    </footer>
   </div>
 </template>
 
@@ -86,12 +88,5 @@ function onSubmit(): void {
   font-size: 13px;
   color: var(--td-text-color-secondary);
   cursor: pointer;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 24px;
 }
 </style>

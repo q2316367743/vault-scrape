@@ -1,5 +1,6 @@
-import { h } from 'vue'
-import { DialogPlugin } from 'tdesign-vue-next'
+import { ref } from 'vue'
+import { Button, DialogPlugin } from 'tdesign-vue-next'
+import type { ModalContentExpose } from '@/utils/modal/ModalContent'
 import TextEditorDialogContent from './TextEditorDialogContent.vue'
 
 export interface TextEditorDialogOptions {
@@ -14,21 +15,40 @@ export interface TextEditorDialogOptions {
 /**
  * 纯文本编辑器弹窗的外壳（NFO / 字幕 / 配置等小文本）。
  *
- * 只负责 DialogPlugin 的生命周期，读写与状态在 TextEditorDialogContent.vue 里。
+ * 只负责 DialogPlugin 的生命周期与 footer 按钮，读写与状态在 TextEditorDialogContent.vue 里；
+ * 保存动作、写入中 / 加载中状态由内容组件经 defineExpose 暴露（见 ModalContentExpose）。
+ * 取消 / 保存都关闭弹窗：保存成功内容组件自行 emit('close')，内容里取消在写入中禁用。
  */
 export function openTextEditorDialog(options: TextEditorDialogOptions): void {
+  const contentRef = ref<ModalContentExpose | null>(null)
   const dialog = DialogPlugin({
     header: `编辑「${options.name}」`,
     width: '760px',
     placement: 'center',
-    footer: false,
     destroyOnClose: true,
-    body: () =>
-      h(TextEditorDialogContent, {
-        name: options.name,
-        load: options.load,
-        save: options.save,
-        onClose: () => dialog.hide()
-      })
+    footer: () => (
+      <div class="flex items-center justify-end gap-8px">
+        <Button variant="outline" disabled={contentRef.value?.saving} onClick={() => dialog.hide()}>
+          取消
+        </Button>
+        <Button
+          theme="primary"
+          loading={contentRef.value?.saving}
+          disabled={contentRef.value?.canSubmit === false}
+          onClick={() => contentRef.value?.submit()}
+        >
+          保存
+        </Button>
+      </div>
+    ),
+    body: () => (
+      <TextEditorDialogContent
+        ref={contentRef}
+        name={options.name}
+        load={options.load}
+        save={options.save}
+        onClose={() => dialog.hide()}
+      />
+    )
   })
 }

@@ -64,14 +64,14 @@ src/renderer/src/windows/main/pages/storage/
 
 ## 5. 连接弹窗
 
-- 外壳 `modals/ConnectionDialog.tsx` 导出 `openConnectionDialog({ connection?, onSaved? })`：`DialogPlugin({ width: 560, footer: false, destroyOnClose: true, body: () => h(ConnectionDialogContent, props) })`，内容组件通过 `emit('success', connection)` / `emit('close')` 回传，外壳负责关闭弹窗并回调 `onSaved`。
+- 外壳 `modals/ConnectionDialog.tsx` 导出 `openConnectionDialog({ connection?, onSaved? })`：`DialogPlugin({ width: 560, destroyOnClose: true, body: () => <ConnectionDialogContent … /> })`（`.tsx` 里用 JSX，不用 `h()`）；底部 `footer` 由外壳渲染「测试连接 / 取消 / 保存」三个按钮，动作与加载状态由内容组件 `defineExpose` 暴露（`test` / `testing` / `submit` / `saving`）给外壳的模板 ref 读。内容组件只用 `emit('success', connection)` 回传结果，外壳负责关闭弹窗并回调 `onSaved`。
 - 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码。
 - 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增字段只改这一个文件。
 - 协议无关的策略字段抽在 `modals/ConnectionPolicyField.vue`：现在只剩一个 NSFW 开关（props `{ nsfw }`，emit `update:nsfw`）。刮削器选择已随连接字段一起下线——要限制刮削器请到资料库表单里配置（`useScraperOptions` 仍被资料库表单复用，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)）。
 - 本地磁盘的根目录字段由 `src/renderer/src/components/DirectoryPickerField.vue` 提供：输入框 + 「选择」按钮，按钮走 `dialogApi.open({ title, directory: true })` 选**本机绝对路径**（取消或失败都不改动原值），`ConnectionDialogContent.vue:53` 在 `protocol === 'local'` 分支里渲染它。资料库的媒体目录**不**走它——那里必须是连接内路径，改用资料库自己的 `RemoteDirDialog`（见[影视墙页面 · 表单](./04-media-wall-page.md)）。详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md)。
 - 协议在编辑态不可切换（连接协议是身份的一部分，改协议等于换连接）。
 - 密码草稿语义与主进程一致：**留空 = 沿用已存密码（`undefined`）**，填了就是新密码，显式清空才写空串；编辑时占位文案提示这一点，新建时提示「密码只写入本机钥匙串，不落明文」。
-- 弹窗内自带「测试连接」，保存成功后由外壳关闭并触发列表刷新。
+- footer 左侧是「测试连接」，保存成功后由外壳关闭并触发列表刷新。
 
 ## 6. 文件浏览器
 
@@ -98,7 +98,7 @@ src/renderer/src/windows/main/pages/storage/
 
 ## 8. 弹窗与页面约定对齐
 
-- 四组弹窗都按项目约定拆成 `.tsx` 外壳 + `.vue` 内容，外壳只做 `DialogPlugin` 与选项声明，内容组件只用 `emit('close')` / `emit('success', 载荷)` 与外壳通信，外壳负责关闭弹窗并回调调用方；`footer: false`、`destroyOnClose: true`。
+- 四组弹窗都按项目约定拆成 `.tsx` 外壳 + `.vue` 内容：外壳只做 `DialogPlugin`、选项声明与 `footer` 按钮（用 JSX 渲染 `Button`，`destroyOnClose: true`）；内容组件只承载字段 / 编辑器与提交状态，用 `emit('success', 载荷)` 回传结果、`emit('close')` 表达「内容自己要求关闭」（编辑器加载失败、保存成功），并用 `defineExpose` 把 `submit` / `saving` / `canSubmit` 交给外壳的模板 ref 读（契约见 `src/renderer/src/utils/modal/ModalContent.ts`）。
 - `EntryNameDialog` 服务新建文件夹 / 新建文件 / 重命名；`PathDialog` 服务上传 / 下载 / 复制到 / 移动到（`withOverwrite` 为真时显示覆盖开关）；`TextEditorDialog` 负责读改文本。
 - 上传与下载的本机路径都是**输入框**：本轮没有接入主进程 `dialog.showOpenDialog` 原生选择器（见[基础页面 待接入项](./01-base-pages.md)）。dialog 域 IPC 现已就绪（见[系统对话框模块](../dialog/01-dialog-module.md)），接入时把输入框换成「只读输入框 + 选择按钮」（按钮里调 `dialogApi.open({ directory: true })` / `{ file: true }` 并回填路径）即可，也可以直接复用 §5 的 `DirectoryPickerField.vue`（它做的是本机目录，同理适用于上传 / 下载这类本机路径字段）。
 - 本次新增的 tdesign 组件已手工补进 `src/renderer/src/renderer/components.d.ts` 的两个 block（`TBreadcrumb`、`TBreadcrumbItem`、`TProgress`、`TTextarea`）；该文件只在 `dev` / `build` 时被 unplugin-vue-components 重写，提交物需手改。通用目录控件 `DirectoryPickerField` 的两行声明同样在该文件里（`GlobalComponents` 与 `declare global` 各一行）且仍然有效，不要删。

@@ -30,14 +30,6 @@
         </li>
       </ul>
     </div>
-
-    <footer class="dir-actions">
-      <span class="dir-current">当前目录：{{ path }}</span>
-      <div class="dir-actions-right">
-        <t-button variant="outline" @click="emit('close')">取消</t-button>
-        <t-button theme="primary" @click="choose">选择当前目录</t-button>
-      </div>
-    </footer>
   </div>
 </template>
 <script setup lang="ts">
@@ -47,7 +39,9 @@
  * 契约：
  * - 路径一律是**连接内绝对路径**（`/` 是连接根），这里不做任何本机路径换算；
  * - 只列 `type === 'directory'` 的条目，点击进入；文件不展示也不可选；
- * - 点「选择当前目录」把当前路径回调出去，根目录同样可以选；
+ * - 取消 / 「选择当前目录」按钮在外壳 footer，这里用 `defineExpose` 把当前路径与选择动作交出去
+ *   （见 `@/utils/modal/ModalContent`），路径变化时 footer 的「当前目录」跟着变；
+ * - 根目录同样可以选；
  * - 加载失败只提示，不弹回上一级：用户能看到面包屑，自己点回去更清楚。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -72,7 +66,7 @@ const props = defineProps<{
   initialPath?: string
 }>()
 
-const emit = defineEmits<{ pick: [remotePath: string]; close: [] }>()
+const emit = defineEmits<{ pick: [remotePath: string] }>()
 
 const path = ref(normalizeRemotePath(props.initialPath ?? FILE_ROOT))
 const directories = ref<FileEntry[]>([])
@@ -126,6 +120,9 @@ function enter(target: string): void {
 function choose(): void {
   emit('pick', path.value)
 }
+
+/** 交给外壳 footer：`path` 用于左侧「当前目录」，`submit` 对应「选择当前目录」 */
+defineExpose({ submit: choose, path })
 
 onMounted(() => {
   void load()
@@ -194,26 +191,5 @@ onMounted(() => {
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.dir-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.dir-current {
-  overflow: hidden;
-  font-size: 12px;
-  color: var(--td-text-color-placeholder);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dir-actions-right {
-  display: flex;
-  flex-shrink: 0;
-  gap: 8px;
 }
 </style>

@@ -1,4 +1,3 @@
-import { h } from 'vue'
 import { DrawerPlugin } from 'tdesign-vue-next'
 import LibraryDrawerContent from './LibraryDrawerContent.vue'
 
@@ -19,9 +18,6 @@ export function openLibraryDrawer(options: LibraryDrawerOptions = {}): void {
     size: '720px',
     footer: false,
     destroyOnClose: true,
-    body: () =>
-      h(LibraryDrawerContent, {
-        onChanged: () => options.onChanged?.()
-      })
+    body: () => <LibraryDrawerContent onChanged={() => options.onChanged?.()} />
   })
 }

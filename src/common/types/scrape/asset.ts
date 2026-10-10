@@ -6,7 +6,7 @@
  * - `keepXxx` 为真且目标已存在时跳过（由主进程用 `exists` 判断）；
  * - 「成功后不重命名」时附属文件强制与视频同名（`forceMovieStyle`），
  *   否则按 `naming.assetNaming` 决定固定命名还是跟随影片文件名；
- * - 剧照落在 `path.fanartDirName` 子目录，多集作品再加一层 `S{集数}`。
+ * - 剧照落在 `scrape.fanartDirName` 子目录，多集作品再加一层 `S{集数}`。
  */
 import type { PluginAsset, PluginAssetKind } from '../plugin'
 import type { SettingDownload, SettingNaming } from '../setting'
@@ -18,7 +18,7 @@ export interface ScrapeAssetContext {
   /** 未重命名时强制附属文件与视频同名 */
   forceMovieStyle: boolean
   naming: SettingNaming
-  /** 剧照子目录名（来自 path.fanartDirName） */
+  /** 剧照子目录名（来自 scrape.fanartDirName） */
   fanartDirName: string
 }
 

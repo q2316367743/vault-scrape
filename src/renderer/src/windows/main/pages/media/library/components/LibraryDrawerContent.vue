@@ -64,7 +64,7 @@ import { MessageBoxUtil } from '@/utils/modal'
 import type { MediaLibrary } from '@common/types/library'
 import { useMediaLibraries } from '../composables/useMediaLibraries'
 import LibraryListItem from './LibraryListItem.vue'
-import { openLibraryFormDialog } from './LibraryFormDialog'
+import { openLibraryFormDrawer } from './LibraryFormDrawer'
 
 const props = defineProps<{ onChanged?: () => void }>()
 
@@ -99,11 +99,11 @@ function onCreated(): void {
 }
 
 function onCreate(): void {
-  openLibraryFormDialog({ connections: connections.value, onSaved: onCreated })
+  openLibraryFormDrawer({ connections: connections.value, onSaved: onCreated })
 }
 
 function onEdit(library: MediaLibrary): void {
-  openLibraryFormDialog({ library, connections: connections.value, onSaved: onCreated })
+  openLibraryFormDrawer({ library, connections: connections.value, onSaved: onCreated })
 }
 
 async function onRemove(library: MediaLibrary): Promise<void> {
