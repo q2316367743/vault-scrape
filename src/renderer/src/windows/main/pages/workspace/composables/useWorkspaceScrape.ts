@@ -1,113 +1,65 @@
 /**
- * 工作台刮削的渲染层状态机。
+ * 工作台（手动刮削入口）的渲染层状态机。
  *
  * 契约：
- * - 任务进度以主进程 / sqlite 为准（`scrape:getTask` + `scrape:progress`），
- *   本 composable 只缓存快照，因此切换 tab、关闭窗口再回来都不会丢进度；
- * - 扫描结果（未开始任务时）与任务结果（进行中/结束后）合并成同一张表，
- *   按路径对齐，扫描行状态为 `idle`；
- * - 同番号重复文件由主进程标记 `duplicateOf`，渲染层默认不勾选且禁止勾选。
+ * - 这里不扫盘、也不自己算索引：目录浏览走 `scrape:browse`（主进程按资料库配置解析），
+ *   所以看到的内容与影视墙、扫描结果完全同源；
+ * - 选中影片用条目 ID（`itemId`）排队，路径不再跨 IPC 传递，改名/移动不会找错文件；
+ * - 任务进度以主进程 / sqlite 为准（`scrape:getTask` + `scrape:progress`），本 composable
+ *   只缓存快照，因此切 tab、关窗口再回来进度不丢；
+ * - 任务面板展示的是「主进程里最近的一条任务」，与当前选中的资料库无关；
+ *   进度事件只认当前任务 ID，避免多任务串台。
  */
-import { computed, onMounted, onUnmounted, ref, watch, type Ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { FILE_ROOT, basenameRemotePath, type FileConnection } from '@common/types/file'
-import { buildResourceUrl } from '@common/types/resource'
-import {
-  isScrapeOk,
-  type ScrapeFileItem,
-  type ScrapeProgressEvent,
-  type ScrapeScanEntry,
-  type ScrapeTaskSnapshot
-} from '@common/types/scrape'
-import { scrapeApi } from '@/api'
-import type { WorkspaceRowStatus } from '../workspaceUtils'
+import { FILE_ROOT } from '@common/types/file'
+import { isLibraryOk, type MediaLibrary } from '@common/types/library'
+import type { MediaBrowseEntry } from '@common/types/media'
+import { isScrapeOk, type ScrapeProgressEvent, type ScrapeTaskSnapshot } from '@common/types/scrape'
+import { libraryApi, scrapeApi } from '@/api'
+import { browseMedia } from '@/api/scrape'
 
-/** 表格行：扫描行与任务结果行合并后的形状 */
-export interface WorkspaceRow {
+/** 面包屑一级 */
+export interface WorkspaceCrumb {
+  label: string
   path: string
-  name: string
-  keyword: string
-  num: string
-  size: number
-  duplicateOf: string
-  status: WorkspaceRowStatus
-  pluginId: string
-  title: string
-  message: string
-  /** 刮削产出的封面地址（storage:// 私有协议）；没有封面时为空串 */
-  coverUrl: string
 }
 
-/**
- * 封面地址：storage://存储ID/资源ID/文件名。
- *
- * 文件名只用于让地址可读，协议按资源 ID 定位，因此移动/改名后依然有效。
- */
-function coverUrlOf(connectionId: string, coverId: string, coverPath: string): string {
-  if (connectionId.length === 0 || coverId.length === 0 || coverPath.length === 0) return ''
-  return buildResourceUrl(connectionId, coverId, basenameRemotePath(coverPath))
-}
-
-/** 工作台刮削状态机 */
-export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
+/** 工作台状态机：选库 → 逐级浏览 → 勾选影片 → 排队刮削 */
+export function useWorkspaceScrape() {
+  const libraries = ref<MediaLibrary[]>([])
+  const libraryId = ref('')
+  const loadingLibraries = ref(false)
   const dirPath = ref<string>(FILE_ROOT)
-  const entries = ref<ScrapeScanEntry[]>([])
-  const files = ref<ScrapeFileItem[]>([])
-  const task = ref<ScrapeTaskSnapshot | null>(null)
+  const entries = ref<MediaBrowseEntry[]>([])
+  const browsing = ref(false)
+  const failure = ref('')
   const selected = ref<string[]>([])
-  const scanning = ref(false)
+  const task = ref<ScrapeTaskSnapshot | null>(null)
   const submitting = ref(false)
   const running = ref(false)
 
   let disposeProgress: (() => void) | null = null
 
-  const rows = computed<WorkspaceRow[]>(() => {
-    const connectionId = connection.value?.id ?? ''
-    const scanned = new Map(entries.value.map((entry) => [entry.path, entry]))
-    const recorded = new Map(files.value.map((file) => [file.path, file]))
-    const merged: WorkspaceRow[] = []
+  const library = computed(
+    () => libraries.value.find((item) => item.id === libraryId.value) ?? null
+  )
+  /** 目录行只用于下钻，可勾选的只有影片 */
+  const movies = computed(() => entries.value.filter((entry) => entry.type === 'movie'))
+  const selectableIds = computed(() => movies.value.map((entry) => entry.itemId))
+  const selectedCount = computed(() => selected.value.length)
 
-    for (const file of files.value) {
-      const entry = scanned.get(file.path)
-      merged.push({
-        path: file.path,
-        name: file.name,
-        keyword: file.keyword || entry?.keyword || '',
-        num: entry?.num ?? '',
-        size: entry?.size ?? 0,
-        duplicateOf: entry?.duplicateOf ?? '',
-        status: file.status,
-        pluginId: file.pluginId,
-        title: file.title,
-        message: file.message,
-        coverUrl: coverUrlOf(connectionId, file.coverId, file.coverPath)
-      })
+  const crumbs = computed<WorkspaceCrumb[]>(() => {
+    const list: WorkspaceCrumb[] = [{ label: library.value?.name ?? '资料库', path: FILE_ROOT }]
+    if (dirPath.value === FILE_ROOT) return list
+    let acc = ''
+    for (const segment of dirPath.value.split('/').filter((part) => part.length > 0)) {
+      acc += `/${segment}`
+      list.push({ label: segment, path: acc })
     }
-
-    for (const entry of entries.value) {
-      if (recorded.has(entry.path)) continue
-      merged.push({
-        path: entry.path,
-        name: entry.name,
-        keyword: entry.keyword,
-        num: entry.num,
-        size: entry.size,
-        duplicateOf: entry.duplicateOf ?? '',
-        status: 'idle',
-        pluginId: '',
-        title: '',
-        message: '',
-        coverUrl: ''
-      })
-    }
-
-    return merged
+    return list
   })
 
-  /** 可选行：扫描到、且不是重复番号 */
-  const selectablePaths = computed(() =>
-    rows.value.filter((row) => row.duplicateOf.length === 0).map((row) => row.path)
-  )
   const total = computed(() => task.value?.total ?? 0)
   const finished = computed(() => task.value?.finished ?? 0)
   const failed = computed(() => task.value?.failed ?? 0)
@@ -115,38 +67,89 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
     total.value > 0 ? Math.min(100, Math.round((finished.value / total.value) * 100)) : 0
   )
   const canStart = computed(
-    () => !running.value && !scanning.value && !submitting.value && selected.value.length > 0
+    () =>
+      !running.value &&
+      !browsing.value &&
+      !submitting.value &&
+      library.value !== null &&
+      selected.value.length > 0
   )
   const canCancel = computed(() => running.value && task.value !== null)
   const canResume = computed(
     () => !running.value && task.value?.status === 'paused' && task.value.total > task.value.finished
   )
 
-  /** 全部勾选 / 清空勾选 */
-  function toggleAll(checked: boolean): void {
-    selected.value = checked ? [...selectablePaths.value] : []
-  }
-
-  /** 扫描所选数据源的根目录（不递归） */
-  async function scan(): Promise<void> {
-    const current = connection.value
-    if (!current) {
-      MessagePlugin.warning('请先选择数据源')
-      return
-    }
-    scanning.value = true
-    const result = await scrapeApi.listVideos({ connectionId: current.id, dirPath: dirPath.value })
-    scanning.value = false
-    if (!isScrapeOk(result)) {
+  async function loadLibraries(): Promise<void> {
+    loadingLibraries.value = true
+    const result = await libraryApi.list()
+    loadingLibraries.value = false
+    if (!isLibraryOk(result)) {
       MessagePlugin.error(result.message)
       return
     }
-    entries.value = result.data
-    selected.value = result.data.filter((entry) => !entry.duplicateOf).map((entry) => entry.path)
-    if (result.data.length === 0) MessagePlugin.info('根目录下没有找到可刮削的视频文件')
+    libraries.value = result.data
+    if (!result.data.some((item) => item.id === libraryId.value)) {
+      libraryId.value = result.data.length > 0 ? result.data[0].id : ''
+    }
   }
 
-  /** 读取任务快照与逐文件结果 */
+  function selectLibrary(id: unknown): void {
+    if (typeof id === 'string') libraryId.value = id
+  }
+
+  /** 列出某个目录下的内容；路径是连接内绝对路径，根目录为 `/` */
+  async function browse(path: string): Promise<void> {
+    const current = library.value
+    if (!current) {
+      MessagePlugin.warning('请先选择资料库')
+      return
+    }
+    browsing.value = true
+    const result = await browseMedia({ libraryId: current.id, dirPath: path })
+    browsing.value = false
+    if (!isScrapeOk(result)) {
+      failure.value = result.message
+      MessagePlugin.error(result.message)
+      return
+    }
+    failure.value = ''
+    dirPath.value = path
+    entries.value = result.data
+    const alive = new Set(
+      result.data.filter((entry) => entry.type === 'movie').map((entry) => entry.itemId)
+    )
+    selected.value = selected.value.filter((itemId) => alive.has(itemId))
+  }
+
+  function enter(entry: MediaBrowseEntry): void {
+    if (entry.type !== 'folder') return
+    void browse(entry.path)
+  }
+
+  /** 面包屑 / 上一级都走这里：路径由调用方算好，本 composable 只认路径 */
+  function goto(path: string): void {
+    if (path === dirPath.value) return
+    void browse(path)
+  }
+
+  function refresh(): void {
+    void browse(dirPath.value)
+  }
+
+  function toggleOne(itemId: string, checked: boolean): void {
+    if (checked) {
+      if (selected.value.includes(itemId)) return
+      selected.value = [...selected.value, itemId]
+      return
+    }
+    selected.value = selected.value.filter((item) => item !== itemId)
+  }
+
+  /** 只有当前目录的影片能参与全选，目录行与历史勾选不受影响 */
+  function toggleAll(checked: boolean): void {
+    selected.value = checked ? [...selectableIds.value] : []
+  }
+
   async function refreshTask(taskId: string): Promise<void> {
     const result = await scrapeApi.getTask(taskId)
     if (!isScrapeOk(result)) {
@@ -154,24 +157,22 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
       return
     }
     task.value = result.data.task
-    files.value = result.data.files
-    dirPath.value = result.data.task.dirPath
     running.value = result.data.task.status === 'running'
   }
 
-  /** 启动任务：勾选的文件必须位于当前根目录下 */
+  /** 排队：只把条目 ID 交给主进程，由它按资料库配置解析文件与插件 */
   async function start(): Promise<void> {
-    const current = connection.value
+    const current = library.value
     if (!current) {
-      MessagePlugin.warning('请先选择数据源')
+      MessagePlugin.warning('请先选择资料库')
+      return
+    }
+    if (selected.value.length === 0) {
+      MessagePlugin.warning('请先勾选要刮削的影片')
       return
     }
     submitting.value = true
-    const result = await scrapeApi.start({
-      connectionId: current.id,
-      dirPath: dirPath.value,
-      paths: [...selected.value]
-    })
+    const result = await scrapeApi.start({ libraryId: current.id, itemIds: [...selected.value] })
     submitting.value = false
     if (!isScrapeOk(result)) {
       MessagePlugin.error(result.message)
@@ -179,11 +180,11 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
     }
     task.value = result.data
     running.value = result.data.status === 'running'
-    files.value = []
+    MessagePlugin.success(`已排队 ${result.data.total} 个影片，进度见下方任务卡片`)
+    selected.value = []
     await refreshTask(result.data.id)
   }
 
-  /** 取消任务：已完成的结果保留，剩余文件可继续 */
   async function cancel(): Promise<void> {
     const current = task.value
     if (!current) return
@@ -194,10 +195,9 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
     }
     running.value = false
     await refreshTask(current.id)
-    MessagePlugin.info('已取消，剩余文件可稍后继续')
+    MessagePlugin.info('已取消，剩余影片可稍后继续')
   }
 
-  /** 继续被取消或被应用重启中断的任务 */
   async function resume(): Promise<void> {
     const current = task.value
     if (!current) return
@@ -210,59 +210,46 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
     await refreshTask(current.id)
   }
 
-  /** 重新挂载时恢复：主进程在跑就认它，否则回填该数据源最近一次任务 */
+  /** 重新挂载时恢复：主进程最近一条任务就是工作台要展示的任务 */
   async function restore(): Promise<void> {
-    const current = connection.value
-    if (!current) {
-      reset()
+    const latest = await scrapeApi.listTasks(1)
+    if (isScrapeOk(latest) && latest.data.length > 0) {
+      await refreshTask(latest.data[0].id)
       return
-    }
-    const latest = await scrapeApi.listTasks(5)
-    if (isScrapeOk(latest)) {
-      const mine = latest.data.find((item) => item.connectionId === current.id)
-      if (mine) {
-        await refreshTask(mine.id)
-        return
-      }
     }
     const busy = await scrapeApi.running()
     running.value = isScrapeOk(busy) && busy.data
     task.value = null
-    files.value = []
+  }
+
+  function applyProgress(event: ScrapeProgressEvent): void {
+    const current = task.value
+    if (current && event.task.id !== current.id) return
+    const wasRunning = running.value
+    task.value = event.task
+    running.value = event.task.status === 'running'
+    // 任务停下来时目录里的「已刮削」状态可能变了，静默刷新一次
+    if (wasRunning && !running.value) void browse(dirPath.value)
   }
 
   function reset(): void {
     dirPath.value = FILE_ROOT
     entries.value = []
-    files.value = []
-    task.value = null
     selected.value = []
-    running.value = false
-  }
-
-  function upsertFile(incoming: ScrapeFileItem): void {
-    const index = files.value.findIndex((file) => file.id === incoming.id)
-    if (index >= 0) files.value.splice(index, 1, incoming)
-    else files.value.push(incoming)
-  }
-
-  function applyProgress(event: ScrapeProgressEvent): void {
-    if (event.task.connectionId !== connection.value?.id) return
-    task.value = event.task
-    running.value = event.task.status === 'running'
-    upsertFile(event.file)
+    failure.value = ''
   }
 
   watch(
-    () => connection.value?.id ?? '',
+    () => libraryId.value,
     () => {
       reset()
-      void restore()
+      void browse(FILE_ROOT)
     }
   )
 
   onMounted(async () => {
     disposeProgress = scrapeApi.onProgress(applyProgress)
+    await loadLibraries()
     await restore()
   })
 
@@ -272,16 +259,22 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
   })
 
   return {
+    libraries,
+    libraryId,
+    library,
+    loadingLibraries,
     dirPath,
     entries,
-    files,
-    task,
+    browsing,
+    failure,
     selected,
-    scanning,
+    selectedCount,
+    movies,
+    selectableIds,
+    crumbs,
+    task,
     submitting,
     running,
-    rows,
-    selectablePaths,
     total,
     finished,
     failed,
@@ -289,8 +282,12 @@ export function useWorkspaceScrape(connection: Ref<FileConnection | null>) {
     canStart,
     canCancel,
     canResume,
+    selectLibrary,
+    enter,
+    goto,
+    refresh,
+    toggleOne,
     toggleAll,
-    scan,
     start,
     cancel,
     resume

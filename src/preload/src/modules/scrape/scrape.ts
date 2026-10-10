@@ -1,9 +1,10 @@
 import { ipcRenderer, type IpcRendererEvent } from 'electron'
+import type { MediaBrowseEntry } from '@common/types/media'
 import type {
+  ScrapeBrowseRequest,
   ScrapeFileItem,
   ScrapeProgressEvent,
   ScrapeResult,
-  ScrapeScanEntry,
   ScrapeStartRequest,
   ScrapeTaskSnapshot
 } from '@common/types/scrape'
@@ -16,12 +17,6 @@ export interface ScrapeTaskDetail {
   files: ScrapeFileItem[]
 }
 
-/** 扫描根目录的入参 */
-export interface ScrapeScanRequest {
-  connectionId: string
-  dirPath: string
-}
-
 /**
  * 刮削模块桥。
  *
@@ -29,8 +24,9 @@ export interface ScrapeScanRequest {
  * （contextBridge 传递自定义错误的附加属性并不可靠，code 会丢失）。
  */
 export const scrapeApi = {
-  listVideos: (request: ScrapeScanRequest): Promise<ScrapeResult<ScrapeScanEntry[]>> =>
-    ipcRenderer.invoke(ScrapeChannels.listVideos, request),
+  /** 浏览资料库目录：子目录 + 影片，供工作台勾选 */
+  browse: (request: ScrapeBrowseRequest): Promise<ScrapeResult<MediaBrowseEntry[]>> =>
+    ipcRenderer.invoke(ScrapeChannels.browse, request),
 
   start: (request: ScrapeStartRequest): Promise<ScrapeResult<ScrapeTaskSnapshot>> =>
     ipcRenderer.invoke(ScrapeChannels.start, request),

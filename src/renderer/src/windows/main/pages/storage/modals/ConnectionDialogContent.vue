@@ -21,9 +21,6 @@ const {
   authOptions,
   showPassword,
   passwordPlaceholder,
-  scraperOptions,
-  scraperLoading,
-  staleScrapers,
   onTest,
   onSubmit
 } = useConnectionForm({
@@ -110,13 +107,7 @@ const {
       />
     </div>
 
-    <connection-policy-field
-      v-model:nsfw="form.nsfw"
-      v-model:scrapers="form.scrapers"
-      :options="scraperOptions"
-      :loading="scraperLoading"
-      :stale="staleScrapers"
-    />
+    <connection-policy-field v-model:nsfw="form.nsfw" />
 
     <footer class="form-actions">
       <t-button variant="outline" :loading="testing" @click="onTest">测试连接</t-button>

@@ -1,170 +1,173 @@
-<script setup lang="ts">
-import { computed } from 'vue'
-import SensitiveImage from '@/components/SensitiveImage.vue'
-import type { WorkspaceRow } from '../composables/useWorkspaceScrape'
-import { WORKSPACE_STATUS_LABELS, WORKSPACE_STATUS_THEMES } from '../workspaceUtils'
-
-const props = defineProps<{
-  rows: WorkspaceRow[]
-  selected: string[]
-  loading: boolean
-  /** 该数据源命中 NSFW 保护时，封面先遮挡、点击后再显示 */
-  protect: boolean
-}>()
-
-const emit = defineEmits<{
-  'update:selected': [value: string[]]
-  'update:all': [value: boolean]
-}>()
-
-const columns = [
-  { colKey: 'row-select', type: 'multiple' as const, width: 48 },
-  { colKey: 'cover', title: '封面', width: 72 },
-  { colKey: 'name', title: '文件名', ellipsis: true, minWidth: 260 },
-  { colKey: 'keyword', title: '搜索关键词', width: 160, ellipsis: true },
-  { colKey: 'num', title: '番号', width: 140 },
-  { colKey: 'status', title: '状态', width: 220 }
-]
-
-/** 重复番号的文件不允许勾选，避免同名资源互相覆盖 */
-const selectablePaths = computed(
-  () => new Set(props.rows.filter((row) => row.duplicateOf.length === 0).map((row) => row.path))
-)
-
-const allSelected = computed(
-  () => selectablePaths.value.size > 0 && props.selected.length >= selectablePaths.value.size
-)
-
-const indeterminate = computed(
-  () => props.selected.length > 0 && props.selected.length < selectablePaths.value.size
-)
-
-function onSelectChange(keys: Array<string | number>): void {
-  emit(
-    'update:selected',
-    keys.map((key) => String(key)).filter((key) => selectablePaths.value.has(key))
-  )
-}
-
-function onSelectAll(checked: boolean): void {
-  emit('update:all', checked)
-}
-
-function statusTheme(row: WorkspaceRow): 'default' | 'primary' | 'warning' | 'success' | 'danger' {
-  return WORKSPACE_STATUS_THEMES[row.status]
-}
-
-function statusLabel(row: WorkspaceRow): string {
-  return WORKSPACE_STATUS_LABELS[row.status]
-}
-</script>
-
 <template>
-  <t-card :bordered="false" class="file-table" title="待刮削文件">
+  <t-card title="目录内容" class="file-table">
     <template #actions>
-      <t-checkbox
-        :checked="allSelected"
-        :indeterminate="indeterminate"
-        :disabled="selectablePaths.size === 0"
-        @change="onSelectAll"
-      >
-        全选（{{ selected.length }}/{{ selectablePaths.size }}）
-      </t-checkbox>
+      <div class="table-actions">
+        <t-checkbox
+          :checked="allSelected"
+          :indeterminate="indeterminate"
+          :disabled="movieCount === 0"
+          @change="onToggleAll"
+        >
+          全选（{{ selected.length }}/{{ movieCount }}）
+        </t-checkbox>
+        <t-button size="small" variant="outline" :loading="loading" @click="emit('refresh')">
+          刷新
+        </t-button>
+      </div>
     </template>
 
     <t-table
-      row-key="path"
+      row-key="itemId"
       size="small"
       hover
       :data="rows"
       :columns="columns"
-      :selected-row-keys="selected"
       :loading="loading"
-      @select-change="onSelectChange"
     >
       <template #empty>
-        <t-empty
-          title="还没有扫描结果"
-          description="选择存储与根目录后点击「扫描根目录」，只会读取该目录下的文件"
+        <p class="empty-text">{{ emptyText }}</p>
+      </template>
+      <template #select="{ row }">
+        <t-checkbox
+          :checked="selected.includes(row.itemId)"
+          :disabled="row.type !== 'movie'"
+          @change="(checked: boolean) => emit('toggle', row.itemId, checked)"
         />
       </template>
-
-      <template #cover="{ row }">
-        <sensitive-image
-          v-if="row.coverUrl"
-          :src="row.coverUrl"
-          :protect="props.protect"
-          width="48px"
-          height="64px"
-          fit="cover"
-        />
-        <span v-else class="cover-empty">—</span>
-      </template>
-
       <template #name="{ row }">
-        <span class="file-name">{{ row.name }}</span>
-      </template>
-
-      <template #keyword="{ row }">
-        <span>{{ row.keyword || '—' }}</span>
-      </template>
-
-      <template #num="{ row }">
-        <div class="num-cell">
-          <span>{{ row.num || '未识别' }}</span>
-          <t-tooltip
-            v-if="row.duplicateOf"
-            :content="`与 ${row.duplicateOf} 番号相同，已自动排除`"
+        <div class="cell-name">
+          <component :is="row.type === 'folder' ? FolderIcon : FilmIcon" class="cell-icon" />
+          <t-button
+            v-if="row.type === 'folder'"
+            size="small"
+            variant="text"
+            @click="emit('enter', row)"
           >
-            <t-tag size="small" theme="warning" variant="light-outline">重复</t-tag>
-          </t-tooltip>
+            {{ row.name }}
+          </t-button>
+          <span v-else class="cell-title" :title="row.name">{{ row.name }}</span>
+          <t-tag v-if="row.type === 'movie' && row.num.length > 0" size="small" variant="outline">
+            {{ row.num }}
+          </t-tag>
         </div>
       </template>
-
+      <template #type="{ row }">
+        <t-tag size="small" :theme="row.type === 'folder' ? 'default' : 'primary'" variant="light">
+          {{ row.type === 'folder' ? '目录' : '影片' }}
+        </t-tag>
+      </template>
+      <template #size="{ row }">
+        <span>{{ row.type === 'folder' ? '—' : formatSize(row.size) }}</span>
+      </template>
+      <template #modifiedAt="{ row }">
+        <span>{{ formatTimestamp(row.modifiedAt) }}</span>
+      </template>
       <template #status="{ row }">
-        <div class="status-cell">
-          <t-tag size="small" :theme="statusTheme(row)" variant="light-outline">
-            {{ statusLabel(row) }}
+        <div v-if="row.type === 'movie'" class="cell-status">
+          <t-tag size="small" :theme="row.scraped ? 'success' : 'default'" variant="light-outline">
+            {{ row.scraped ? '已刮削' : '未刮削' }}
           </t-tag>
-          <t-tag v-if="row.pluginId" size="small" variant="outline">{{ row.pluginId }}</t-tag>
-          <t-tooltip v-if="row.message" :content="row.message" placement="top-left">
-            <span class="status-message">{{ row.message }}</span>
-          </t-tooltip>
+          <t-tag v-if="!row.hasSource" size="small" theme="warning" variant="light-outline">
+            没有播放源
+          </t-tag>
         </div>
+        <span v-else>—</span>
       </template>
     </t-table>
   </t-card>
 </template>
+<script setup lang="ts">
+/**
+ * 工作台目录列表：目录行可下钻，影片行可勾选，其余列只做展示。
+ *
+ * 契约：
+ * - 勾选状态由父级持有（`selected` 是条目 ID 数组），本组件只发 `toggle` / `toggle-all`；
+ * - 状态列展示的是条目是否已刮削，不展示任务逐文件进度（那属于任务卡片）。
+ */
+import { computed } from 'vue'
+import { FilmIcon, FolderIcon } from 'tdesign-icons-vue-next'
+import type { MediaBrowseEntry } from '@common/types/media'
+import { formatSize } from '@/utils/format'
+import { formatTimestamp } from '../workspaceUtils'
 
+const props = defineProps<{
+  rows: MediaBrowseEntry[]
+  /** 已勾选的条目 ID */
+  selected: string[]
+  loading: boolean
+  /** 空表文案，由页面按「没选库 / 库里没内容 / 目录是空的」给出 */
+  emptyText: string
+}>()
+
+const emit = defineEmits<{
+  enter: [entry: MediaBrowseEntry]
+  toggle: [itemId: string, checked: boolean]
+  'toggle-all': [checked: boolean]
+  refresh: []
+}>()
+
+const columns = [
+  { colKey: 'select', title: '选择', width: 64 },
+  { colKey: 'name', title: '名称', ellipsis: true, minWidth: 240 },
+  { colKey: 'type', title: '类型', width: 88 },
+  { colKey: 'size', title: '大小', width: 110 },
+  { colKey: 'modifiedAt', title: '修改时间', width: 160 },
+  { colKey: 'status', title: '刮削状态', width: 170 }
+]
+
+const movieCount = computed(() => props.rows.filter((row) => row.type === 'movie').length)
+const selectedMovies = computed(() =>
+  props.rows.filter((row) => row.type === 'movie' && props.selected.includes(row.itemId)).length
+)
+const allSelected = computed(() => movieCount.value > 0 && selectedMovies.value === movieCount.value)
+const indeterminate = computed(
+  () => selectedMovies.value > 0 && selectedMovies.value < movieCount.value
+)
+
+function onToggleAll(checked: boolean): void {
+  emit('toggle-all', checked)
+}
+</script>
 <style scoped lang="less">
 .file-table {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  border-radius: var(--td-radius-large);
+  overflow: hidden;
 }
 
-.file-name {
-  word-break: break-all;
+.table-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
-.cover-empty {
-  color: var(--td-text-color-placeholder);
-}
-
-.num-cell,
-.status-cell {
+.cell-name {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
-.status-message {
+.cell-icon {
+  flex-shrink: 0;
+  color: var(--td-text-color-placeholder);
+}
+
+.cell-title {
   overflow: hidden;
-  color: var(--td-text-color-secondary);
-  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.cell-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.empty-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--td-text-color-placeholder);
 }
 </style>

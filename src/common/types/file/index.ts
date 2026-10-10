@@ -18,6 +18,7 @@ export {
   dirnameRemotePath,
   extnameOf,
   isFileRoot,
+  isRemotePathInside,
   joinRemotePath,
   normalizeRemotePath,
   splitRemotePath
@@ -38,9 +39,6 @@ export {
   SMB_DEFAULT_PORT,
   WEBDAV_AUTH_TYPES,
   describeConnection,
-  describeScrapers,
-  scraperIdsOf,
-  usesAllScrapers,
   type FileConnection,
   type FileConnectionDraft,
   type FileProtocol,

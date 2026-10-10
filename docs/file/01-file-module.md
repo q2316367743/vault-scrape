@@ -4,7 +4,7 @@
 
 文件模块是「一个接口 + 多个实现」：`FileClient` 定义统一能力，`LocalFileClient`、`WebdavFileClient`、`SmbFileClient` 各自适配一种协议。实现全部运行在**主进程**（渲染层无法直接访问 fs / 网络协议库），渲染层只通过 IPC 使用，命令式地拿到 `FileResult` 信封。
 
-它的下游是刮削模块：刮削流程只需「列目录 → 读 NFO / 图片 → 写回」，因此本模块只暴露文件级能力，不做媒体库解析。
+它的下游是刮削模块：刮削流程只需「列目录 → 读 NFO / 图片 → 写回」，因此本模块只暴露文件级能力，不做媒体库解析。**连接只描述「怎么访问一份数据」**（协议 + 地址 + 凭据 + 一个 `nsfw` 策略标记），刮削器、媒体目录、命名等策略一律归资料库（见[资料库](../media/01-media-library.md)）。
 
 本轮范围：接口 + 三个实现 + 连接配置存储 + IPC 契约 + 公共类型 + 文档。**不含连接管理 UI**；界面随后落在独立的一级页面「存储」（见[存储管理页面](../page/02-storage-page.md)），渲染层直接调用 `@/api/file`。
 
@@ -15,7 +15,7 @@ src/common/types/file/          # 三端共享的纯类型与纯函数（不含�
 ├── error.ts                    # FileErrorCode（13 个）+ FileError + describeFileError
 ├── path.ts                     # 统一 POSIX 路径：归一化 / 拼接 / 父目录 / 扩展名 / 拆段
 ├── entry.ts                    # FileEntry 统一形状 + MIME 兜底表 + 排序
-├── connection.ts               # 三种连接与草稿的形状 + describeConnection
+├── connection.ts               # 三种连接与草稿的形状 + describeConnection（策略字段只剩 nsfw）
 ├── request.ts                  # 各 IPC 方法的请求载荷
 ├── transfer.ts                 # 传输进度 / 结束事件
 ├── result.ts                   # FileResult 信封 + fileOk / fileFail / isFileOk
@@ -112,9 +112,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 - 草稿（Draft）语义：`id` 缺省 = 新建；`password` 为 `undefined` = 保持已存密码，空串 = 清空。
 - 落盘前校验：名称不能为空；本地根目录不能为空；WebDAV 地址必须是合法 URL；SMB 主机与共享名不能为空、端口必须是 1–65535 的整数。校验失败抛 `invalidArgument`（中文提示）。
 - 读取失败（文件损坏 / JSON 非法）一律 `console.error` 后回落空列表，不阻塞启动；逐条归一化时 `id` 或 `name` 为空的记录会被丢弃。
-- 每个连接除了协议字段外还有两个策略字段：
-  - `nsfw: boolean`：标记为敏感数据源，只有标记过的存储才会被 NSFW 保护处理（渲染层用 `useNsfwProtection(connection)` 判定）；
-  - `scrapers: string[]`：该存储允许使用的刮削器（插件 id，**空数组表示不限制，即全部已启用插件**）。归一化时按 `PLUGIN_ID_PATTERN` 过滤、去重、上限 200 条；插件被删除或停用后这些 id 留在配置里，由运行时跳过、界面提示为「已失效」，不自动清除（避免重装插件后配置丢失）。
+- 连接上**只剩一个策略字段** `nsfw: boolean`：标记为敏感数据源，只有标记过的存储才会被 NSFW 保护处理（渲染层用 `useNsfwProtection(connection)` 判定）。**`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从 `FileConnection`、连接草稿与落盘形状里删除**：刮削器是资料库自己的配置（见[资料库](../media/01-media-library.md)），一个存储可以被多个资料库复用、各自选不同的刮削器；存储页的连接弹窗（`ConnectionPolicyField.vue`）因此也只剩 NSFW 开关，旧的 `useScraperOptions` 只再被资料库表单复用。
 
 ## 6. IPC 通道与信封
 
@@ -124,7 +122,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | --- | --- | --- |
 | `file:listConnections` | — | `FileConnection[]` |
 | `file:saveConnection` | `FileConnectionDraft` | `FileConnection`（保存后自动失效旧客户端） |
-| `file:deleteConnection` | `connectionId` | `boolean`（顺带清理该存储的资源索引，见 [资源索引](../resource/01-resource-index.md)） |
+| `file:deleteConnection` | `connectionId` | `boolean`（释放缓存的客户端，并级联删除该连接的媒体条目 / 媒体源 / 图片与资料库，见[资料库](../media/01-media-library.md)） |
 | `file:testConnection` | `FileConnectionDraft` | `ConnectionTestResult`（临时建连后必定释放，永不抛错） |
 | `file:disposeConnection` | `connectionId` | `boolean`（释放缓存的客户端实例） |
 | `file:list` / `file:stat` / `file:exists` / `file:readText` | `FileTargetRequest{ connectionId, path }` | `FileEntry[]` / `FileEntry` / `boolean` / `string` |
@@ -182,3 +180,4 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 3. WebDAV：填 Alist / Nextcloud 的地址、账号、密码，`testConnection` 成功后再重复第 2 步；`authType` 分别试 `auto` / `basic`（库内为 Password）/ `digest`。
 4. SMB：填 Windows 或 Samba 的 `host` / `share` / 账号（域可空），确认写入、目录递归删除、跨目录移动；若报 `authFailed` 而密码正确，先确认服务端未禁用 SMB2。
 5. 密码安全性：检查 `~/.vault-scrape/file/connections.json` 中 WebDAV / SMB 的 `secret` 是否为 `safe:` 前缀（钥匙串可用时）；手工把 `secret` 改坏后再 `list` 该连接，应得到 `authFailed` 并提示重新填写密码。
+6. 连接策略只剩 NSFW：新建 / 编辑任一连接（本地 / WebDAV / SMB）时，弹窗里**不应**再出现刮削器选择；`listConnections()` 返回的每个连接对象上也不应再有 `scrapers` 字段（类型已删，草稿里多余的同名字段不进入落盘形状）。

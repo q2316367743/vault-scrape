@@ -1,4 +1,4 @@
-import { readNumber, toSource } from './shared'
+import { readBoolean, readNumber, toSource } from './shared'
 
 /** 刮削设置：节奏控制 */
 export interface SettingScrape {
@@ -10,6 +10,12 @@ export interface SettingScrape {
   restAfterCount: number
   /** 休息时长（秒） */
   restDuration: number
+  /**
+   * 扫描完一个资料库后，是否自动为库里「尚未刮削」的影片排队刮削。
+   *
+   * 关掉后只能在资料库抽屉里手动点「刮削」，或在工作台里手动勾选。
+   */
+  autoScrapeAfterScan: boolean
 }
 
 export function buildSettingScrape(): SettingScrape {
@@ -17,7 +23,8 @@ export function buildSettingScrape(): SettingScrape {
     concurrency: 3,
     requestDelay: 1,
     restAfterCount: 50,
-    restDuration: 60
+    restDuration: 60,
+    autoScrapeAfterScan: true
   }
 }
 
@@ -29,6 +36,7 @@ export function normalizeSettingScrape(raw: unknown): SettingScrape {
     concurrency: readNumber(source, 'concurrency', base.concurrency, 1),
     requestDelay: readNumber(source, 'requestDelay', base.requestDelay),
     restAfterCount: readNumber(source, 'restAfterCount', base.restAfterCount),
-    restDuration: readNumber(source, 'restDuration', base.restDuration)
+    restDuration: readNumber(source, 'restDuration', base.restDuration),
+    autoScrapeAfterScan: readBoolean(source, 'autoScrapeAfterScan', base.autoScrapeAfterScan)
   }
 }

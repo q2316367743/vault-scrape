@@ -1,0 +1,1 @@
+ALTER TABLE `media_item` ADD `has_nfo` integer DEFAULT 0 NOT NULL;

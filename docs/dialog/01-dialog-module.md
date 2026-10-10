@@ -19,7 +19,7 @@
 | `src/main/src/modules/dialog/dialogIpc.ts` | 入参收窄 + 调用 Electron `dialog` |
 | `src/main/src/registerIpc.ts` | 汇总注册（`registerDialogIpc()`） |
 | `src/renderer/src/api/dialog.ts` | 渲染层出口 `dialogApi` |
-| `src/renderer/src/components/DirectoryPickerField.vue` | 通用「目录输入框 + 选择按钮」控件 |
+| `src/renderer/src/components/DirectoryPickerField.vue` | 渲染层通用控件（消费方）：本机目录字段「输入框 + 选择按钮」，见 §6.1 |
 
 ## 3. IPC 通道
 
@@ -88,9 +88,14 @@ form.rootPath = result.filePaths[0]
 
 渲染层只能从 `@/api` 取（`src/renderer/src/api/dialog.ts`），页面不直接读 `window.preload`。
 
-### 6.1 通用控件 `DirectoryPickerField.vue`
+### 6.1 通用目录控件 `DirectoryPickerField.vue`
 
-「输入框 + 右侧『选择』按钮」是目录类字段的固定形态，抽成通用组件放在 `src/renderer/src/components/DirectoryPickerField.vue`：
+`src/renderer/src/components/DirectoryPickerField.vue` 是本机目录的通用控件：**输入框 + 「选择」按钮**。
+
+| 文件 | 说明 |
+| --- | --- |
+| `src/renderer/src/components/DirectoryPickerField.vue` | 控件本体（props `modelValue` / `title` / `placeholder`，emit `update:modelValue`） |
+| `src/renderer/src/renderer/components.d.ts` | 手写的全局组件声明，两行（`GlobalComponents` 与 `declare global` 各一行） |
 
 | props | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -98,20 +103,26 @@ form.rootPath = result.filePaths[0]
 | `title` | `string` | `'选择目录'` | 系统选择框标题 |
 | `placeholder` | `string` | `''` | 输入框占位文案 |
 
-- emit `update:modelValue`；内部按钮在系统框打开期间处于 `loading`，防重复点击；
-- 用户取消或 IPC 异常都**不改动原值**，异常时 `MessagePlugin.error('打开系统选择框失败，请手动输入绝对路径')`；
-- 组件不感知任何业务字段，因此可以放进通用组件目录；父级传入的 `class`（如 `.form-control` 的 `flex: 1`）会落到根元素上，无需额外样式；
-- 新增通用组件后**必须手工**补 `src/renderer/src/renderer/components.d.ts` 的两处列表（`declare module 'vue'` 的 `GlobalComponents` 与 `declare global`）：本仓库只跑 `typecheck`、不跑 `dev` / `build`，自动生成的 dts 不会更新，详见 [../architecture/01-project-structure.md](../architecture/01-project-structure.md)。
+用法与语义：
+
+- 点「选择」调 `dialogApi.open({ title, directory: true })` 唤起**系统目录框**，把选中的**本机绝对路径**写回 `modelValue`；`result.canceled || !filePaths[0]` 时什么都不做，**取消或失败都不改动原值**；唤起失败时提示「打开系统选择框失败，请手动输入绝对路径」。
+- 打开选择框期间 `picking` 为真（按钮 loading），避免重复点击。
+- 它解决的是**本机路径**这一类字段。当前唯一消费方是存储页「本地磁盘」数据源的根目录字段：`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53` 的 `<directory-picker-field v-model="form.rootPath" class="form-control" title="选择根目录" placeholder="本机绝对路径，例如 /Users/you/Media" />`，只在 `protocol === 'local'` 分支里渲染（见[存储管理页面 §5](../page/02-storage-page.md)）。
+- 父级传入的 `class`（如 `.form-control` 的 `flex: 1`）会落到根元素上，无需额外样式；控件不感知任何业务字段，所以放在通用组件目录 `src/renderer/src/components/`。
+- 它的两行声明已在 `src/renderer/src/renderer/components.d.ts` 里（`declare module 'vue'` 的 `GlobalComponents` 与 `declare global` 各一行）；该文件只在 `dev` / `build` 时被 unplugin-vue-components 重写，而本仓库只跑 `typecheck`、不跑 `dev` / `build`，所以**提交物需手改**，详见 [../architecture/01-project-structure.md](../architecture/01-project-structure.md)。
+
+**资料库的媒体目录不用它**：媒体目录必须是**存储连接内的路径**（`/` 表示连接根，不能做本机换算），复用本机控件会选出一个库里根本不存在的本地路径。资料库表单因此用自己页面目录下的 `pages/media/library/components/RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`：对话框标题「选择媒体目录」，内容用 `fileApi.list({ connectionId, path })` **只列目录**，带面包屑与「上级目录」，点「选择当前目录」把当前路径回调出去。两者针对不同语义的路径，**并存是正确设计**（见 §8 的另注）。
 
 ## 7. 已接入的消费方
 
 | 位置 | 用法 |
 | --- | --- |
-| 存储 → 新建 / 编辑数据源 → 本地磁盘 → 根目录 | `<directory-picker-field v-model="form.rootPath" title="选择根目录" ... />`（`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue`），选中后写回 `rootPath`，保存链路不变 |
+| 存储 → 新建 / 编辑数据源 → 本地磁盘 → 根目录 | `<directory-picker-field v-model="form.rootPath" class="form-control" title="选择根目录" placeholder="本机绝对路径，例如 /Users/you/Media" />`（`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53`，仅 `protocol === 'local'` 分支），点「选择」选本机目录后写回 `rootPath`；取消不改原值 |
+| （本机路径类字段的通用做法） | `dialogApi.open({ directory: true })`：`result.canceled || result.filePaths.length === 0` 时按「什么都不做」处理，否则写回 `result.filePaths[0]` |
 
 ## 8. 尚未接入的消费方
 
-以下位置目前仍是占位或纯输入框，dialog 域能力已就绪，接的时候直接用 `DirectoryPickerField.vue` / `dialogApi` 即可：
+以下位置目前仍是占位或纯输入框，dialog 域能力已就绪，接的时候直接调 `dialogApi` 自己写「输入框 + 选择按钮」，或直接复用 §6.1 的 `DirectoryPickerField.vue`：
 
 | 位置 | 现状 |
 | --- | --- |
@@ -119,10 +130,12 @@ form.rootPath = result.filePaths[0]
 | 存储 → 上传 / 下载的本机路径 | `PathDialogContent.vue` 仍是纯输入框 |
 | 「保存」框 | 已有 `dialog:save` 通道，暂无消费方（可用于导出、另存为等） |
 
+> 另注：**资料库的媒体目录不走这个模块**——那是连接内路径，用 `pages/media/library/components/RemoteDirDialog.tsx`（`fileApi.list` 列目录），详见 §6.1 与[影视墙页面](../page/04-media-wall-page.md)。
+
 ## 9. 手工验证清单
 
-1. 存储页「新建数据源」选「本地磁盘」：根目录右侧应出现「选择」按钮；点击弹出系统目录框，选中一个目录后输入框回填该目录的绝对路径。
-2. 在弹出的系统框里点「取消」：输入框保持原值，且不出现任何错误提示。
-3. 编辑一个已保存的本地数据源，重新选择目录后保存成功，列表描述随之更新；「测试连接」应能通过。
-4. 切到 WebDAV / SMB 协议：不出现「选择」按钮，表单其余字段与保存流程无变化（回归一次已保存的远程连接）。
-5. 选择一个没有访问权限的目录后保存：「测试连接」/保存应由文件域报出中文错误，dialog 域本身不拦截。
+1. 存储页「新建数据源」选「本地磁盘」：点根目录字段的「选择」应弹出系统目录框，选中一个目录后回填该目录的绝对路径；在系统框里点「取消」输入框保持原值、不出现错误提示（对应 §6.1 的 `DirectoryPickerField.vue`）。
+2. 编辑一个已保存的本地数据源，重新选择目录后保存成功，列表描述随之更新；「测试连接」应能通过。
+3. 切到 WebDAV / SMB 协议：不出现「选择」按钮，表单其余字段与保存流程无变化（回归一次已保存的远程连接）。
+4. 选择一个没有访问权限的目录后保存：「测试连接」/保存应由文件域报出中文错误，dialog 域本身不拦截。
+5. 资料库表单的「选择目录」**不应**唤起系统目录框，而应弹出「选择媒体目录」对话框（连接内目录、带面包屑），见[影视墙页面](../page/04-media-wall-page.md)。

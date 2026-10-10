@@ -1,4 +1,3 @@
-import { useRouter, useRoute } from 'vue-router'
 
 export function useSafeBack(fallback = '/') {
   const router = useRouter()
@@ -9,7 +8,6 @@ export function useSafeBack(fallback = '/') {
 
     router.back()
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     setTimeout(() => {
       // 如果路径仍然相同，认为 back 失效
       if (route.fullPath === prevFullPath) {

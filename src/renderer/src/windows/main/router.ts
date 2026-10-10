@@ -9,12 +9,19 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/windows/main/pages/overview/OverviewPage.vue')
   },
   {
+    // 影视墙首页：资料库横排 + 最近添加 / 待刮削 / 推荐三排
     path: '/media',
     name: '影视墙',
-    component: () => import('@/windows/main/pages/media/MediaWallPage.vue')
+    component: () => import('@/windows/main/pages/media/home/MediaHomePage.vue')
   },
   {
-    // 影片详情：参数走 query（connectionId + path），可以直接刷新 / 收藏这一刻的地址
+    // 单个资料库的内容页：libraryId 走 query，空串表示「全部影片」
+    path: '/media/library',
+    name: '影视墙资料库',
+    component: () => import('@/windows/main/pages/media/wall/MediaWallPage.vue')
+  },
+  {
+    // 影片详情：参数走 query（itemId），可以直接刷新 / 收藏这一刻的地址
     path: '/media/detail',
     name: '影视墙详情',
     component: () => import('@/windows/main/pages/media/detail/MediaDetailPage.vue')

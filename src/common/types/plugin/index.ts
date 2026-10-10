@@ -16,9 +16,13 @@ export {
   type PluginEpisodeRef
 } from './asset'
 
+export { R18_OFFLINE_PLUGIN_ID } from './builtin'
+
 export {
+  PLUGIN_ID_LIMIT,
   PLUGIN_ID_PATTERN,
   comparePluginVersion,
+  normalizePluginIds,
   type PluginEnvDraft,
   type PluginEnvField,
   type PluginEnvSnapshot,

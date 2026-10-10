@@ -4,7 +4,7 @@
 
 在线插件依赖目标站点可用、账号有效、页面结构不变，任何一环失效刮削就归零。r18.dev 每月（实际按周滚动）发布一份**全量 PostgreSQL 转储**（`r18dotdev_dump_YYYY-MM-DD.sql.gz`），包含番号、标题、演员、类别、厂牌、导演、发行日期与 DMM 图片相对路径。把它落到本机后即可**离线**完成刮削，作为在线刮削的保底方案。
 
-内置插件 id 为 `r18-offline`（`src/main/src/modules/plugin/builtinPlugins.ts`），与用户导入的 JS 插件走同一套列表 / 启停 / 调用入口（在工具箱的搜索工具里被选中执行），但**没有源码文件**：不可编辑、不可删除、不可被同名导入覆盖（`unsupported`）。
+内置插件 id 为 `r18-offline`，常量是 `R18_OFFLINE_PLUGIN_ID`：定义在 `src/common/types/plugin/builtin.ts`，由 `src/common/types/plugin/index.ts` 再导出，`src/main/src/modules/plugin/builtinPlugins.ts` 从 `@common/types/plugin` 引入后 `export` 给主进程内部使用——**全仓库只有这一处定义**。之所以把常量提到 common 层：渲染层的资料库表单（新建资料库时默认勾选它）与主进程的插件注册表 / 离线数据包面板必须引用同一个 ID，写两份字符串迟早会对不上。它与用户导入的 JS 插件走同一套列表 / 启停 / 调用入口（在工具箱的搜索工具里被选中执行），但**没有源码文件**：不可编辑、不可删除、不可被同名导入覆盖（`unsupported`）。
 
 代价与边界：
 
@@ -104,7 +104,8 @@
 
 ## 6. 内置插件与插件系统
 
-- `builtinPlugins.ts` 导出 `BUILTIN_PLUGINS`（当前仅 `r18-offline`，`meta.name = 'R18 离线数据包'`，`env: []`）与 `findBuiltinPlugin(id)`；`invoke` 把四个方法直接映射到查询层：`search → offlineSearch`、`detail → offlineDetail`、`covers → offlineCovers`、`extras → offlineExtras`。
+- `builtinPlugins.ts` 导出 `BUILTIN_PLUGINS`（当前仅 `r18-offline`，`meta.name = 'R18 离线数据包'`，`env: []`）与 `findBuiltinPlugin(id)`；`invoke` 把四个方法直接映射到查询层：`search → offlineSearch`、`detail → offlineDetail`、`covers → offlineCovers`、`extras → offlineExtras`。插件 id 取自 `@common/types/plugin` 的 `R18_OFFLINE_PLUGIN_ID`（见 §1），文件内再 `export` 一次供主进程其它模块引用。
+- **它只通过「资料库的刮削器」被使用**：`scrapers` 是资料库自己的字段（`library.scrapers`），**连接（`FileConnection`）上已没有该字段**——同一个存储可以挂多个资料库，各自选不同的刮削器。新建资料库时，只要候选列表里有 `R18_OFFLINE_PLUGIN_ID` 就默认勾选它（插件未启用 / 加载失败时保持不勾）；一个刮削器都不勾选 = 该库不刮削（允许，但扫描后不会自动刮削、也点不了「刮削」）。细节见[资料库](../media/01-media-library.md)。
 - `plugins.json` 的记录多了 `builtin: boolean`；主进程启动 / 列表 / 调用前会调幂等的 `ensureBuiltinPlugins()` 把内置插件补进索引（保留用户设置的 `enabled` 与环境变量值，元信息没变就不写盘）。同 ID 冲突时内置插件接管并写 `warn` 日志。
 - `PluginSummary.source` 为 `'builtin' | 'file'`：内置插件的 `filePath` 是空串，界面隐藏「编辑代码」「删除」，并显示「内置」标签与「内置实现（无源码文件）」。
 - 内置插件 `env` 为空数组，`hasEnv` 恒为 `false`：详情页不渲染配置区块（`PluginDetail.vue` 上按 `v-if="plugin.hasEnv"` 门控），「R18 离线数据包」这类无需参数的内置插件不会出现空的环境变量区域。
@@ -167,7 +168,8 @@
 | `src/main/src/modules/offline/offlineMapper.ts` | 行 → 候选 / 详情映射、番号归一化、DMM 图片与预告片地址 |
 | `src/main/src/modules/offline/offlineEvents.ts` | 进度 / 完成 / 有更新三条推送 |
 | `src/main/src/modules/offline/offlineIpc.ts` | IPC 注册（含系统文件选择框） |
-| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义（`r18-offline`），四个方法映射到查询层 |
+| `src/common/types/plugin/builtin.ts` | 内置插件常量 `R18_OFFLINE_PLUGIN_ID = 'r18-offline'`（唯一一份，渲染层资料库表单与主进程注册表共用；由 `src/common/types/plugin/index.ts` 导出） |
+| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义（`r18-offline`），四个方法映射到查询层；从 `@common/types/plugin` 引入 `R18_OFFLINE_PLUGIN_ID` 后再 `export` |
 | `src/renderer/src/windows/main/pages/plugin/components/OfflinePackPanel.vue` | 数据包面板 |
 | `src/renderer/src/windows/main/pages/plugin/composables/useOfflineData.ts` | 数据包状态与操作的单例 |
 | `src/renderer/src/windows/main/composables/useOfflineUpdateNotice.ts` | 启动时的更新提示 |

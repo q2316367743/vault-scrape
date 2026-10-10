@@ -4,6 +4,7 @@
  * 契约：
  * - 任务与逐文件结果都以 sqlite 为准（`task` / `scrape_file` 表），
  *   内存态只用于运行中的并发调度，渲染层重挂载后从主进程重新拉快照；
+ * - 逐文件结果挂在**条目**上（`itemId`），刮削产物写回 `media_item` 与 `media_image`；
  * - 进度事件是「增量提示」，不是唯一真相。
  */
 import type { TaskItem } from '../task'
@@ -31,13 +32,11 @@ export const SCRAPE_FILE_STATUS_LABELS: Readonly<Record<ScrapeFileStatus, string
 export interface ScrapeFileItem {
   id: string
   taskId: string
+  /** 本次刮削的条目 ID（`media_item.id`）；解析不到条目时为空串 */
+  itemId: string
   /** 扫描时的原始路径，任务内唯一 */
   path: string
-  /**
-   * 刮削结束后的最终路径：未开启改名/移动时与 `path` 相同。
-   *
-   * 旧数据（`final_path` 列上线前写入的行）为空串，读取方需要回落到 `path`。
-   */
+  /** 刮削结束后的最终路径：未开启改名/移动时与 `path` 相同 */
   finalPath: string
   name: string
   /** 文件名解析出的搜索关键词 */
@@ -49,18 +48,16 @@ export interface ScrapeFileItem {
   title: string
   /** 结果说明（含失败原因或重命名后的新路径） */
   message: string
-  /** 封面资源 ID；未产出封面时为空串 */
-  coverId: string
-  /** 封面在连接内的路径；未产出封面时为空串 */
-  coverPath: string
   updatedAt: number
 }
 
 /** 任务快照：任务行本身已经包含连接、目录与失败计数 */
 export type ScrapeTaskSnapshot = TaskItem
 
-/** 扫描出的一个待刮削视频 */
+/** 从资料库里挑出来的一个待刮削条目 */
 export interface ScrapeScanEntry {
+  /** 条目 ID（`media_item.id`） */
+  itemId: string
   path: string
   name: string
   size: number
@@ -73,12 +70,18 @@ export interface ScrapeScanEntry {
   duplicateOf?: string
 }
 
-/** 启动刮削任务 */
-export interface ScrapeStartRequest {
-  connectionId: string
+/** 浏览资料库某层目录 */
+export interface ScrapeBrowseRequest {
+  libraryId: string
+  /** 连接内目录路径，`/` 表示连接根 */
   dirPath: string
-  /** 待刮削文件路径，必须位于 dirPath 下 */
-  paths: string[]
+}
+
+/** 启动刮削任务：由资料库自己的刮削器执行 */
+export interface ScrapeStartRequest {
+  libraryId: string
+  /** 待刮削条目 ID 列表 */
+  itemIds: string[]
 }
 
 /** 针对已有任务的操作 */

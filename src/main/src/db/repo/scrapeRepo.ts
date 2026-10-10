@@ -40,24 +40,6 @@ export function clearScrapeFile(taskId: string): void {
   db().delete(scrapeFileTable).where(eq(scrapeFileTable.taskId, taskId)).run()
 }
 
-/**
- * 按封面资源 ID 反查最近一条结果行。
- *
- * 用途：资源索引被重建或清空时，私有协议仍能靠结果行兜底解析封面路径。
- */
-export function findScrapeFileByCoverId(coverId: string): ScrapeFileItem | null {
-  if (coverId.length === 0) return null
-  return (
-    db()
-      .select()
-      .from(scrapeFileTable)
-      .where(eq(scrapeFileTable.coverId, coverId))
-      .orderBy(desc(scrapeFileTable.updatedAt))
-      .limit(1)
-      .get() ?? null
-  )
-}
-
 /** 一条刮削记录 + 它所属任务的连接 ID（`scrape_file` 自己不带连接信息） */
 export interface ScrapeRecordWithConnection {
   item: ScrapeFileItem

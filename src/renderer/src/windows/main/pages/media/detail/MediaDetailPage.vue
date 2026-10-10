@@ -3,9 +3,9 @@
  * 影片详情页（`/media/detail`）：播放 + 磁盘上的事实 + NFO 元信息。
  *
  * 契约：
- * - 参数只从路由 query 读（`connectionId` + `path`）：可以直接刷新、也可以重复进入；
+ * - 参数只从路由 query 读（`itemId`）：可以直接刷新、也可以重复进入；
  * - 只读：不下载、不写 NFO、不改索引；取数一律走 mediaApi，失败只提示并允许重试；
- * - NSFW 保护按「全局开关 + 该存储 nsfw 标记」判定，连接列表在这里自己拉一次；
+ * - NSFW 保护按「全局开关 + 该存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
  * - 播放地址只用主进程给的 `playUrl`（`storage://`），渲染层不拼磁盘路径；
  *   返回按钮由 SubPageLayout 提供，本页不要在 `#extra` 里再放一个。
  */
@@ -21,15 +21,22 @@ import MediaPlayer from './components/MediaPlayer.vue'
 import { useMediaDetail } from './composables/useMediaDetail'
 import { fileCells } from './mediaDetailCells'
 
-const { connectionId, path, detail, loading, failure, load } = useMediaDetail()
+const { itemId, detail, loading, failure, load } = useMediaDetail()
 const { connections, refresh } = useFileConnections()
 
-const connection = computed(() => connections.value.find((item) => item.id === connectionId) ?? null)
-const { active: protect } = useNsfwProtection(connection)
+/** 连接归属从详情结果反查：路由只带影片身份，不带路径 */
+const connection = computed(() => {
+  const id = detail.value?.item.connectionId
+  if (id === undefined || id.length === 0) return null
+  return connections.value.find((item) => item.id === id) ?? null
+})
+const { active } = useNsfwProtection(connection)
+/** 全局开关 + 存储标记命中，或所属资料库自己要求按敏感内容处理 */
+const protect = computed(() => active.value || detail.value?.item.nsfwProtected === true)
 const sourceName = computed(() => connection.value?.name ?? '')
 const factCells = computed(() => (detail.value ? fileCells(detail.value, sourceName.value) : []))
-/** 页头描述：读到详情后显示标题，否则退化成磁盘路径 */
-const description = computed(() => detail.value?.item.title ?? path)
+/** 页头描述：读到详情后显示标题，否则退化成影片 ID */
+const description = computed(() => detail.value?.item.title ?? itemId)
 
 onMounted(() => {
   void refresh()
@@ -61,7 +68,7 @@ onMounted(() => {
         <t-alert
           v-else
           theme="warning"
-          message="资源索引里没有这个视频的地址，请回影视墙刷新后再试"
+          message="没有找到这个影片的播放地址，请回影视墙刷新后再试"
         />
 
         <section class="detail-block overview">

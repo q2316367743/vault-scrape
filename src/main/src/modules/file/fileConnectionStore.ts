@@ -20,8 +20,7 @@ import {
   type FileConnectionDraft,
   type WebdavAuthType
 } from '@common/types/file'
-import { readBoolean, readEnum, readNumber, readString, readStringArray, toSource } from '@common/types/setting/shared'
-import { PLUGIN_ID_PATTERN } from '@common/types/plugin'
+import { readBoolean, readEnum, readNumber, readString, toSource } from '@common/types/setting/shared'
 import { decodeSecret, encodeSecret } from '$/utils/secretCodec'
 
 /** 主进程私有的落盘形状：只比公开类型多一个 secret 字段 */
@@ -30,8 +29,6 @@ interface StoredLocalConnection {
   name: string
   protocol: 'local'
   nsfw: boolean
-  /** 该存储允许使用的刮削器（插件 ID）；空数组表示全部已启用插件 */
-  scrapers: string[]
   rootPath: string
 }
 
@@ -40,8 +37,6 @@ interface StoredWebdavConnection {
   name: string
   protocol: 'webdav'
   nsfw: boolean
-  /** 该存储允许使用的刮削器（插件 ID）；空数组表示全部已启用插件 */
-  scrapers: string[]
   url: string
   username: string
   authType: WebdavAuthType
@@ -53,8 +48,6 @@ interface StoredSmbConnection {
   name: string
   protocol: 'smb'
   nsfw: boolean
-  /** 该存储允许使用的刮削器（插件 ID）；空数组表示全部已启用插件 */
-  scrapers: string[]
   host: string
   port: number
   share: string
@@ -89,25 +82,6 @@ function readPort(source: Record<string, unknown>): number {
   return port <= 65535 ? port : SMB_DEFAULT_PORT
 }
 
-/** 单个存储可配置的刮削器数量上限（防止脏数据撑爆配置） */
-const SCRAPER_LIMIT = 200
-
-/** 刮削器 ID 归一化：去空白、只留合法插件 ID、去重、限量 */
-function normalizeScrapers(input: readonly string[]): string[] {
-  const result: string[] = []
-  for (const item of input) {
-    const id = item.trim()
-    if (id.length === 0 || !PLUGIN_ID_PATTERN.test(id) || result.includes(id)) continue
-    result.push(id)
-    if (result.length >= SCRAPER_LIMIT) break
-  }
-  return result
-}
-
-function readScrapers(source: Record<string, unknown>): string[] {
-  return normalizeScrapers(readStringArray(source, 'scrapers', []))
-}
-
 function normalizeStored(raw: unknown): StoredConnection | null {
   const source = toSource(raw)
   if (!source) return null
@@ -117,10 +91,9 @@ function normalizeStored(raw: unknown): StoredConnection | null {
   const protocol = readEnum(source, 'protocol', FILE_PROTOCOLS, 'local')
   const secret = readString(source, 'secret', '')
   const nsfw = readBoolean(source, 'nsfw', false)
-  const scrapers = readScrapers(source)
   if (protocol === 'local') {
     const rootPath = readString(source, 'rootPath', '')
-    return rootPath.length === 0 ? null : { id, name, protocol, nsfw, scrapers, rootPath }
+    return rootPath.length === 0 ? null : { id, name, protocol, nsfw, rootPath }
   }
   if (protocol === 'webdav') {
     const url = readString(source, 'url', '')
@@ -130,7 +103,6 @@ function normalizeStored(raw: unknown): StoredConnection | null {
       name,
       protocol,
       nsfw,
-      scrapers,
       url,
       username: readString(source, 'username', ''),
       authType: readEnum(source, 'authType', WEBDAV_AUTH_TYPES, 'auto'),
@@ -145,7 +117,6 @@ function normalizeStored(raw: unknown): StoredConnection | null {
     name,
     protocol,
     nsfw,
-    scrapers,
     host,
     port: readPort(source),
     share,
@@ -208,7 +179,6 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
       protocol: 'local',
       hasPassword: false,
       nsfw: stored.nsfw,
-      scrapers: stored.scrapers,
       rootPath: stored.rootPath
     }
   }
@@ -219,7 +189,6 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
       protocol: 'webdav',
       hasPassword: stored.secret.length > 0,
       nsfw: stored.nsfw,
-      scrapers: stored.scrapers,
       url: stored.url,
       username: stored.username,
       authType: stored.authType
@@ -231,7 +200,6 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
     protocol: 'smb',
     hasPassword: stored.secret.length > 0,
     nsfw: stored.nsfw,
-    scrapers: stored.scrapers,
     host: stored.host,
     port: stored.port,
     share: stored.share,
@@ -259,11 +227,10 @@ function buildStored(
   const name = draft.name.trim()
   if (name.length === 0) throw new FileError('invalidArgument', '连接名称不能为空')
   const nsfw = draft.nsfw === true
-  const scrapers = normalizeScrapers(draft.scrapers)
   if (draft.protocol === 'local') {
     const rootPath = draft.rootPath.trim()
     if (rootPath.length === 0) throw new FileError('invalidArgument', '本机根目录不能为空')
-    return { id, name, protocol: 'local', nsfw, scrapers, rootPath }
+    return { id, name, protocol: 'local', nsfw, rootPath }
   }
   const username = draft.username.trim()
   const secret = draft.password === undefined ? previousSecret(previous) : encodeSecret(draft.password, 'file')
@@ -271,7 +238,7 @@ function buildStored(
     const url = draft.url.trim()
     if (!isValidUrl(url)) throw new FileError('invalidArgument', '服务地址不是合法的 URL')
     const authType = WEBDAV_AUTH_TYPES.includes(draft.authType) ? draft.authType : 'auto'
-    return { id, name, protocol: 'webdav', nsfw, scrapers, url, username, authType, secret }
+    return { id, name, protocol: 'webdav', nsfw, url, username, authType, secret }
   }
   const host = draft.host.trim()
   const share = draft.share.trim()
@@ -286,7 +253,6 @@ function buildStored(
     name,
     protocol: 'smb',
     nsfw,
-    scrapers,
     host,
     port,
     share,

@@ -2,6 +2,7 @@ import { registerDbIpc } from './db/dbIpc'
 import { registerAppWindowIpc } from './modules/appWindow/appWindowIpc'
 import { registerDialogIpc } from './modules/dialog/dialogIpc'
 import { registerFileIpc } from './modules/file/fileIpc'
+import { registerLibraryIpc } from './modules/library/libraryIpc'
 import { registerMediaIpc } from './modules/media/mediaIpc'
 import { registerOfflineIpc } from './modules/offline/offlineIpc'
 import { registerPluginIpc } from './modules/plugin/pluginIpc'
@@ -14,6 +15,7 @@ export function registerIpc(): void {
   registerAppWindowIpc()
   registerDialogIpc()
   registerFileIpc()
+  registerLibraryIpc()
   registerMediaIpc()
   registerOfflineIpc()
   registerPluginIpc()

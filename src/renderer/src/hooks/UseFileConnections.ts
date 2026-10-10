@@ -10,7 +10,6 @@ import { useLocalStorage } from '@vueuse/core'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { fileApi } from '@/api'
 import {
-  scraperIdsOf,
   type ConnectionTestResult,
   type FileConnection,
   type FileConnectionDraft
@@ -20,14 +19,12 @@ const ACTIVE_CONNECTION_KEY = 'vault-scrape:storage-active-connection'
 
 /** 已保存连接 → 草稿：不带 password 即沿用密钥串里已存的密码 */
 function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
-  const scrapers = scraperIdsOf(connection)
   if (connection.protocol === 'local') {
     return {
       id: connection.id,
       protocol: 'local',
       name: connection.name,
       nsfw: connection.nsfw,
-      scrapers,
       rootPath: connection.rootPath
     }
   }
@@ -37,7 +34,6 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
       protocol: 'webdav',
       name: connection.name,
       nsfw: connection.nsfw,
-      scrapers,
       url: connection.url,
       username: connection.username,
       authType: connection.authType
@@ -48,7 +44,6 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
     protocol: 'smb',
     name: connection.name,
     nsfw: connection.nsfw,
-    scrapers,
     host: connection.host,
     port: connection.port,
     share: connection.share,

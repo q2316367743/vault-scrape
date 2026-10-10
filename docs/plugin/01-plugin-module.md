@@ -148,7 +148,9 @@ interface PluginAsset {
 | `file` | 用户导入或保存的 JS 脚本，落盘在 `~/.vault-scrape/plugin/<id>.js` | 有 | 允许 |
 | `builtin` | 宿主内置实现（当前只有 `r18-offline`「R18 离线数据包」），`plugins.json` 里有记录但**没有源码文件** | 无 | 禁止：`plugin:readCode` → `notFound`，`plugin:saveCode` / 同名导入覆盖 / 删除 → `unsupported` |
 
-内置插件与文件插件共用同一套入口：出现在列表里、可启停、可被工具箱的搜索工具调用、走同一个 `plugin:invoke`；区别只是宿主在命中内置 id 时**直接调用其实现**（不编译、不校验环境变量）并跳过源码读写。内置插件不声明环境变量（`env: []`），因此详情里不出现配置区块。内置插件由主进程在启动 / 列表 / 调用前幂等补齐进索引，元信息没变就不写盘。契约与细节见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)。
+内置插件与文件插件共用同一套入口：出现在列表里、可启停、可被工具箱的搜索工具调用、走同一个 `plugin:invoke`；区别只是宿主在命中内置 id 时**直接调用其实现**（不编译、不校验环境变量）并跳过源码读写。内置插件不声明环境变量（`env: []`），因此详情里不出现配置区块。内置插件由主进程在启动 / 列表 / 调用前幂等补齐进索引，元信息没变就不写盘。
+
+内置插件的 id 常量 `R18_OFFLINE_PLUGIN_ID = 'r18-offline'` 定义在 `src/common/types/plugin/builtin.ts`（由 `src/common/types/plugin/index.ts` 导出），渲染层与主进程共用同一份；**插件的选用入口只有资料库**——刮削器列表存在 `library.scrapers`（连接上没有该字段），新建资料库时若候选里存在 `R18_OFFLINE_PLUGIN_ID` 就默认勾选。契约与细节见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)。
 
 ## 3. 插件上下文 `ctx`
 

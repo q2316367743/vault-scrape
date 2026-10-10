@@ -5,8 +5,8 @@
  * 任意一侧改名都会在 typecheck 阶段暴露。
  */
 export const ScrapeChannels = {
-  /** 扫描根目录（不递归）下的视频文件 */
-  listVideos: 'scrape:listVideos',
+  /** 浏览资料库目录（不递归）下的子目录与影片 */
+  browse: 'scrape:browse',
   /** 启动任务，立即返回任务快照 */
   start: 'scrape:start',
   /** 取消任务（保留待刮削文件，可继续） */

@@ -1,8 +1,23 @@
+<template>
+  <div class="directory-picker">
+    <t-input v-model="path" class="directory-picker-input" :placeholder="placeholder" />
+    <t-button
+      theme="default"
+      variant="outline"
+      class="directory-picker-button"
+      :loading="picking"
+      @click="pick"
+    >
+      <template #icon><folder-open-icon /></template>
+      选择
+    </t-button>
+  </div>
+</template>
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { MessagePlugin } from 'tdesign-vue-next'
 import { FolderOpenIcon } from 'tdesign-icons-vue-next'
 import { dialogApi } from '@/api'
+import { MessageUtil } from '@/utils/modal'
 
 const props = withDefaults(
   defineProps<{
@@ -34,28 +49,12 @@ async function pick(): Promise<void> {
     if (result.canceled || !picked) return
     path.value = picked
   } catch {
-    MessagePlugin.error('打开系统选择框失败，请手动输入绝对路径')
+    MessageUtil.error('打开系统选择框失败，请手动输入绝对路径')
   } finally {
     picking.value = false
   }
 }
 </script>
-
-<template>
-  <div class="directory-picker">
-    <t-input v-model="path" class="directory-picker-input" :placeholder="placeholder" />
-    <t-button
-      theme="default"
-      variant="outline"
-      class="directory-picker-button"
-      :loading="picking"
-      @click="pick"
-    >
-      <template #icon><folder-open-icon /></template>
-      选择
-    </t-button>
-  </div>
-</template>
 
 <style scoped lang="less">
 .directory-picker {

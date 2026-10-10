@@ -3,14 +3,15 @@
  *
  * 契约：
  * - 状态文案与配色只在这里定义，表格与任务卡片共用，避免多处硬编码；
- * - 「数据源根目录」在连接内统一用 `/` 表达；本地连接要把用户选的本机目录换算成连接内路径，
- *   换算规则与主进程 `impl/local/localPath.ts` 的 `toRemotePath` 保持一致（最长前缀匹配）。
+ * - 「本机路径 ↔ 连接内路径」的换算已抽到公共工具 `@/utils/remotePath`（资料库表单同样在用），
+ *   本文件原样转出，工作台内部引用无需改动；
  * - NSFW 的生效判定不在本文件：见 `@/hooks/UseNsfwProtection.ts`。
  */
 import dayjs from 'dayjs'
-import { FILE_ROOT, normalizeRemotePath, type FileConnection } from '@common/types/file'
 import type { ScrapeFileStatus } from '@common/types/scrape'
 import type { TaskStatus } from '@common/types/task'
+
+export { toDisplayDir, toRemoteDir } from '@/utils/remotePath'
 
 /** 表格里的行状态：`idle` 表示只扫描到、还没进任务 */
 export type WorkspaceRowStatus = ScrapeFileStatus | 'idle'
@@ -53,33 +54,6 @@ export const TASK_STATUS_THEMES: Readonly<
   failed: 'danger',
   paused: 'warning',
   interrupted: 'warning'
-}
-
-/** 去掉结尾分隔符，统一成正斜杠 */
-function trimTrailingSlash(value: string): string {
-  return value.replace(/\\/g, '/').replace(/\/+$/, '')
-}
-
-/** 用户在本机选中的绝对目录 → 连接内路径（本地数据源） */
-export function toRemoteDir(connection: FileConnection | null, localPath: string): string {
-  const picked = trimTrailingSlash(localPath.trim())
-  if (picked.length === 0) return FILE_ROOT
-  if (!connection || connection.protocol !== 'local') return normalizeRemotePath(picked)
-  const root = trimTrailingSlash(connection.rootPath)
-  if (root.length === 0) return normalizeRemotePath(picked)
-  if (picked === root) return FILE_ROOT
-  if (picked.startsWith(`${root}/`)) return normalizeRemotePath(picked.slice(root.length))
-  /** 不在数据源根目录下：原样当连接内路径交给主进程判定 */
-  return normalizeRemotePath(picked)
-}
-
-/** 连接内路径 → 便于用户确认的本机路径（仅本地数据源） */
-export function toDisplayDir(connection: FileConnection | null, dirPath: string): string {
-  const normalized = normalizeRemotePath(dirPath)
-  if (!connection || connection.protocol !== 'local') return normalized
-  const root = trimTrailingSlash(connection.rootPath)
-  if (root.length === 0) return normalized
-  return normalized === FILE_ROOT ? root : `${root}${normalized}`
 }
 
 /** 毫秒时间戳 → `YYYY-MM-DD HH:mm`，无效值给占位符 */

@@ -2,192 +2,357 @@
  * 影视墙读模型：把「磁盘上的视频」与「刮削成果」拼成一面墙。
  *
  * 契约：
- * - 列表真相是资源索引（`resource` 表，`kind = 'video'`）：刮削没成功、甚至没刮削过的视频也上墙，
- *   磁盘上删掉的影片会自动从墙上消失；
- * - 补全分两级：先按路径命中「成功」的刮削记录（拿标题 / 番号 / 封面），
- *   再按同目录的刮削产出（NFO 与封面图）判断「已刮削」并取封面；
- * - 路径只在同一个 `connectionId` 内才有意义，跨存储绝不互相匹配；
- * - 只用「成功」的刮削记录补全（失败 / 待刮削的行没有产出，会污染墙面）；
+ * - 列表真相是媒体条目（`media_item.type = 'movie'`）与其媒体源：没刮削过的视频也上墙，
+ *   磁盘上删掉的影片会随扫描清理一起消失；
+ * - 封面先看条目自己、再退回**父目录条目**，按「主图 → 缩略图 → 背景图 → 剧照 → 其他」
+ *   找第一张（扫描期把目录级图片挂在目录条目上、`extrafanart/still*.jpg` 挂在影片上，见 `mediaIndexer`）；
+ * - 「是否刮削」= 自己跑过刮削（`scrapedAt > 0`）或磁盘上已经有产出（同目录 NFO / 图片），
+ *   与 `countScrapedMovieItems` 同一口径；
+ * - 播放地址与封面地址都走 `storage://{连接}/{媒体ID}/{文件名}`，只认 ID 不认路径；
+ * - 墙面可以按资料库过滤（`MediaWallRequest.libraryId`，空串 = 全部库）；
+ * - 首页三排（最近添加 / 待刮削 / 全部影片）与墙面同一套条目口径，只做排序与截断；
  * - 详情另外读同目录 NFO 作为元信息；读失败不抛错，只当没有。
  */
-import { FILE_ROOT, basenameRemotePath, joinRemotePath, normalizeRemotePath } from '@common/types/file'
+import { FILE_ROOT, basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
+import type { MediaLibrary } from '@common/types/library'
 import {
+  MEDIA_COVER_IMAGE_TYPE_ORDER,
+  MEDIA_HOME_ROW_LIMIT,
   MediaError,
+  buildMediaUrl,
   parseNfoXml,
+  type MediaBrowseEntry,
   type MediaDetailRequest,
   type MediaDetailResult,
+  type MediaHomeResult,
+  type MediaHomeRow,
   type MediaNfoMeta,
   type MediaWallItem,
+  type MediaWallRequest,
   type MediaWallResult
 } from '@common/types/media'
-import { buildResourceUrl, type ResourceItem } from '@common/types/resource'
-import { extractKeyword, stripExtension, type ScrapeFileItem } from '@common/types/scrape'
-import { getResourceById, listResourceByKind, maxResourceIndexedAt } from '$/db/repo/resourceRepo'
-import { listScrapeWithConnection } from '$/db/repo/scrapeRepo'
+import type { ScrapeBrowseRequest } from '@common/types/scrape'
+import { stripExtension } from '@common/types/scrape'
+import type { MediaImageRow } from '$/db/schema/mediaImage'
+import type { MediaItemRow } from '$/db/schema/mediaItem'
+import type { MediaSourceRow } from '$/db/schema/mediaSource'
+import { isSameOrInsidePath } from '$/db/repo/libraryRepo'
+import { getImage, listImagesByItem, listImagesByLibrary } from '$/db/repo/mediaImageRepo'
+import {
+  getItem,
+  listChildItems,
+  listItems,
+  listMovieItems,
+  listSourcesByItem,
+  maxSourceIndexedAt
+} from '$/db/repo/mediaRepo'
 import { getFileClient } from '$/modules/file/fileClientManager'
-import { resourceIdOf } from '$/modules/resource/resourceIndex'
+import { folderItemId } from '$/modules/media/mediaIndexer'
+import { getLibrary, listLibraries, listSummaries } from '$/modules/library/libraryStore'
 
-/** 一个连接内的刮削记录索引：一个视频可能同时被「最终路径」和「原路径」命中 */
-interface ScrapeIndex {
-  /** 刮削后的最终路径 → 记录（旧数据没有 finalPath 时用 path 兜底） */
-  byFinalPath: Map<string, ScrapeFileItem>
-  /** 扫描时的原路径 → 记录（覆盖改名前的旧路径） */
-  byPath: Map<string, ScrapeFileItem>
+/** 主媒体源：路径与条目一致的优先，否则取第一条 */
+function primarySourceOf(item: MediaItemRow, sources: readonly MediaSourceRow[]): MediaSourceRow | undefined {
+  return sources.find((row) => row.path === item.path) ?? sources[0]
 }
 
 /**
- * 只有成功的刮削记录才有产出，才允许用来补全墙面。
+ * 条目 ID → 挂在该条目上的全部图片。
  *
- * 取消 / 失败留下的行标题与封面都是空的，如果参与匹配会让卡片显示成「已刮削但没有信息」。
+ * 一张图只属于一个条目（`media_image` 按「连接 + 路径」唯一），所以这里不用去重。
  */
-const USABLE_STATUS = 'success' as const
-
-/** 同目录封面图的命名优先级：越靠前越像封面，不在表里的按文件名兜底 */
-const COVER_NAME_ORDER = ['poster', 'folder', 'cover', 'fanart', 'backdrop', 'banner', 'thumb']
-
-/** 一个目录里的刮削产出：有 NFO 就算这个目录刮过，图片用来当封面 */
-interface DirEvidence {
-  hasNfo: boolean
-  cover: { id: string; name: string } | null
-}
-
-/** 目录键：同一个连接内的目录才可能互相补全，跨存储绝不串味 */
-function dirKey(connectionId: string, dirPath: string): string {
-  return `${connectionId}\n${dirPath}`
-}
-
-function coverRank(name: string): number {
-  const rank = COVER_NAME_ORDER.indexOf(stripExtension(name).toLowerCase())
-  return rank === -1 ? COVER_NAME_ORDER.length : rank
+function imagesByItem(images: readonly MediaImageRow[]): Map<string, MediaImageRow[]> {
+  const map = new Map<string, MediaImageRow[]>()
+  for (const image of images) {
+    const list = map.get(image.itemId)
+    if (list) list.push(image)
+    else map.set(image.itemId, [image])
+  }
+  return map
 }
 
 /**
- * 按目录收集「刮削产出」证据，只查索引、不碰磁盘。
- *
- * 这是路径配对的兜底：加 `final_path` 之前的旧记录、以及刮削之外的手工改名 / 移动，
- * 都会让 `scrape_file` 对不上磁盘，但流水线写下的 NFO 与封面就躺在视频旁边，按目录即可补全。
+ * 封面地址：按 `MEDIA_COVER_IMAGE_TYPE_ORDER`（主图 → 缩略图 → 背景图 → 剧照 → 其他）
+ * 逐类找，同一类里先条目自己、再父目录条目，取到第一张就返回；一张都没有返回空串。
  */
-function buildDirEvidence(): Map<string, DirEvidence> {
-  const evidence = new Map<string, DirEvidence>()
-  const slotOf = (connectionId: string, dirPath: string): DirEvidence => {
-    const key = dirKey(connectionId, dirPath)
-    let slot = evidence.get(key)
-    if (!slot) {
-      slot = { hasNfo: false, cover: null }
-      evidence.set(key, slot)
-    }
-    return slot
-  }
-  for (const item of listResourceByKind('nfo')) {
-    slotOf(item.connectionId, item.dirPath).hasNfo = true
-  }
-  for (const item of listResourceByKind('image')) {
-    const slot = slotOf(item.connectionId, item.dirPath)
-    if (!slot.cover || coverRank(item.name) < coverRank(slot.cover.name)) {
-      slot.cover = { id: item.id, name: item.name }
+function coverUrlOf(item: MediaItemRow, images: Map<string, MediaImageRow[]>): string {
+  const owners = item.parentId.length > 0 ? [item.id, item.parentId] : [item.id]
+  for (const type of MEDIA_COVER_IMAGE_TYPE_ORDER) {
+    for (const ownerId of owners) {
+      const image = images.get(ownerId)?.find((row) => row.type === type)
+      if (image) return buildMediaUrl(image.connectionId, image.id, basenameRemotePath(image.path))
     }
   }
-  return evidence
+  return ''
 }
 
-/** 按连接分组，同一路径只保留更新时间最新的一条（查询已按 updatedAt 降序） */
-function buildScrapeIndex(): Map<string, ScrapeIndex> {
-  const index = new Map<string, ScrapeIndex>()
-  for (const { item, connectionId } of listScrapeWithConnection(USABLE_STATUS)) {
-    if (item.title.length === 0 && item.coverId.length === 0) continue
-    const bucket = index.get(connectionId) ?? { byFinalPath: new Map(), byPath: new Map() }
-    const finalPath = item.finalPath.length > 0 ? item.finalPath : item.path
-    if (!bucket.byFinalPath.has(finalPath)) bucket.byFinalPath.set(finalPath, item)
-    if (!bucket.byPath.has(item.path)) bucket.byPath.set(item.path, item)
-    index.set(connectionId, bucket)
-  }
-  return index
-}
-
-function findRecord(index: Map<string, ScrapeIndex>, item: ResourceItem): ScrapeFileItem | undefined {
-  const bucket = index.get(item.connectionId)
-  if (!bucket) return undefined
-  return bucket.byFinalPath.get(item.path) ?? bucket.byPath.get(item.path)
-}
-
-/** 番号：优先从磁盘上的文件名解析（刮削可能改过名），再退回刮削记录的关键词 */
-function numOf(item: ResourceItem, record: ScrapeFileItem | undefined): string {
-  const parsed = extractKeyword(item.name).num
-  if (parsed.length > 0) return parsed
-  return record?.keyword ?? ''
-}
-
-/** 标题：插件标题优先，没有就用去掉扩展名的文件名占位 */
-function titleOf(item: ResourceItem, record: ScrapeFileItem | undefined): string {
-  if (record && record.title.length > 0) return record.title
-  return stripExtension(item.name)
+/** 条目自己或父目录条目上有没有图片（有图 = 磁盘上已经有刮削产出） */
+function hasImageEvidence(item: MediaItemRow, images: Map<string, MediaImageRow[]>): boolean {
+  if ((images.get(item.id)?.length ?? 0) > 0) return true
+  return item.parentId.length > 0 && (images.get(item.parentId)?.length ?? 0) > 0
 }
 
 /**
- * 封面地址：优先用刮削记录的封面（资源 ID 是「存储 + 封面路径」的哈希，定位靠它），
- * 记录对不上时退回同目录的封面图；两处都补上封面路径的基名（与工作台同一套写法）。
+ * 「是否刮削」：自己跑过刮削（`scrapedAt > 0`），或者磁盘上已经有产出——
+ * 同目录 NFO（扫描写在 `hasNfo` 上）或图片（条目 / 父目录条目上的图）。
+ *
+ * 与 `countScrapedMovieItems` 的口径保持一致；刮削队列（`scrapedAt === 0`）不受影响。
  */
-function coverUrlOf(
-  item: ResourceItem,
-  record: ScrapeFileItem | undefined,
-  evidence: DirEvidence | undefined
-): string {
-  if (record && record.coverId.length > 0) {
-    const coverPath = record.coverPath.length > 0 ? record.coverPath : item.name
-    return buildResourceUrl(item.connectionId, record.coverId, basenameRemotePath(coverPath))
-  }
-  if (!evidence || !evidence.cover) return ''
-  return buildResourceUrl(item.connectionId, evidence.cover.id, evidence.cover.name)
+function scrapedOf(item: MediaItemRow, images: Map<string, MediaImageRow[]>): boolean {
+  return item.scrapedAt > 0 || item.hasNfo > 0 || hasImageEvidence(item, images)
 }
 
 function toWallItem(
-  item: ResourceItem,
-  record: ScrapeFileItem | undefined,
-  evidence: DirEvidence | undefined
+  item: MediaItemRow,
+  source: MediaSourceRow,
+  images: Map<string, MediaImageRow[]>,
+  library: MediaLibrary | null
 ): MediaWallItem {
+  const scraped = scrapedOf(item, images)
   return {
-    connectionId: item.connectionId,
-    path: item.path,
-    dirPath: item.dirPath,
+    itemId: item.id,
+    libraryId: item.libraryId,
+    libraryName: library?.name ?? '',
+    nsfwProtected: library?.nsfwProtection === true,
+    connectionId: source.connectionId,
+    path: source.path,
+    dirPath: dirnameRemotePath(source.path),
     name: item.name,
-    num: numOf(item, record),
-    title: titleOf(item, record),
-    coverUrl: coverUrlOf(item, record, evidence),
-    playUrl: buildResourceUrl(item.connectionId, item.id, item.name),
-    scraped: record !== undefined || evidence?.hasNfo === true,
-    scrapedAt: record?.updatedAt ?? 0,
-    pluginId: record?.pluginId ?? '',
-    size: item.size,
-    modifiedAt: item.modifiedAt
+    num: item.num,
+    title: scraped ? item.name : stripExtension(item.name),
+    coverUrl: coverUrlOf(item, images),
+    playUrl: buildMediaUrl(source.connectionId, source.id, source.name),
+    scraped,
+    scrapedAt: item.scrapedAt,
+    dateAdded: item.dateAdded,
+    pluginId: item.scraperId,
+    size: source.size,
+    modifiedAt: source.modifiedAt
   }
 }
 
-/** 一次拉全整墙：所有数据源的视频混在一起，筛选与排序都在渲染层做 */
-export function loadMediaWall(): MediaWallResult {
-  const index = buildScrapeIndex()
-  const evidence = buildDirEvidence()
-  const items = listResourceByKind('video').map((item) =>
-    toWallItem(item, findRecord(index, item), evidence.get(dirKey(item.connectionId, item.dirPath)))
-  )
+/**
+ * 拉取影视墙：默认所有资料库的影片混在一起，筛选与排序都在渲染层做；
+ * 给了 `libraryId` 就只返回该库的影片，库不存在直接抛 `notFound`。
+ */
+export function loadMediaWall(request: MediaWallRequest = { libraryId: '' }): MediaWallResult {
+  const libraryId = request.libraryId.trim()
+  let libraries: MediaLibrary[]
+  if (libraryId.length === 0) {
+    libraries = listLibraries()
+  } else {
+    const library = getLibrary(libraryId)
+    if (!library) throw new MediaError('notFound', '资料库不存在')
+    libraries = [library]
+  }
+  const items: MediaWallItem[] = []
+  for (const library of libraries) {
+    const images = imagesByItem(listImagesByLibrary(library.id))
+    for (const item of listMovieItems(library.id)) {
+      const source = primarySourceOf(item, listSourcesByItem(item.id))
+      if (!source) continue
+      items.push(toWallItem(item, source, images, library))
+    }
+  }
   return {
     items,
     total: items.length,
     scrapedCount: items.filter((item) => item.scraped).length,
-    indexedAt: maxResourceIndexedAt()
+    indexedAt: maxSourceIndexedAt(),
+    libraries: listSummaries()
   }
 }
 
+/** 某个资料库里的影片（与墙面同一套判定与封面规则） */
+export function loadLibraryVideos(libraryId: string): MediaWallItem[] {
+  const id = libraryId.trim()
+  if (id.length === 0) return []
+  return loadMediaWall({ libraryId: id }).items
+}
+
+/** 排序用的时间：入库时间缺失（0）时退回文件修改时间 */
+function timeOf(item: MediaWallItem): number {
+  return item.dateAdded > 0 ? item.dateAdded : item.modifiedAt
+}
+
+/** 最近添加优先 */
+function byTimeDesc(left: MediaWallItem, right: MediaWallItem): number {
+  return timeOf(right) - timeOf(left)
+}
+
+/**
+ * 均匀取样：按步长从整份列表里挑出 `limit` 条，保证「推荐」排不会与
+ * 「最近添加」排（同一份列表的前 `limit` 条）完全重复。
+ */
+function spreadSample(items: MediaWallItem[], limit: number): MediaWallItem[] {
+  if (items.length <= limit) return [...items]
+  const stride = items.length / limit
+  const picked: MediaWallItem[] = []
+  for (let index = 0; index < limit; index += 1) {
+    const item = items[Math.floor(index * stride)]
+    if (item) picked.push(item)
+  }
+  return picked
+}
+
+/**
+ * 首页读模型：库摘要 + 三排固定顺序的影片（最近添加 / 待刮削 / 推荐）。
+ *
+ * 每排取前 `MEDIA_HOME_ROW_LIMIT` 张，统计口径与 `loadMediaWall` 完全一致。
+ */
+export function loadMediaHome(): MediaHomeResult {
+  const wall = loadMediaWall()
+  const sorted = [...wall.items].sort(byTimeDesc)
+  const rows: MediaHomeRow[] = [
+    { id: 'recent', title: '最近添加', items: sorted.slice(0, MEDIA_HOME_ROW_LIMIT) },
+    {
+      id: 'pending',
+      title: '待刮削',
+      items: sorted.filter((item) => !item.scraped).slice(0, MEDIA_HOME_ROW_LIMIT)
+    },
+    { id: 'discover', title: '推荐', items: spreadSample(sorted, MEDIA_HOME_ROW_LIMIT) }
+  ]
+  return {
+    libraries: wall.libraries,
+    rows,
+    total: wall.total,
+    scrapedCount: wall.scrapedCount,
+    indexedAt: wall.indexedAt
+  }
+}
+
+/** 目标目录属于哪个媒体目录（同一库内取最长命中） */
+function owningPath(library: MediaLibrary, dirPath: string): { connectionId: string; path: string } | null {
+  let best: { connectionId: string; path: string } | null = null
+  for (const item of library.paths) {
+    if (!isSameOrInsidePath(item.path, dirPath)) continue
+    if (!best || item.path.length > best.path.length) best = { connectionId: item.connectionId, path: item.path }
+  }
+  return best
+}
+
+/** 目录（含子孙）里有没有影片：一次遍历整库算完，供浏览列表标记空目录 */
+function movieSubtree(libraryId: string): Map<string, boolean> {
+  const childrenByParent = new Map<string, MediaItemRow[]>()
+  for (const row of listItems(libraryId)) {
+    const list = childrenByParent.get(row.parentId) ?? []
+    list.push(row)
+    childrenByParent.set(row.parentId, list)
+  }
+  const memo = new Map<string, boolean>()
+  const walk = (parentId: string): boolean => {
+    const cached = memo.get(parentId)
+    if (cached !== undefined) return cached
+    // 先占位，避免异常数据里的父子环把递归打爆
+    memo.set(parentId, false)
+    let found = false
+    for (const child of childrenByParent.get(parentId) ?? []) {
+      if (child.type === 'movie' || walk(child.id)) {
+        found = true
+        break
+      }
+    }
+    memo.set(parentId, found)
+    return found
+  }
+  for (const row of listItems(libraryId)) {
+    if (row.type === 'folder') walk(row.id)
+  }
+  return memo
+}
+
+function toBrowseEntry(
+  row: MediaItemRow,
+  withMovies: Map<string, boolean>,
+  images: Map<string, MediaImageRow[]>
+): MediaBrowseEntry {
+  if (row.type === 'folder') {
+    return {
+      itemId: row.id,
+      type: 'folder',
+      connectionId: row.connectionId,
+      path: row.path,
+      name: row.name,
+      num: '',
+      title: row.name,
+      scraped: false,
+      hasSource: withMovies.get(row.id) === true,
+      size: 0,
+      modifiedAt: 0
+    }
+  }
+  const sources = listSourcesByItem(row.id)
+  const source = primarySourceOf(row, sources)
+  const scraped = scrapedOf(row, images)
+  return {
+    itemId: row.id,
+    type: 'movie',
+    connectionId: row.connectionId,
+    path: row.path,
+    name: row.name,
+    num: row.num,
+    title: scraped ? row.name : stripExtension(row.name),
+    scraped,
+    hasSource: sources.length > 0,
+    size: source?.size ?? 0,
+    modifiedAt: source?.modifiedAt ?? 0
+  }
+}
+
+/** 目录在上、影片在下；同类按名称做自然序排序 */
+function compareBrowse(left: MediaBrowseEntry, right: MediaBrowseEntry): number {
+  if (left.type !== right.type) return left.type === 'folder' ? -1 : 1
+  return left.name.localeCompare(right.name, 'zh-CN', { numeric: true })
+}
+
+/**
+ * 浏览资料库：`dirPath` 为空表示「资料库各根目录的下一层」。
+ *
+ * 目录条目由扫描按需创建（连接根 `/` 没有目录条目，直接用 `parentId = ''`）。
+ */
+export function browseLibrary(request: ScrapeBrowseRequest): MediaBrowseEntry[] {
+  const libraryId = request.libraryId.trim()
+  if (libraryId.length === 0) throw new MediaError('invalidArgument', '缺少资料库 ID')
+  const library = getLibrary(libraryId)
+  if (!library) throw new MediaError('notFound')
+
+  const dirPath = request.dirPath.trim()
+  const parents: string[] = []
+  if (dirPath.length === 0 || dirPath === FILE_ROOT) {
+    for (const item of library.paths) {
+      parents.push(item.path === FILE_ROOT ? '' : folderItemId(library.id, item.connectionId, item.path))
+    }
+  } else {
+    const owner = owningPath(library, dirPath)
+    if (!owner) throw new MediaError('invalidArgument', '目录不在该资料库内')
+    parents.push(folderItemId(library.id, owner.connectionId, dirPath))
+  }
+
+  const withMovies = movieSubtree(library.id)
+  const images = imagesByItem(listImagesByLibrary(library.id))
+  const seen = new Set<string>()
+  const entries: MediaBrowseEntry[] = []
+  for (const parentId of parents) {
+    for (const row of listChildItems(library.id, parentId)) {
+      if (seen.has(row.id)) continue
+      seen.add(row.id)
+      entries.push(toBrowseEntry(row, withMovies, images))
+    }
+  }
+  return entries.sort(compareBrowse)
+}
+
 /** 同目录 NFO 候选：`movie.nfo` 优先，其次与视频同名的 `.nfo`（与写入侧的命名规则对应） */
-function nfoCandidates(item: ResourceItem): string[] {
-  return ['movie.nfo', `${stripExtension(item.name)}.nfo`]
+function nfoCandidates(source: MediaSourceRow): string[] {
+  return ['movie.nfo', `${stripExtension(source.name)}.nfo`]
 }
 
 /** 读同目录 NFO；连接不可用、文件不存在、解析失败都只当作「没有 NFO」 */
-async function readNfoMeta(item: ResourceItem): Promise<{ meta: MediaNfoMeta | null; path: string }> {
-  for (const name of nfoCandidates(item)) {
-    const target = joinRemotePath(item.dirPath, name)
+async function readNfoMeta(source: MediaSourceRow): Promise<{ meta: MediaNfoMeta | null; path: string }> {
+  const dirPath = dirnameRemotePath(source.path)
+  for (const name of nfoCandidates(source)) {
+    const target = joinRemotePath(dirPath, name)
     try {
-      const client = await getFileClient(item.connectionId)
+      const client = await getFileClient(source.connectionId)
       if (!(await client.exists(target))) continue
       const text = await client.readText(target)
       return { meta: parseNfoXml(text), path: target }
@@ -198,23 +363,27 @@ async function readNfoMeta(item: ResourceItem): Promise<{ meta: MediaNfoMeta | n
   return { meta: null, path: '' }
 }
 
-/** 单个视频的详情：与墙上同一套补全规则 + 同目录 NFO */
+/** 单个影片的详情：与墙上同一套规则 + 同目录 NFO */
 export async function loadMediaDetail(request: MediaDetailRequest): Promise<MediaDetailResult> {
-  const connectionId = request.connectionId.trim()
-  const path = normalizeRemotePath(request.path)
-  if (connectionId.length === 0) throw new MediaError('invalidArgument', '缺少数据源')
-  if (path.length === 0 || path === FILE_ROOT) throw new MediaError('invalidArgument', '缺少视频路径')
+  const itemId = request.itemId.trim()
+  if (itemId.length === 0) throw new MediaError('invalidArgument', '缺少影片 ID')
+  const item = getItem(itemId)
+  if (!item || item.type !== 'movie') throw new MediaError('notFound')
+  const source = primarySourceOf(item, listSourcesByItem(item.id))
+  if (!source) throw new MediaError('notFound')
 
-  const resource = getResourceById(resourceIdOf(connectionId, path))
-  if (!resource || resource.connectionId !== connectionId || resource.kind !== 'video') {
-    throw new MediaError('notFound')
+  const images = imagesByItem([
+    ...listImagesByItem(item.id),
+    ...(item.parentId.length > 0 ? listImagesByItem(item.parentId) : [])
+  ])
+  const library = getLibrary(item.libraryId)
+  const nfo = await readNfoMeta(source)
+  return {
+    item: toWallItem(item, source, images, library ?? null),
+    meta: nfo.meta,
+    nfoPath: nfo.path
   }
-
-  const item = toWallItem(
-    resource,
-    findRecord(buildScrapeIndex(), resource),
-    buildDirEvidence().get(dirKey(resource.connectionId, resource.dirPath))
-  )
-  const nfo = await readNfoMeta(resource)
-  return { item, meta: nfo.meta, nfoPath: nfo.path }
 }
+
+/** 供详情 / 调试使用：按 ID 直接取一张图片 */
+export { getImage }

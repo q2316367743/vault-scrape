@@ -1,21 +1,30 @@
 /**
- * 单文件刮削流水线：一个视频文件 → 一组已落盘的刮削结果。
+ * 单文件刮削流水线：一个视频文件 → 一组已落盘的刮削结果 + 写回媒体库的元数据。
  *
  * 契约（严格按需求里的顺序与开关）：
  * 1. **插件按顺序调用**，每个插件都走 `search → detail`；命中详情后只补它缺的资源，
  *    关键信息与启用资源齐全就**提前停止**，不再调用后面的插件（跨插件补全）；
  * 2. 下载哪些资源由 `download` 的五个开关决定；`keepXxx` 为真且目标已存在时跳过；
- * 3. `file.renameAfterSuccess` 为假时不重命名视频，附属文件（NFO / 封面 / 剧照）与视频同名，
- *    视频留在根目录；为真时按 `naming` 模板改名，附属文件再按 `naming.assetNaming` 决定命名；
- * 4. 成功后按 `file.moveAfterSuccess` + `path.successOutputDir` 移动整组文件；失败按失败目录；
- * 5. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断。
+ * 3. 改名 / 移动 / 写 NFO 的策略来自**所属资料库**（`renameEnabled` / `moveEnabled` /
+ *    `moveDirectory` / `writeNfo`）；为假时附属文件与视频同名，视频留在原地；
+ * 4. 图片落盘位置同样来自资料库：`media` = 视频同目录，`appdata` = `<appData>/media/images/<itemId>/`；
+ * 5. 成功后把元数据写回 `media_item`、图片写进 `media_image`；文件被改名 / 移动时就地更新
+ *    `media_source`（**保持 source id 不变**，墙面与协议地址都不受影响）；
+ * 6. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断。
  */
-import { dirnameRemotePath, FILE_ROOT, joinRemotePath, normalizeRemotePath } from '@common/types/file'
-import type { PluginAsset, PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
 import {
-  COVER_ASSET_KINDS,
-  EXTRA_ASSET_KINDS
-} from '@common/types/plugin'
+  basenameRemotePath,
+  dirnameRemotePath,
+  extnameOf,
+  FILE_ROOT,
+  guessMimeType,
+  joinRemotePath,
+  normalizeRemotePath
+} from '@common/types/file'
+import type { LibraryImageSaveMode } from '@common/types/library'
+import type { MediaImageType } from '@common/types/media'
+import type { PluginAsset, PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
+import { COVER_ASSET_KINDS, EXTRA_ASSET_KINDS } from '@common/types/plugin'
 import {
   ScrapeError,
   buildNfoXml,
@@ -37,10 +46,18 @@ import type {
   SettingPath,
   SettingScrape
 } from '@common/types/setting'
+import { replaceItemImages, type MediaImageDraft } from '$/db/repo/mediaImageRepo'
+import {
+  findSourceByPath,
+  updateItemMetadata,
+  updateSourcePath,
+  type MediaItemMetadataInput
+} from '$/db/repo/mediaRepo'
 import type { FileClient } from '$/modules/file/FileClient'
+import { APPDATA_CONNECTION_ID } from '$/modules/media/mediaAppData'
 import { invokePlugin } from '$/modules/plugin/pluginRegistry'
-import { resourceIdOf } from '$/modules/resource/resourceIndex'
 import { downloadAssetToTemp } from './scrapeAssets'
+import { writeAppDataAsset } from './scrapeLocalAsset'
 import type { ScrapeRunLog } from './scrapeLogFile'
 import { pickCandidate } from './scrapeMatcher'
 import { readAssets, readCandidates, readDetail } from './scrapePluginData'
@@ -60,11 +77,24 @@ export interface ScrapeSettingsSnapshot {
   path: SettingPath
 }
 
+/** 任务启动时冻结的资料库策略：改名 / 移动 / 写 NFO / 图片落盘都由它决定 */
+export interface ScrapeLibraryPolicy {
+  libraryId: string
+  imageSaveMode: LibraryImageSaveMode
+  writeNfo: boolean
+  renameEnabled: boolean
+  moveEnabled: boolean
+  moveDirectory: string
+}
+
 export interface ScrapeJobContext {
   taskId: string
   connectionId: string
+  policy: ScrapeLibraryPolicy
   dirPath: string
   entry: {
+    /** 媒体条目 ID：元数据与图片写回的目标 */
+    itemId: string
     path: string
     name: string
     keyword: string
@@ -77,15 +107,6 @@ export interface ScrapeJobContext {
   log: ScrapeRunLog
 }
 
-/** 本次刮削产出的封面（用于工作台列表直接显示） */
-export interface ScrapeCoverRef {
-  kind: PluginAssetKind
-  /** 封面在连接内的路径 */
-  path: string
-  /** 封面资源 ID（协议地址用它定位） */
-  id: string
-}
-
 export interface ScrapeJobOutcome {
   status: ScrapeFileStatus
   pluginId: string
@@ -94,11 +115,16 @@ export interface ScrapeJobOutcome {
   /**
    * 本次结束时文件在连接内的最终路径。
    *
-   * 未发生改名/移动时就是扫描时的原路径；影视墙靠它把磁盘上的视频与刮削记录对齐。
+   * 未发生改名/移动时就是扫描时的原路径；媒体源靠它就地更新。
    */
   finalPath: string
-  /** 本次成功产出的封面（按 poster > thumb > fanart 取第一张） */
-  cover?: ScrapeCoverRef
+}
+
+/** 插件资源 → 媒体图片类型；不在表里的（预告片等）只落盘不入库 */
+const IMAGE_KIND_TYPE: Partial<Record<PluginAssetKind, MediaImageType>> = {
+  poster: 'primary',
+  thumb: 'thumb',
+  fanart: 'backdrop'
 }
 
 /** 去掉扩展名 */
@@ -167,18 +193,6 @@ function collectAssets(
     bucket.push(asset)
     assets.set(asset.kind, bucket)
   }
-}
-
-/** 封面优先级即 `COVER_ASSET_KINDS` 的顺序：poster > thumb > fanart */
-function pickCover(
-  covers: ReadonlyMap<PluginAssetKind, string>,
-  connectionId: string
-): ScrapeCoverRef | undefined {
-  for (const kind of COVER_ASSET_KINDS) {
-    const path = covers.get(kind)
-    if (path) return { kind, path, id: resourceIdOf(connectionId, path) }
-  }
-  return undefined
 }
 
 /** 按顺序调用插件，尽可能补齐详情与资源 */
@@ -281,9 +295,60 @@ async function writeNfo(
   return written
 }
 
+/** 插件详情 → 条目元数据列；插件没有的字段一律写空，避免沿用上一次的旧值 */
+function metadataOf(detail: PluginMovieDetail, fallbackNum: string, pluginId: string): MediaItemMetadataInput {
+  const releaseDate = detail.releaseDate ?? ''
+  const year = Number.parseInt(releaseDate.slice(0, 4), 10)
+  return {
+    title: detail.title,
+    num: detail.num ?? fallbackNum,
+    originalTitle: detail.originalTitle ?? '',
+    overview: detail.plot ?? '',
+    tagline: '',
+    premiereDate: releaseDate,
+    productionYear: Number.isFinite(year) ? year : 0,
+    runtimeMinutes: detail.duration ?? 0,
+    officialRating: '',
+    communityRating: 0,
+    genres: [],
+    studios: detail.studio ? [detail.studio] : detail.maker ? [detail.maker] : [],
+    tags: detail.tags ?? [],
+    providerIds: pluginId.length > 0 ? { [pluginId]: detail.id } : {},
+    scraperId: pluginId,
+    scrapedAt: Date.now()
+  }
+}
+
+/** 文件被改名 / 移动后就地更新媒体源（source id 不变），读不到详情时至少把路径改对 */
+async function refreshSourcePath(context: ScrapeJobContext, targetPath: string): Promise<void> {
+  const source = findSourceByPath(context.connectionId, context.entry.path)
+  if (!source) return
+  const name = basenameRemotePath(targetPath)
+  try {
+    const info = await context.client.stat(targetPath)
+    updateSourcePath(source.id, {
+      path: targetPath,
+      name: info.name,
+      extname: info.extname,
+      mime: info.mime.length > 0 ? info.mime : guessMimeType(info.name),
+      size: info.size,
+      modifiedAt: info.modifiedAt
+    })
+  } catch {
+    updateSourcePath(source.id, {
+      path: targetPath,
+      name,
+      extname: extnameOf(name),
+      mime: guessMimeType(name),
+      size: source.size,
+      modifiedAt: source.modifiedAt
+    })
+  }
+}
+
 /** 执行单个文件的完整流水线 */
 export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOutcome> {
-  const { entry, settings, client } = context
+  const { entry, settings, client, policy } = context
   const enabled = enabledAssetKinds(settings.download)
   const originalBase = baseNameOf(entry.name)
   const extension = extensionOf(entry.name)
@@ -307,15 +372,15 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
   }
 
   const ruleBase = resolveVideoBase(detail, originalBase, settings.naming)
-  const assetBase = settings.file.renameAfterSuccess ? ruleBase : originalBase
-  const workDir = settings.file.moveAfterSuccess
-    ? resolveOutputDir(settings.path.successOutputDir, context.dirPath)
+  const assetBase = policy.renameEnabled ? ruleBase : originalBase
+  const workDir = policy.moveEnabled
+    ? resolveOutputDir(policy.moveDirectory, context.dirPath)
     : context.dirPath
   if (workDir !== context.dirPath) await client.mkdir(workDir, { recursive: true })
 
   let assetCount = 0
   let assetFailures = 0
-  const coverByKind = new Map<PluginAssetKind, string>()
+  const images: MediaImageDraft[] = []
   for (const kind of enabled) {
     const bucket = assets.get(kind) ?? []
     for (let index = 0; index < bucket.length; index += 1) {
@@ -323,17 +388,38 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
       if (!asset) continue
       const plan = resolveAssetFile(asset, index + 1, {
         videoBase: assetBase,
-        forceMovieStyle: !settings.file.renameAfterSuccess,
+        forceMovieStyle: !policy.renameEnabled,
         naming: settings.naming,
         fanartDirName: settings.path.fanartDirName
       })
-      const target = joinRemotePath(workDir, plan.relativePath)
+      const imageType = IMAGE_KIND_TYPE[kind]
       try {
+        if (imageType && policy.imageSaveMode === 'appdata') {
+          const stored = await writeAppDataAsset(entry.itemId, plan.relativePath, asset, context.signal)
+          assetCount += 1
+          images.push({
+            libraryId: policy.libraryId,
+            type: imageType,
+            connectionId: APPDATA_CONNECTION_ID,
+            path: stored,
+            width: 0,
+            height: 0
+          })
+          continue
+        }
+        const target = joinRemotePath(workDir, plan.relativePath)
         const stored = await writeAsset(context, target, asset, kind)
         if (stored) assetCount += 1
-        // keep 策略跳过时目标同样是一张可用封面，这里一并记下
-        if (COVER_ASSET_KINDS.includes(kind) && !coverByKind.has(kind)) {
-          coverByKind.set(kind, target)
+        // keep 策略跳过时目标同样是一张可用图片，这里一并入库
+        if (imageType) {
+          images.push({
+            libraryId: policy.libraryId,
+            type: imageType,
+            connectionId: context.connectionId,
+            path: target,
+            width: 0,
+            height: 0
+          })
         }
       } catch (error) {
         if (context.signal.aborted) throw new ScrapeError('cancelled')
@@ -344,10 +430,10 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
     }
   }
 
-  let nfoNamesWritten: string[] = []
-  if (settings.download.generateNfo) {
+  let writtenNfo: string[] = []
+  if (policy.writeNfo) {
     try {
-      nfoNamesWritten = await writeNfo(context, workDir, assetBase, detail)
+      writtenNfo = await writeNfo(context, workDir, assetBase, detail)
     } catch (error) {
       if (context.signal.aborted) throw new ScrapeError('cancelled')
       const message = error instanceof Error ? error.message : '未知错误'
@@ -355,7 +441,7 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
     }
   }
 
-  const finalName = settings.file.renameAfterSuccess ? `${ruleBase}${extension}` : entry.name
+  const finalName = policy.renameEnabled ? `${ruleBase}${extension}` : entry.name
   const targetPath = joinRemotePath(workDir, finalName)
   if (targetPath !== entry.path) {
     try {
@@ -364,22 +450,24 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
       const message = error instanceof Error ? error.message : '未知错误'
       throw new ScrapeError('moveFailed', `移动文件失败：${message}`)
     }
+    await refreshSourcePath(context, targetPath)
   }
 
+  // 元数据与图片写回媒体库：图片可能落在工作目录，替换后墙面立即用新图
+  updateItemMetadata(entry.itemId, metadataOf(detail, entry.num, pluginId))
+  replaceItemImages(entry.itemId, images)
+
   const parts = [`插件 ${pluginId}`, `${assetCount} 个资源`]
-  if (nfoNamesWritten.length > 0) parts.push(`NFO ${nfoNamesWritten.join('、')}`)
+  if (writtenNfo.length > 0) parts.push(`NFO ${writtenNfo.join('、')}`)
   if (assetFailures > 0) parts.push(`${assetFailures} 个资源失败`)
   if (targetPath !== entry.path) parts.push(`→ ${targetPath}`)
-
-  const cover = pickCover(coverByKind, context.connectionId)
 
   return {
     status: 'success',
     pluginId,
     title: detail.title,
     message: parts.join('，'),
-    finalPath: targetPath,
-    ...(cover ? { cover } : {})
+    finalPath: targetPath
   }
 }
 

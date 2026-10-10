@@ -8,6 +8,18 @@ const { setting } = storeToRefs(useSettingScrapeStore())
 <template>
   <t-list class="setting-list" split size="small">
     <t-list-item>
+      <t-list-item-meta
+        title="扫描后自动刮削"
+        description="资料库扫描完成后，自动为尚未刮削的影片排队刮削"
+      />
+      <template #action>
+        <div class="setting-field">
+          <t-switch v-model="setting.autoScrapeAfterScan" />
+        </div>
+      </template>
+    </t-list-item>
+
+    <t-list-item>
       <t-list-item-meta title="并发线程数" description="同时进行的刮削任务数量" />
       <template #action>
         <div class="setting-field">

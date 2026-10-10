@@ -5,6 +5,7 @@ import PageLayout from '@/components/PageLayout/PageLayout.vue'
 import SettingAppPanel from './components/SettingAppPanel.vue'
 import SettingDownloadPanel from './components/SettingDownloadPanel.vue'
 import SettingFilePanel from './components/SettingFilePanel.vue'
+import SettingLibraryPanel from './components/SettingLibraryPanel.vue'
 import SettingNamingPanel from './components/SettingNamingPanel.vue'
 import SettingNetworkPanel from './components/SettingNetworkPanel.vue'
 import SettingPathPanel from './components/SettingPathPanel.vue'
@@ -27,6 +28,9 @@ const active = ref(typeof route.query.group === 'string' ? route.query.group : '
       </t-tab-panel>
       <t-tab-panel value="path" label="目录与路径">
         <setting-path-panel />
+      </t-tab-panel>
+      <t-tab-panel value="library" label="资料库">
+        <setting-library-panel />
       </t-tab-panel>
       <t-tab-panel value="scrape" label="刮削设置">
         <setting-scrape-panel />

@@ -46,6 +46,17 @@ export function dirnameRemotePath(path: string): string {
   return index <= 0 ? FILE_ROOT : normalized.slice(0, index)
 }
 
+/**
+ * `path` 是否位于 `dir` 之下（含 `dir` 自身）。
+ * `dir` 为连接根时恒为 true；用于「跳过某目录时不要清理其下数据」这类前缀判断。
+ */
+export function isRemotePathInside(dir: string, path: string): boolean {
+  const base = normalizeRemotePath(dir)
+  const target = normalizeRemotePath(path)
+  if (base === FILE_ROOT) return true
+  return target === base || target.startsWith(`${base}/`)
+}
+
 /** 小写扩展名，不含点；无扩展名或点开头（.gitignore）返回空串 */
 export function extnameOf(name: string): string {
   const index = name.lastIndexOf('.')

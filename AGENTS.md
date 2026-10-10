@@ -12,6 +12,7 @@
 | RL‑06 | 文档同步：功能实现后，必须将技术文档写入或更新 `docs/` 目录，供后续 AI 参考    |
 | RL-07 | 不需要 build，只需要 typecheck，禁止做任何验证/测试，如需验证/测试，请让我来做 |
 | RL-08 | 未经我的允许，禁止读取 node_modules 目录下文件                                 |
+| RL-09 | 页面目录分层：禁止在页面目录下平铺多个页面文件，每个页面独占子目录（详见「页面目录组织」） |
 
 ---
 
@@ -85,7 +86,15 @@
 - 通用组件：才可放入 `src/components/`
 - 禁止将业务组件直接放入 `src/components`
 
-6. **单文件组件（SFC）块顺序**
+6. **页面目录组织**
+
+- 禁止在一个页面目录下平铺多个页面文件：每个页面（含子页面）独占一个子目录，页面 `.vue`、该页私有的 `components/` 与 `composables/` 都放进这个子目录
+- 子目录用页面语义命名（如 `home` / `wall` / `detail`），页面组件名保持 `XxxPage.vue`
+- 跨页面共用的页内组件与组合式，放进「最近的共用层级」新建的独立子目录，禁止复制多份；同一页面目录内多个页面共用时，放该页面目录下的 `components/` / `composables/`
+- 示例（影视墙）：`pages/media/{components,home,wall,detail,library}/`——`home/MediaHomePage.vue` + `home/components/` + `home/composables/`；`wall/MediaWallPage.vue` + `wall/composables/`；`detail/MediaDetailPage.vue`；`components/` 放 home 与 wall 共用的影片卡片；`library/` 放共用的资料库管理（抽屉 / 表单 / 远程目录选择器）
+- 从本规则加入之日起，新写或重写的页面目录必须遵守；存量目录不强制回改
+
+7. **单文件组件（SFC）块顺序**
 
 - `.vue` 文件一律按 `template` → `script` → `style` 排列，`template` 在最上面
 - 从本规则加入之日起，新写或重写的组件必须遵守；存量文件不强制回改
@@ -101,12 +110,32 @@ src/
 ├── api/
 │   └── user.ts
 ├── pages/
-│   └── dashboard/
-│       ├── index.vue
-│       ├── components/
-│       │   └── StatCard.vue
-│       └── modals/
-│           └── FilterDrawer.tsx
+│   ├── dashboard/
+│   │   ├── index.vue
+│   │   ├── components/
+│   │   │   └── StatCard.vue
+│   │   └── modals/
+│   │       └── FilterDrawer.tsx
+│   └── media/                  # 一个页面目录下按页面分层，禁止平铺页面文件
+│       ├── components/         # 该页面目录内多个页面共用的页内组件
+│       │   └── MediaWallCard.vue
+│       ├── home/
+│       │   ├── MediaHomePage.vue
+│       │   ├── components/
+│       │   │   └── LibraryCard.vue
+│       │   └── composables/
+│       │       └── useMediaHome.ts
+│       ├── wall/
+│       │   ├── MediaWallPage.vue
+│       │   └── composables/
+│       │       └── useMediaWall.ts
+│       ├── detail/
+│       │   └── MediaDetailPage.vue
+│       └── library/            # home 与 wall 共用的资料库管理
+│           ├── components/
+│           │   └── LibraryFormContent.vue
+│           └── composables/
+│               └── useMediaLibraries.ts
 ├── components/
 │   └── BaseTable.vue
 ```
@@ -126,4 +155,5 @@ src/
 | `FilterModal.vue` 作为弹窗                | 违反约定，弹窗外壳必须用 `.tsx`（`DialogPlugin` 命令式）    |
 | 弹窗内容直接写在 `.tsx` 内                | 违反约定，弹窗内容必须用 `.vue` 组件（`XxxContent.vue`）    |
 | `<t-dialog :visible>` + `v-if` 声明式弹窗 | 违反约定，应使用 `DialogPlugin` / `DrawerPlugin` 命令式 API |
-| 单文件超过 300 行未拆分                   | 违反 RL‑06                                                  |
+| 单文件超过 300 行未拆分                   | 违反 RL-06                                                  |
+| `pages/media/` 下平铺 `MediaWallPage.vue`、`MediaHomePage.vue` | 违反 RL-09，页面必须各占一个子目录（`media/{home,wall,detail,library}/`） |

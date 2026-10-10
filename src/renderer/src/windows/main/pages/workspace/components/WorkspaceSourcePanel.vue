@@ -1,116 +1,142 @@
+<template>
+  <t-card title="刮削范围" class="source-panel">
+    <div class="panel-body">
+      <t-select
+        :model-value="libraryId"
+        :options="libraryOptions"
+        :loading="loading"
+        :disabled="locking"
+        placeholder="选择资料库"
+        @change="onLibraryChange"
+      />
+
+      <div v-if="library" class="library-note">
+        <t-tag size="small" variant="outline">{{ library.paths.length }} 个目录</t-tag>
+        <t-tag v-if="library.scrapers.length === 0" size="small" variant="outline">不刮削</t-tag>
+      </div>
+      <p v-else class="panel-note">还没有资料库，请先到影视墙的「资料库」里新建</p>
+
+      <div class="browse-head">
+        <span class="browse-label">浏览目录</span>
+        <t-button
+          size="small"
+          variant="text"
+          :disabled="!canGoUp || locking"
+          @click="emit('navigate', parentPath)"
+        >
+          上一级
+        </t-button>
+      </div>
+
+      <t-breadcrumb class="browse-crumbs">
+        <t-breadcrumb-item v-for="(crumb, index) in crumbs" :key="crumb.path">
+          <t-button
+            v-if="index < crumbs.length - 1"
+            size="small"
+            variant="text"
+            :disabled="locking"
+            @click="emit('navigate', crumb.path)"
+          >
+            {{ crumb.label }}
+          </t-button>
+          <span v-else class="crumb-current">{{ crumb.label }}</span>
+        </t-breadcrumb-item>
+      </t-breadcrumb>
+
+      <p class="panel-note">当前目录：{{ dirPath }}</p>
+      <p class="panel-note">已勾选 {{ selectedCount }} 个影片</p>
+    </div>
+  </t-card>
+</template>
 <script setup lang="ts">
+/**
+ * 工作台左栏：选资料库 + 面包屑导航。
+ *
+ * 契约：
+ * - 只负责选库与发导航意图，真正的 `scrape:browse` 调用在 `useWorkspaceScrape`；
+ * - 路径一律是连接内绝对路径（`/` 表示库根），不展示本机路径。
+ */
 import { computed } from 'vue'
-import type { FileConnection } from '@common/types/file'
-import DirectoryPickerField from '@/components/DirectoryPickerField.vue'
-import { toDisplayDir, toRemoteDir } from '../workspaceUtils'
+import { FILE_ROOT } from '@common/types/file'
+import type { MediaLibrary } from '@common/types/library'
+import type { WorkspaceCrumb } from '../composables/useWorkspaceScrape'
 
 const props = defineProps<{
-  connections: FileConnection[]
-  activeId: string
-  connection: FileConnection | null
+  libraries: MediaLibrary[]
+  libraryId: string
+  library: MediaLibrary | null
   dirPath: string
-  scanning: boolean
-  /** 任务运行中：数据源与目录都锁定，避免跑到一半换目标 */
+  crumbs: WorkspaceCrumb[]
+  loading: boolean
+  /** 有任务在跑时锁定切换 */
   locking: boolean
+  selectedCount: number
 }>()
 
 const emit = defineEmits<{
-  'update:activeId': [value: string]
-  'update:dirPath': [value: string]
-  scan: []
+  'update:libraryId': [id: string]
+  navigate: [path: string]
 }>()
 
-const options = computed(() =>
-  props.connections.map((connection) => ({ label: connection.name, value: connection.id }))
+const libraryOptions = computed(() =>
+  props.libraries.map((item) => ({ value: item.id, label: item.name }))
 )
 
-const isLocal = computed(() => props.connection?.protocol === 'local')
+const canGoUp = computed(() => props.dirPath !== FILE_ROOT)
+const parentPath = computed(() => {
+  const index = props.dirPath.lastIndexOf('/')
+  return index <= 0 ? FILE_ROOT : props.dirPath.slice(0, index)
+})
 
-/** 本地数据源展示本机绝对路径，其余直接展示连接内路径 */
-const dirText = computed(() => toDisplayDir(props.connection, props.dirPath))
-
-function onSelect(value: unknown): void {
-  emit('update:activeId', String(value))
-}
-
-function onDirInput(value: unknown): void {
-  const text = String(value)
-  emit('update:dirPath', isLocal.value ? toRemoteDir(props.connection, text) : text)
+function onLibraryChange(value: unknown): void {
+  if (typeof value === 'string') emit('update:libraryId', value)
 }
 </script>
-
-<template>
-  <t-card :bordered="false" title="数据源" class="source-panel">
-    <div class="source-field">
-      <div class="field-label">存储</div>
-      <t-select
-        :value="activeId || undefined"
-        :options="options"
-        :disabled="locking"
-        placeholder="请选择存储"
-        @change="onSelect"
-      />
-      <div v-if="connection?.nsfw" class="field-hint">
-        <t-tag size="small" theme="danger" variant="light-outline">NSFW</t-tag>
-        该存储已标记为敏感内容
-      </div>
-    </div>
-
-    <div class="source-field">
-      <div class="field-label">根目录（只刮削该目录下的文件）</div>
-      <directory-picker-field
-        v-if="isLocal"
-        :model-value="dirText"
-        title="选择刮削根目录"
-        placeholder="本机目录绝对路径"
-        @update:model-value="onDirInput"
-      />
-      <t-input
-        v-else
-        :value="dirText"
-        placeholder="连接内路径，例如 /movies"
-        @change="onDirInput"
-      />
-      <div class="field-hint">连接内路径：{{ dirPath }}</div>
-    </div>
-
-    <t-button
-      block
-      theme="default"
-      variant="outline"
-      :loading="scanning"
-      :disabled="locking || !connection"
-      @click="emit('scan')"
-    >
-      扫描根目录
-    </t-button>
-  </t-card>
-</template>
-
 <style scoped lang="less">
 .source-panel {
   width: 320px;
   flex-shrink: 0;
-  border-radius: var(--td-radius-large);
 }
 
-.source-field {
-  margin-bottom: 16px;
+.panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.field-label {
-  margin-bottom: 8px;
-  color: var(--td-text-color-secondary);
-  font-size: 13px;
-}
-
-.field-hint {
-  margin-top: 6px;
+.library-note {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--td-text-color-placeholder);
+  flex-wrap: wrap;
+}
+
+.panel-note {
+  margin: 0;
   font-size: 12px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
   word-break: break-all;
+}
+
+.browse-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 4px;
+}
+
+.browse-label {
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+}
+
+.browse-crumbs {
+  flex-wrap: wrap;
+}
+
+.crumb-current {
+  font-size: 13px;
+  color: var(--td-text-color-primary);
 }
 </style>

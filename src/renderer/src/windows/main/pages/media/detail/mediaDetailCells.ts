@@ -5,7 +5,7 @@
  * 字段口径与 NFO 写入侧保持一致，避免同名字段两边解释不同。
  */
 import type { MediaDetailResult, MediaWallItem } from '@common/types/media'
-import { formatDuration, formatSize, formatTime } from '../mediaUtils'
+import { formatDuration, formatSize, formatTime } from '@/utils/format'
 
 /** 一格键值；`wide` 表示长文本占满整行 */
 export interface DetailCell {

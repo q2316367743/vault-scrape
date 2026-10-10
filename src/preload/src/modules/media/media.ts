@@ -2,7 +2,9 @@ import { ipcRenderer } from 'electron'
 import type {
   MediaDetailRequest,
   MediaDetailResult,
+  MediaHomeResult,
   MediaResult,
+  MediaWallRequest,
   MediaWallResult
 } from '@common/types/media'
 import { MediaChannels } from './mediaChannels'
@@ -14,8 +16,12 @@ import { MediaChannels } from './mediaChannels'
  * （contextBridge 传递自定义错误的附加属性并不可靠，code 会丢失）。
  */
 export const mediaApi = {
-  /** 拉取整面墙 */
-  wall: (): Promise<MediaResult<MediaWallResult>> => ipcRenderer.invoke(MediaChannels.wall),
+  /** 拉取整面墙；不传请求时等价于「全部资料库」 */
+  wall: (request: MediaWallRequest = { libraryId: '' }): Promise<MediaResult<MediaWallResult>> =>
+    ipcRenderer.invoke(MediaChannels.wall, request),
+
+  /** 拉取首页读模型（库摘要 + 最近添加 / 待刮削 / 全部影片三排） */
+  home: (): Promise<MediaResult<MediaHomeResult>> => ipcRenderer.invoke(MediaChannels.home),
 
   /** 拉取单个视频的详情与 NFO 元信息 */
   detail: (request: MediaDetailRequest): Promise<MediaResult<MediaDetailResult>> =>

@@ -4,7 +4,7 @@
  * 契约（沿用 scrape / plugin 域的写法）：
  * 1. 模块内部抛 `MediaError`，**只有 IPC 边界**把错误转成 `MediaResult` 信封；
  * 2. 入参一律按 unknown 从渲染层收窄，缺字段抛 `invalidArgument`；
- * 3. 只读：影视墙不落盘、不触发刮削，也不改资源索引。
+ * 3. 只读：影视墙与首页都不落盘、不触发刮削，也不改资源索引。
  */
 import { ipcMain } from 'electron'
 import {
@@ -14,12 +14,14 @@ import {
   mediaOk,
   type MediaDetailRequest,
   type MediaDetailResult,
+  type MediaHomeResult,
   type MediaResult,
+  type MediaWallRequest,
   type MediaWallResult
 } from '@common/types/media'
-import { toSource } from '@common/types/setting/shared'
+import { readString, toSource } from '@common/types/setting/shared'
 import { MediaChannels } from '~/modules/media/mediaChannels'
-import { loadMediaDetail, loadMediaWall } from './mediaWall'
+import { loadMediaDetail, loadMediaHome, loadMediaWall } from './mediaWall'
 
 function handle<T>(task: () => Promise<T> | T): Promise<MediaResult<T>> {
   return Promise.resolve()
@@ -35,22 +37,24 @@ function payloadOf(payload: unknown): Record<string, unknown> {
   return toSource(payload) ?? {}
 }
 
-/** 详情入参：连接 ID 与视频路径都必须是非空字符串 */
+/** 详情入参：媒体条目 ID 必须是非空字符串 */
 function readDetailRequest(payload: unknown): MediaDetailRequest {
-  const source = payloadOf(payload)
-  const connectionId = source.connectionId
-  const path = source.path
-  if (typeof connectionId !== 'string' || connectionId.trim().length === 0) {
-    throw new MediaError('invalidArgument', '缺少数据源')
-  }
-  if (typeof path !== 'string' || path.trim().length === 0) {
-    throw new MediaError('invalidArgument', '缺少视频路径')
-  }
-  return { connectionId, path }
+  const itemId = readString(payloadOf(payload), 'itemId', '').trim()
+  if (itemId.length === 0) throw new MediaError('invalidArgument', '缺少媒体条目 ID')
+  return { itemId }
+}
+
+/** 墙面入参：`libraryId` 缺省 / 非字符串都当空串（= 全部资料库） */
+function readWallRequest(payload: unknown): MediaWallRequest {
+  return { libraryId: readString(payloadOf(payload), 'libraryId', '').trim() }
 }
 
 export function registerMediaIpc(): void {
-  ipcMain.handle(MediaChannels.wall, () => handle<MediaWallResult>(() => loadMediaWall()))
+  ipcMain.handle(MediaChannels.wall, (_event, payload: unknown) =>
+    handle<MediaWallResult>(() => loadMediaWall(readWallRequest(payload)))
+  )
+  // 首页三排与墙面同源，同样只读
+  ipcMain.handle(MediaChannels.home, () => handle<MediaHomeResult>(() => loadMediaHome()))
   ipcMain.handle(MediaChannels.detail, (_event, payload: unknown) =>
     handle<MediaDetailResult>(() => loadMediaDetail(readDetailRequest(payload)))
   )

@@ -25,9 +25,9 @@
  * 契约：props 与 `PageLayout` 一致；返回语义就是 `router.back()`，不认目标路由，
  * 因此子页面不需要自己写返回逻辑，也不要在 `#extra` 里再放返回按钮。
  */
-import { useRouter } from 'vue-router'
 import { ChevronLeftIcon } from 'tdesign-icons-vue-next'
 import PageLayout from './PageLayout.vue'
+import { useSafeBack } from '@/composables'
 
 withDefaults(
   defineProps<{
@@ -41,11 +41,7 @@ withDefaults(
   { padded: true }
 )
 
-const router = useRouter()
-
-function goBack(): void {
-  router.back()
-}
+const goBack = useSafeBack()
 </script>
 
 <style scoped lang="less">

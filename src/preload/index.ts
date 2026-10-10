@@ -4,6 +4,7 @@ import { appWindowApi } from '~/modules/appWindow/appWindow'
 import { dbApi } from '~/modules/db/db'
 import { dialogApi } from '~/modules/dialog/dialog'
 import { fileApi } from '~/modules/file/file'
+import { libraryApi } from '~/modules/library/library'
 import { mediaApi } from '~/modules/media/media'
 import { offlineApi } from '~/modules/offline/offline'
 import { pluginApi } from '~/modules/plugin/plugin'
@@ -16,6 +17,7 @@ const preload = {
   db: dbApi,
   dialog: dialogApi,
   file: fileApi,
+  library: libraryApi,
   media: mediaApi,
   offline: offlineApi,
   plugin: pluginApi,

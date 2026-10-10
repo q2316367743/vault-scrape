@@ -1,30 +1,35 @@
 <script setup lang="ts">
 /**
- * 工作台：选存储 → 扫描根目录 → 启动刮削。
+ * 工作台：手动刮削入口。
  *
  * 契约：
- * - 页面不自己拼业务规则，扫描 / 启动 / 取消 / 继续都交给 `useWorkspaceScrape`；
- * - 任务进度存在主进程，本页只订阅快照，因此切换 tab、关闭窗口再回来进度不变；
- * - 任务运行中锁定数据源与目录，避免中途换目标。
+ * - 流程固定为「选资料库 → 逐级浏览 → 勾选影片 → 排队刮削」，
+ *   目录内容来自 `scrape:browse`，因此与影视墙、扫描结果同源；
+ * - 这里不再扫盘、不再自己找索引：影视墙的「扫描」才是入库入口；
+ * - 任务进度存在主进程，本页只订阅快照，切换 tab / 关窗口再回来进度不变。
  */
-import { computed, onMounted } from 'vue'
+import { computed } from 'vue'
+import { FILE_ROOT } from '@common/types/file'
 import PageLayout from '@/components/PageLayout/PageLayout.vue'
-import { useFileConnections } from '@/hooks/UseFileConnections'
-import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { useWorkspaceScrape } from './composables/useWorkspaceScrape'
 import WorkspaceFileTable from './components/WorkspaceFileTable.vue'
 import WorkspaceSourcePanel from './components/WorkspaceSourcePanel.vue'
 import WorkspaceTaskPanel from './components/WorkspaceTaskPanel.vue'
 
-const { connections, activeId, activeConnection, refresh, select } = useFileConnections()
 const {
+  libraries,
+  libraryId,
+  library,
+  loadingLibraries,
   dirPath,
-  task,
+  entries,
+  browsing,
   selected,
-  scanning,
+  selectedCount,
+  crumbs,
+  task,
   submitting,
   running,
-  rows,
   total,
   finished,
   failed,
@@ -32,45 +37,46 @@ const {
   canStart,
   canCancel,
   canResume,
+  selectLibrary,
+  goto,
+  enter,
+  refresh,
+  toggleOne,
   toggleAll,
-  scan,
   start,
   cancel,
   resume
-} = useWorkspaceScrape(activeConnection)
-const { active: nsfwActive } = useNsfwProtection(activeConnection)
+} = useWorkspaceScrape()
 
-const loading = computed(() => scanning.value || submitting.value)
-
-/** 显式赋值方法：避免在模板里对 ref 直接赋值 */
-function onDirPath(value: string): void {
-  dirPath.value = value
-}
-
-function onSelected(value: string[]): void {
-  selected.value = value
-}
-
-onMounted(() => void refresh())
+/** 空表文案按「没选库 / 库里没影片 / 目录是空的」分级 */
+const emptyText = computed(() => {
+  if (!library.value) return '还没有资料库，请先到影视墙的「资料库」里新建并扫描'
+  if (browsing.value) return '正在读取目录…'
+  if (entries.value.length === 0 && dirPath.value === FILE_ROOT) {
+    return '这个资料库里还没有影片，先到「资料库」点「扫描」'
+  }
+  return '这个目录下没有影片或子目录'
+})
 </script>
 
 <template>
-  <page-layout title="工作台" description="选择存储与根目录，按插件顺序刮削视频" :padded="false">
+  <page-layout title="工作台" description="手动挑片刮削：选资料库，逐级浏览后勾选影片排队" :padded="false">
     <template #extra>
-      <t-tag v-if="nsfwActive" theme="danger" variant="light-outline">NSFW 保护已生效</t-tag>
+      <t-tag v-if="running" theme="warning" variant="light-outline">刮削进行中</t-tag>
     </template>
 
     <div class="workspace-page">
       <workspace-source-panel
-        :connections="connections"
-        :active-id="activeId"
-        :connection="activeConnection"
+        :libraries="libraries"
+        :library-id="libraryId"
+        :library="library"
         :dir-path="dirPath"
-        :scanning="scanning"
+        :crumbs="crumbs"
+        :loading="loadingLibraries || browsing"
         :locking="running"
-        @update:active-id="select"
-        @update:dir-path="onDirPath"
-        @scan="scan"
+        :selected-count="selectedCount"
+        @update:library-id="selectLibrary"
+        @navigate="goto"
       />
 
       <div class="workspace-main">
@@ -92,12 +98,14 @@ onMounted(() => void refresh())
         />
 
         <workspace-file-table
-          :rows="rows"
+          :rows="entries"
           :selected="selected"
-          :loading="loading"
-          :protect="nsfwActive"
-          @update:selected="onSelected"
-          @update:all="toggleAll"
+          :loading="browsing"
+          :empty-text="emptyText"
+          @enter="enter"
+          @toggle="toggleOne"
+          @toggle-all="toggleAll"
+          @refresh="refresh"
         />
       </div>
     </div>

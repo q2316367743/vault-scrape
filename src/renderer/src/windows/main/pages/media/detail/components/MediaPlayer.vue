@@ -6,7 +6,8 @@
  * - `url` 变化（换片 / 重新读取）时销毁重建，避免上一部影片的缓冲与错误残留；
  * - 主题色从 tdesign token 读（`--td-brand-color`），不写死品牌色；
  * - NSFW 保护未解除时盖一层不透明遮罩并挡住播放器交互，点击后解除并起播；
- * - 封装 / 编码放不了时只弹 artplayer 自带提示，不抛异常（本版本不做转码）。
+ * - 封装 / 编码放不了或文件读不出来时，不是留一块黑屏：在播放器位置盖一层
+ *   「该影片的封面（快照）+ 说明文案」，本版本不做转码；
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
@@ -27,6 +28,8 @@ const props = withDefaults(
 const container = ref<HTMLDivElement | null>(null)
 /** 保护未解除时盖遮罩；进入页面时若无需保护则直接可见 */
 const revealed = ref(!props.protect)
+/** 播放器报错（文件不在 / 编码放不了）时改显示封面兜底层 */
+const failed = ref(false)
 let art: Artplayer | null = null
 
 /** 主题色跟随 tdesign 品牌色；读不到时回落到 tdesign 默认蓝 */
@@ -42,6 +45,7 @@ function destroy(): void {
 
 function create(): void {
   destroy()
+  failed.value = false
   const el = container.value
   if (!el) return
   const player = new Artplayer({
@@ -65,7 +69,7 @@ function create(): void {
     miniProgressBar: true
   })
   player.on('video:error', () => {
-    player.notice.show = '这个视频的封装或编码放不了，建议用本机播放器打开'
+    failed.value = true
   })
   art = player
 }
@@ -84,6 +88,12 @@ watch(() => props.url, create)
 <template>
   <div class="media-player">
     <div ref="container" class="player-container"></div>
+    <div v-if="failed" class="player-fallback">
+      <t-image v-if="revealed && poster" class="player-fallback-cover" :src="poster" fit="contain" alt="影片封面" />
+      <p class="player-fallback-text">
+        视频读不出来：文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录。
+      </p>
+    </div>
     <div v-if="!revealed" class="player-guard">
       <t-button theme="primary" variant="outline" @click="reveal">内容已隐藏，点击播放</t-button>
     </div>
@@ -114,5 +124,32 @@ watch(() => props.url, create)
   align-items: center;
   justify-content: center;
   background-color: var(--td-bg-color-container);
+}
+
+/* 播放失败兜底层：铺满播放器位置显示封面，压一层说明文案 */
+.player-fallback {
+  position: absolute;
+  inset: 0;
+  background-color: var(--td-bg-color-container);
+}
+
+.player-fallback-cover {
+  width: 100%;
+  height: 100%;
+}
+
+.player-fallback-text {
+  position: absolute;
+  bottom: var(--td-comp-margin-l);
+  left: 50%;
+  max-width: 80%;
+  margin: 0;
+  padding: var(--td-comp-paddingTB-xs) var(--td-comp-paddingLR-s);
+  transform: translateX(-50%);
+  border-radius: var(--td-radius-default);
+  background-color: var(--td-mask-active);
+  color: var(--td-text-color-anti);
+  font: var(--td-font-body-small);
+  text-align: center;
 }
 </style>

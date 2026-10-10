@@ -49,6 +49,7 @@ declare module 'vue' {
     TTabPanel: typeof import('tdesign-vue-next')['TabPanel']
     TTabs: typeof import('tdesign-vue-next')['Tabs']
     TTag: typeof import('tdesign-vue-next')['Tag']
+    TTagInput: typeof import('tdesign-vue-next')['TagInput']
     TTextarea: typeof import('tdesign-vue-next')['Textarea']
     TTooltip: typeof import('tdesign-vue-next')['Tooltip']
   }
@@ -93,6 +94,7 @@ declare global {
   const TTabPanel: typeof import('tdesign-vue-next')['TabPanel']
   const TTabs: typeof import('tdesign-vue-next')['Tabs']
   const TTag: typeof import('tdesign-vue-next')['Tag']
+  const TTagInput: typeof import('tdesign-vue-next')['TagInput']
   const TTextarea: typeof import('tdesign-vue-next')['Textarea']
   const TTooltip: typeof import('tdesign-vue-next')['Tooltip']
 }

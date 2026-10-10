@@ -6,6 +6,7 @@
  * 2. 与 JS 插件共用同一套调用入口 `pluginRegistry.invokePlugin`，因此同样支持启停与测试面板；
  * 3. 数据缺失、库损坏等一律由实现体抛 `PluginError`（如 `offlineMissing`）。
  */
+import { R18_OFFLINE_PLUGIN_ID } from '@common/types/plugin'
 import type {
   PluginEnvField,
   PluginInvokeData,
@@ -25,8 +26,8 @@ export interface BuiltinPlugin {
   invoke: (method: PluginMethod, argument: string) => Promise<PluginInvokeData>
 }
 
-/** 内置插件 ID，同时也是「离线数据包」面板的挂载依据 */
-export const R18_OFFLINE_PLUGIN_ID = 'r18-offline'
+/** 内置插件 ID 由公共层定义（渲染层也要用），这里只做再导出，全仓库不留第二份字面量 */
+export { R18_OFFLINE_PLUGIN_ID }
 
 /**
  * r18.dev 离线数据包：本机全量番号库，作为在线刮削的保底数据源。

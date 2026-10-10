@@ -4,8 +4,8 @@
  *
  * 契约：
  * - 封面只走 `item.coverUrl`（`storage://` 协议），没有封面时显示占位，不自己拼路径；
- * - NSFW 保护按「全局开关 + 本条记录所属存储的 nsfw 标记」判定，连接由父页面传进来；
- * - 点击整张卡片跳详情页（参数走 query），播放与更细的信息都在那边；
+ * - NSFW 保护按「全局开关 + 存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
+ * - 点击整张卡片跳详情页，参数只带 `itemId`（影片身份），播放与更细的信息都在那边；
  *   卡片内其它可点击元素（如遮罩按钮）必须自己阻止冒泡。
  */
 import { computed } from 'vue'
@@ -15,23 +15,23 @@ import SensitiveImage from '@/components/SensitiveImage.vue'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import type { FileConnection } from '@common/types/file'
 import type { MediaWallItem } from '@common/types/media'
-import { formatSize, formatTime } from '../mediaUtils'
+import { formatSize, formatTime } from '@/utils/format'
 
 const props = defineProps<{
   item: MediaWallItem
   /** 本条记录所属的存储；连接列表还没加载完时可能为 null */
   connection: FileConnection | null
-  /** 数据源名称，仅用于角标 */
-  sourceName: string
 }>()
 
 const router = useRouter()
 const { active } = useNsfwProtection(computed(() => props.connection))
+/** 全局开关 + 存储标记命中，或所属资料库自己要求按敏感内容处理 */
+const protect = computed(() => active.value || props.item.nsfwProtected)
 
 function openDetail(): void {
   void router.push({
     name: '影视墙详情',
-    query: { connectionId: props.item.connectionId, path: props.item.path }
+    query: { itemId: props.item.itemId }
   })
 }
 </script>
@@ -42,7 +42,7 @@ function openDetail(): void {
       <sensitive-image
         v-if="item.coverUrl"
         :src="item.coverUrl"
-        :protect="active"
+        :protect="protect"
         alt="影片封面"
         fit="cover"
       />
@@ -68,7 +68,9 @@ function openDetail(): void {
         <t-tag v-if="item.num" size="small" theme="primary" variant="light-outline">
           <template #icon><tag-icon /></template>{{ item.num }}
         </t-tag>
-        <t-tag size="small" variant="outline">{{ sourceName || '未知数据源' }}</t-tag>
+        <t-tag size="small" variant="outline">
+          {{ item.libraryName }}
+        </t-tag>
       </div>
       <div class="card-foot">
         <span>{{ formatSize(item.size) }}</span>

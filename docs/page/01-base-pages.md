@@ -2,7 +2,7 @@
 
 ## 实现思路
 
-八个基础页面（概览 / 工作台 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、干活、调试、配置、查日志、看版本、管插件」这些事，另有[存储管理页面](./02-storage-page.md)承载文件模块的界面、[影视墙页面](./04-media-wall-page.md)承载刮削成果的浏览。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC，插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），工作台接了刮削模块 IPC（扫描根目录 / 启动 / 取消 / 继续 / 进度推送），影视墙接了媒体模块 IPC（整墙取数 / 影片详情与 NFO 解析）。
+八个基础页面（概览 / 工作台 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、干活、调试、配置、查日志、看版本、管插件」这些事，另有[存储管理页面](./02-storage-page.md)承载文件模块的界面、[影视墙页面](./04-media-wall-page.md)承载刮削成果的浏览。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC，插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），工作台接了刮削模块 IPC（选资料库 → 逐级浏览 → 启动 / 取消 / 继续 / 进度推送，不再自己扫盘），影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 资料库增删改与扫描）。
 
 页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
@@ -14,7 +14,9 @@
 | --- | --- | --- |
 | `/` | 重定向到 `/overview` | — |
 | `/overview` | `pages/overview/OverviewPage.vue` | 概览 |
-| `/media` | `pages/media/MediaWallPage.vue` | 影视墙 |
+| `/media` | `pages/media/home/MediaHomePage.vue` | 影视墙 |
+| `/media/library` | `pages/media/wall/MediaWallPage.vue` | 影视墙资料库 |
+| `/media/detail` | `pages/media/detail/MediaDetailPage.vue` | 影视墙详情 |
 | `/workspace` | `pages/workspace/WorkspacePage.vue` | 工作台 |
 | `/storage` | `pages/storage/StoragePage.vue` | 存储 |
 | `/plugin` | `pages/plugin/PluginPage.vue` | 插件 |
@@ -34,11 +36,11 @@
 
 ## 影视墙
 
-侧栏「概览」下方的第二个一级入口（`/media`）。墙面**以磁盘上的视频为准**（资源索引里 `kind = 'video'` 的行），刮削记录只用来补标题与封面，未刮削的视频也会以文件名占位显示；所有数据源聚合成一堵墙，卡片带来源角标，顶部提供搜索、数据源筛选与排序，点击卡片打开命令式详情抽屉（读同目录 NFO 补全元信息）。图片位统一走 `SensitiveImage`，NSFW 判定口径同工作台。详见[影视墙页面](./04-media-wall-page.md)。
+侧栏「概览」下方的第二个一级入口（`/media` 首页 + `/media/library` 内容页 + `/media/detail` 详情页）。首页上半是资料库横排，下半是**最近添加 / 待刮削 / 推荐**三排（整排为空则不渲染），工具条提供搜索（回车跳内容页）、资料库抽屉与「全部影片」按钮；内容页是单库或全部影片的网格，支持搜索与四种排序。墙面 = 各资料库扫描出来的**影片条目**，不属于任何资料库的影片不会上墙；封面取条目自己的主图、没有就退回父目录条目的主图，未刮削的条目以文件名占位显示。资料库的增删改与扫描 / 刮削都在资料库抽屉里。图片位统一走 `SensitiveImage`，NSFW 按「全局开关 + 连接 `nsfw` 标记 + 库级 `nsfwProtection`」任一命中即遮罩。详见[影视墙页面](./04-media-wall-page.md)。
 
 ## 工作台
 
-左栏选数据源与根目录并扫描（只列根目录一层的视频），右侧是任务卡片 + 文件表格：勾选文件后启动刮削任务，可取消与继续。业务在主进程，页面只消费 `scrapeApi` 的快照与进度推送，因此切换 tab、关闭窗口再回来进度不变。NSFW 保护生效时页头带状态标签。详见[工作台页面](./03-workspace-page.md)与[刮削模块](../scrape/01-scrape-module.md)。
+左栏先选资料库、再逐级浏览目录（`scrape:browse`，不再自己扫盘），右侧是任务卡片 + 条目表格：勾选影片后启动刮削任务，可取消与继续。业务在主进程，页面只消费 `scrapeApi` 的快照与进度推送，因此切换 tab、关闭窗口再回来进度不变。NSFW 保护生效时页头带状态标签。详见[工作台页面](./03-workspace-page.md)与[刮削模块](../scrape/01-scrape-module.md)。
 
 ## 存储
 
@@ -72,8 +74,8 @@
 
 ## 设置
 
-- 页面 `SettingPage.vue`：顶部横向 `t-tabs`（TDesign Vue Next 的 `t-tabs` 没有竖排模式，因此分组以顶部标签呈现），7 个 `t-tab-panel` 分别承载各面板，默认 `path`，支持 `?group=network` 之类的查询参数直达分组。站点账号类参数不在设置页，见「插件」的配置区块。
-- 面板：`components/Setting{Path,Scrape,Network,Translate,Naming,Download,File}Panel.vue`。
+- 页面 `SettingPage.vue`：顶部横向 `t-tabs`（TDesign Vue Next 的 `t-tabs` 没有竖排模式，因此分组以顶部标签呈现），9 个 `t-tab-panel` 分别承载各面板，默认 `path`，支持 `?group=network` 之类的查询参数直达分组。站点账号类参数不在设置页，见「插件」的配置区块。
+- 面板：`components/Setting{Path,Library,Scrape,Network,Translate,Naming,Download,File}Panel.vue`（`SettingLibraryPanel.vue` 是「资料库」页签：按 `LIBRARY_TYPES` 逐类型用 `t-tag-input` 维护媒体后缀清单，失焦清洗、清空回落默认值，保存沿用 store 的防抖）。
 - 面板统一形态：`const { setting } = storeToRefs(useSettingXxxStore())` + `t-list` / `t-list-item` / `t-list-item-meta`（`title` + `description`），控件放 `#action` 插槽里的 `.setting-field` 容器中。
 - `settingOptions.ts` 集中存放下拉选项（`SettingOption<T>` 接口 + 代理协议、目标语言、附属文件命名、分盘样式、NFO 命名、角标位置）。
 - `TemplateHintBar.vue` 是命名规则面板顶部的占位符提示条，点击 chip 复制到剪贴板并弹出成功提示。
@@ -95,7 +97,7 @@
 
 | 位置 | 待办 |
 | --- | --- |
-| 设置-目录与路径 | 目录选择对话框（当前为提示占位；dialog 域 IPC 已就绪，见[系统对话框模块](../dialog/01-dialog-module.md)，接入时换成通用组件 `DirectoryPickerField`） |
+| 设置-目录与路径 | 目录选择对话框（当前是普通输入框 + 占位提示；dialog 域 IPC 已就绪，见[系统对话框模块](../dialog/01-dialog-module.md)，接入时直接调 `dialogApi.open({ directory: true })`，或直接复用通用控件 `DirectoryPickerField.vue`——输入框 + 「选择」按钮，内部就是这个调用，存储页「本地磁盘」的根目录字段已经用它） |
 | 存储-上传 / 下载 | 本机文件与目录选择器（当前为本机绝对路径输入框；dialog 域 IPC 已就绪，接入方式同上） |
 | 设置-翻译服务 | 翻译服务实现（当前只有开关与目标语言） |
 | 工作台 | 刮削任务创建、队列与执行控制；消费插件产出的「下载配置」并真正下载（含封面角标、NFO 生成、命名落盘） |
@@ -103,4 +105,4 @@
 | 插件 | 在线插件仓库 / 远程更新；插件请求走代理；子进程级隔离（`utilityProcess`）；编辑器语法高亮；内置离线数据包的增量更新与后台下载（当前只提示、由用户手动触发）；环境变量的「清空 / 单独重置」交互 |
 | 全局 | 暗色模式（`theme.less` 目前只有亮色一套） |
 
-> 已完成：数据源「本地磁盘」的根目录已接入系统目录选择框（通用组件 `DirectoryPickerField` + dialog 域 IPC），见[存储管理页面](./02-storage-page.md) §5。
+> 本地磁盘的根目录由通用控件 `DirectoryPickerField.vue` 承担：它选的是**本机绝对路径**（输入框 + 「选择」按钮，内部调 `dialogApi.open({ directory: true })`），`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53` 的 `<directory-picker-field>` 正是它。资料库的媒体目录**不**用它——那里要的是连接内目录，走资料库自己的 `RemoteDirDialog`（`fileApi.list` 列连接内目录，见[影视墙页面](./04-media-wall-page.md)）。两者并存是正确设计，详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md) 与[存储管理页面](./02-storage-page.md) §5。

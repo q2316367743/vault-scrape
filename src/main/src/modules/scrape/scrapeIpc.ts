@@ -5,9 +5,12 @@
  * 1. 模块内部抛 `ScrapeError`，**只有 IPC 边界**把错误转成 `ScrapeResult` 信封；
  * 2. 入参一律按 unknown 从渲染层收窄，缺字段抛 `invalidArgument`；
  * 3. 任务在主进程运行，本文件只负责转发；进度通过 `scrape:progress` 单向推送。
+ *
+ * 刮削入口已经收敛到「资料库」这一侧：浏览走 `mediaWall.browseLibrary`，
+ * 开始刮削走 `libraryScrape.startLibraryScrapeByIds`（刮削器与策略都来自资料库）。
  */
 import { ipcMain } from 'electron'
-import { readNumber, readString, toSource } from '@common/types/setting/shared'
+import type { MediaBrowseEntry } from '@common/types/media'
 import {
   ScrapeError,
   describeScrapeError,
@@ -15,11 +18,12 @@ import {
   scrapeOk,
   type ScrapeFileItem,
   type ScrapeResult,
-  type ScrapeScanEntry,
-  type ScrapeStartRequest,
   type ScrapeTaskSnapshot
 } from '@common/types/scrape'
+import { readNumber, readString, toSource } from '@common/types/setting/shared'
 import type { TaskItem } from '@common/types/task'
+import { startLibraryScrapeByIds } from '$/modules/library/libraryScrape'
+import { browseLibrary } from '$/modules/media/mediaWall'
 import { ScrapeChannels } from '~/modules/scrape/scrapeChannels'
 import {
   cancelScrapeTask,
@@ -27,10 +31,8 @@ import {
   getScrapeTask,
   isScrapeRunning,
   listScrapeTasks,
-  resumeScrapeTask,
-  startScrapeTask
+  resumeScrapeTask
 } from './scrapeRunner'
-import { listRootVideos } from './scrapeVideo'
 
 /** 任务快照 + 逐文件结果：渲染层一次拉全，之后靠进度事件增量更新 */
 export interface ScrapeTaskDetail {
@@ -52,14 +54,17 @@ function payloadOf(payload: unknown): Record<string, unknown> {
   return toSource(payload) ?? {}
 }
 
-function readConnectionId(payload: unknown): string {
-  const connectionId = readString(payloadOf(payload), 'connectionId', '').trim()
-  if (connectionId.length === 0) throw new ScrapeError('invalidArgument', '缺少数据源')
-  return connectionId
+function readLibraryId(payload: unknown): string {
+  const libraryId = readString(payloadOf(payload), 'libraryId', '').trim()
+  if (libraryId.length === 0) throw new ScrapeError('invalidArgument', '缺少资料库 ID')
+  return libraryId
 }
 
-function readDirPath(payload: unknown): string {
-  return readString(payloadOf(payload), 'dirPath', '')
+/** 渲染层勾选的待刮削影片（媒体条目 ID） */
+function readItemIds(payload: unknown): string[] {
+  const raw = payloadOf(payload).itemIds
+  if (!Array.isArray(raw)) throw new ScrapeError('invalidArgument', '缺少待刮削影片列表')
+  return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
 }
 
 function readTaskId(payload: unknown): string {
@@ -68,30 +73,22 @@ function readTaskId(payload: unknown): string {
   return taskId
 }
 
-/** 渲染层提交的待刮削路径：只保留非空字符串，去重交给运行器 */
-function readPaths(payload: unknown): string[] {
-  const raw = payloadOf(payload).paths
-  if (!Array.isArray(raw)) throw new ScrapeError('invalidArgument', '缺少待刮削文件列表')
-  return raw.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-}
-
-function readStartRequest(payload: unknown): ScrapeStartRequest {
-  return {
-    connectionId: readConnectionId(payload),
-    dirPath: readDirPath(payload),
-    paths: readPaths(payload)
-  }
-}
-
 export function registerScrapeIpc(): void {
-  ipcMain.handle(ScrapeChannels.listVideos, (_event, payload: unknown) =>
-    handle<ScrapeScanEntry[]>(() =>
-      listRootVideos({ connectionId: readConnectionId(payload), dirPath: readDirPath(payload) })
+  /** 浏览资料库目录：目录 + 影片，供工作台勾选 */
+  ipcMain.handle(ScrapeChannels.browse, (_event, payload: unknown) =>
+    handle<MediaBrowseEntry[]>(() =>
+      browseLibrary({
+        libraryId: readLibraryId(payload),
+        dirPath: readString(payloadOf(payload), 'dirPath', '')
+      })
     )
   )
 
   ipcMain.handle(ScrapeChannels.start, (_event, payload: unknown) =>
-    handle<ScrapeTaskSnapshot>(() => startScrapeTask(readStartRequest(payload)))
+    handle<ScrapeTaskSnapshot>(async () => {
+      const result = await startLibraryScrapeByIds(readLibraryId(payload), readItemIds(payload))
+      return getScrapeTask(result.taskId)
+    })
   )
 
   ipcMain.handle(ScrapeChannels.cancel, (_event, payload: unknown) =>

@@ -16,6 +16,26 @@ import type { PluginErrorCode } from './error'
  */
 export const PLUGIN_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/
 
+/** 一处配置（存储 / 资料库）最多能勾选的插件数量，防止脏数据撑爆配置文件 */
+export const PLUGIN_ID_LIMIT = 200
+
+/**
+ * 插件 ID 列表归一化：去首尾空白、只留合法 ID、去重、限量。
+ *
+ * 存储与资料库都存「刮削器 ID 数组」，两处必须用同一套清洗规则，
+ * 否则同一份脏数据在两处会归一成不同结果。
+ */
+export function normalizePluginIds(input: readonly string[], limit = PLUGIN_ID_LIMIT): string[] {
+  const result: string[] = []
+  for (const item of input) {
+    const id = item.trim()
+    if (id.length === 0 || !PLUGIN_ID_PATTERN.test(id) || result.includes(id)) continue
+    result.push(id)
+    if (result.length >= limit) break
+  }
+  return result
+}
+
 export interface PluginMeta {
   /** 唯一标识，kebab-case；同时是源码文件名 */
   id: string

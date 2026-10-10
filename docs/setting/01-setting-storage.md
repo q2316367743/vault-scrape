@@ -19,14 +19,16 @@
 | `src/preload/src/modules/setting/setting.ts` | `settingApi` |
 | `src/renderer/src/api/setting.ts` | 渲染层统一出口 |
 | `src/renderer/src/windows/main/store/setting/useSettingGroup.ts` | `createSettingGroupStore()` 工厂 |
-| `src/renderer/src/windows/main/store/setting/SettingXxxStore.ts` | 七个分组 store |
+| `src/renderer/src/windows/main/store/setting/SettingXxxStore.ts` | 九个分组的 store（`app` / `path` / `library` / `scrape` / `network` / `translate` / `naming` / `download` / `file`） |
 | `src/renderer/src/windows/main/pages/setting/` | 设置页面与各面板 |
 
 ## 数据结构
 
 ```ts
 interface SettingSchema {
+  app: SettingApp            // 主题与 NSFW 保护
   path: SettingPath          // 目录与路径
+  library: SettingLibrary    // 各资料库类型的媒体后缀清单
   scrape: SettingScrape      // 刮削节奏
   network: SettingNetwork    // 网络连接
   translate: SettingTranslate// 翻译服务
@@ -42,7 +44,9 @@ interface SettingSchema {
 
 ```json
 {
+  "app": { "nsfwProtection": false },
   "path": { "actorAvatarDir": "", "successOutputDir": "", "failedOutputDir": "", "fanartDirName": "extrafanart" },
+  "library": { "extensions": { "movie": ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "ts", "m2ts", "mpg", "mpeg", "rmvb"] } },
   "scrape": { "concurrency": 3, "requestDelay": 1, "restAfterCount": 50, "restDuration": 60 },
   "naming": { "folderTemplate": "{num}", "fileTemplate": "{num} {title}", "...": "..." }
 }

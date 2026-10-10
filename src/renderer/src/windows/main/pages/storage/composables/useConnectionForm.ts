@@ -6,9 +6,10 @@
  *
  * 契约：
  * - 空串密码表示清空已存密码，`undefined` 表示沿用密钥串里的旧密码；
- * - 缺省 id 即新建；协议在编辑态不可切换（由模板控制）。
+ * - 缺省 id 即新建；协议在编辑态不可切换（由模板控制）；
+ * - 刮削器不再属于存储（Jellyfin 口径），改由资料库自己配置。
  */
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { fileApi } from '@/api'
 import {
@@ -21,7 +22,6 @@ import {
   type FileProtocol,
   type WebdavAuthType
 } from '@common/types/file'
-import { useScraperOptions } from './useScraperOptions'
 
 const AUTH_LABELS: Record<WebdavAuthType, string> = {
   auto: '自动协商',
@@ -33,8 +33,6 @@ const AUTH_LABELS: Record<WebdavAuthType, string> = {
 export interface ConnectionForm {
   name: string
   nsfw: boolean
-  /** 该存储允许使用的刮削器；空数组表示全部已启用插件 */
-  scrapers: string[]
   rootPath: string
   url: string
   username: string
@@ -54,7 +52,6 @@ export function useConnectionForm(options: {
   const form = reactive<ConnectionForm>({
     name: '',
     nsfw: false,
-    scrapers: [],
     rootPath: '',
     url: '',
     username: '',
@@ -67,7 +64,6 @@ export function useConnectionForm(options: {
   })
   const saving = ref(false)
   const testing = ref(false)
-  const scrapers = useScraperOptions()
 
   const protocolOptions = FILE_PROTOCOLS.map((value) => ({
     value,
@@ -84,16 +80,11 @@ export function useConnectionForm(options: {
   const passwordPlaceholder = computed(() =>
     hasStoredPassword.value ? '已保存密码，留空表示不修改' : '密码只写入本机密钥串，不落明文'
   )
-  /** 候选项加载完成前不做失效判断，否则会把「还没加载出来」误报成失效 */
-  const staleScrapers = computed(() =>
-    scrapers.loading.value ? [] : scrapers.unavailable([...form.scrapers])
-  )
 
   function initForm(connection: FileConnection | undefined): void {
     if (!connection) return
     form.name = connection.name
     form.nsfw = connection.nsfw
-    form.scrapers = [...connection.scrapers]
     if (connection.protocol === 'local') {
       form.rootPath = connection.rootPath
       return
@@ -118,7 +109,6 @@ export function useConnectionForm(options: {
     const identity = {
       name,
       nsfw,
-      scrapers: [...form.scrapers],
       ...(options.connection ? { id: options.connection.id } : {})
     }
     if (protocol.value === 'local') {
@@ -186,10 +176,6 @@ export function useConnectionForm(options: {
     }
   }
 
-  onMounted(() => {
-    void scrapers.load()
-  })
-
   return {
     protocol,
     form,
@@ -199,9 +185,6 @@ export function useConnectionForm(options: {
     authOptions,
     showPassword,
     passwordPlaceholder,
-    scraperOptions: scrapers.options,
-    scraperLoading: scrapers.loading,
-    staleScrapers,
     onTest,
     onSubmit
   }
