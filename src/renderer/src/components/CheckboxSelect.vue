@@ -126,7 +126,7 @@ function toggle(item: CheckboxSelectOption): void {
 .checkbox-select-list {
   max-height: 220px;
   overflow-y: auto;
-  padding: 0 6px 6px;
+  padding: 6px;
   border-top: 1px solid var(--td-component-stroke);
 }
 
