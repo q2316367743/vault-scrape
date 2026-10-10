@@ -36,19 +36,17 @@
     <div class="form-row form-row-top">
       <span class="form-label">刮削器</span>
       <div class="form-control">
-        <t-transfer
-          :model-value="scrapers"
-          :data="scraperTransferData"
-          :title="['可用刮削器', '已选刮削器']"
-          :search="true"
-          @change="onScrapersChange"
+        <checkbox-select
+          v-model="scrapers"
+          :options="scraperSelectOptions"
+          placeholder="搜索刮削器"
         />
         <p v-if="scraperLoading" class="form-note">正在读取已安装的插件…</p>
         <p class="form-note">
           不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削；不同资料库可能存放不同厂商的内容，这里只勾选覆盖该库范围的刮削器
         </p>
         <p v-if="staleScrapers.length > 0" class="form-note">
-          已失效的插件仍留在右侧并标注「（已失效）」，移回左侧即可丢弃
+          已失效的插件仍留在列表里并标注「（已失效）」，取消勾选即可丢弃
         </p>
       </div>
     </div>
@@ -113,6 +111,7 @@
  */
 import { computed } from 'vue'
 import LibraryDirectoryEditor from './LibraryDirectoryEditor.vue'
+import CheckboxSelect from '@/components/CheckboxSelect.vue'
 import type { FileConnection } from '@common/types/file'
 import type { MediaLibrary } from '@common/types/library'
 import { useLibraryForm, type LibraryPathRow } from '../composables/useLibraryForm'
@@ -157,21 +156,16 @@ const {
 })
 
 /**
- * 穿梭框数据：候选插件 + 配置里已失效的 id。
+ * 刮削器候选项：可用插件 + 配置里已失效的 id。
  *
  * `useScraperOptions` 只把「启用且加载成功」的插件作为候选，失效 id 不进来；
- * 但穿梭框只渲染 `data` 里存在的值，所以要补进来，否则这些 id 会在界面上消失、
+ * 但列表只渲染 `options` 里存在的值，所以要补进来，否则这些 id 会在界面上消失、
  * 保存时被静默丢弃（违反 useScraperOptions 的「不静默清除用户配置」契约）。
  */
-const scraperTransferData = computed(() => [
+const scraperSelectOptions = computed(() => [
   ...scraperOptions.value.map((item) => ({ label: item.label, value: item.value })),
   ...staleScrapers.value.map((id) => ({ label: `${id}（已失效）`, value: id }))
 ])
-
-/** 只在两侧之间移动，结果里只会出现字符串 id；非字符串直接丢弃 */
-function onScrapersChange(value: (string | number)[]): void {
-  scrapers.value = value.filter((item): item is string => typeof item === 'string')
-}
 
 /** 换存储时把该行的目录清掉（路径只对原来那个存储有意义） */
 function onRowConnectionChange(row: LibraryPathRow, value: string): void {

@@ -78,7 +78,7 @@ src/common/types/scrape/
 - **每个文件按自己所在目录处理**：工作目录取 `dirnameRemotePath(item.path)`，命名产出与成功后移动都落在文件自己的目录，而不是整批共用一个 `dirPath`（工作台只扫一层时两者恰好相同，资料库递归扫描时不同）。
 - **可用插件只认资料库绑定**：`usablePlugins(scraperIds)`——`scraperIds` 一定来自 `library.scrapers`，**不再回落到存储配置**（连接上已没有 `scrapers` 字段）：
   - 只保留 id 在库配置里、且当前可用（已启用、编译通过）的插件，**顺序仍沿用插件页保存的顺序**，不会按配置顺序重排；
-  - 库里失效的 id（插件被删 / 停用 / 编译失败）在运行时直接跳过，不在界面上自动清除（保存资料库时表单会把它们补进穿梭框右侧、标注「（已失效）」显示）。
+  - 库里失效的 id（插件被删 / 停用 / 编译失败）在运行时直接跳过，不在界面上自动清除（保存资料库时表单会把它们补进刮削器多选项、label 标注「（已失效）」显示，取消勾选才丢弃）。
   过滤后为空时抛 `pluginMissing`，两种文案区分原因：`该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择`（库上没配，`libraryScrape.runPlan` 在启动任务前就拦下）/ `资料库配置的刮削器均不可用，请重新选择`（配了但都失效）。
 - 所选文件全部被判定为重复时不启动任务，直接返回 `success` 快照（`所选文件均被判定为重复，无需刮削`）。
 - **按条目启动**：`startScrapeTaskForEntries({ connectionId, libraryId, dirPath, taskName, entries, scraperIds })` 是任务启动的**唯一入口**，两个入口最终都走它（资料库抽屉的整库「刮削」由 `planLibraryScrape` 产出一组条目；工作台走 `scrape:start { libraryId, itemIds }` → `startLibraryScrapeByIds`）。它依次校验：正在跑 → `busy`；缺数据源 / 缺资料库 ID / 条目为空 → `invalidArgument`；库不存在 → `notFound`；路径不在 `dirPath` 子树内 → `invalidArgument`；刮削器不可用 → `pluginMissing`。启动时把 `scraperIds` 与 `libraryId` 分别记进 `taskScrapers` / `taskLibraries` 供「继续」沿用；`taskName` 为空时回落目录名（`basenameRemotePath(dirPath)`，根目录给「根目录」），资料库传的是 `资料库 · <名称>`。
