@@ -1,6 +1,8 @@
 /**
- * 存储管理页的目录浏览状态：当前位置、条目列表，以及全部目录 / 文件写操作。
+ * 存储管理页的目录浏览状态：当前位置与条目列表。
  *
+ * 页面只读：按需求「存储不需要管理存储文件」，新建 / 重命名 / 复制 / 移动 / 删除 / 编辑文本 /
+ * 上传下载都已移除，这里只负责进入目录与刷新。
  * 页面级临时状态，不进 pinia：切走即丢弃，再次进入从连接根开始。
  */
 import { computed, ref, watch, type Ref } from 'vue'
@@ -13,8 +15,7 @@ import {
   joinRemotePath,
   normalizeRemotePath,
   splitRemotePath,
-  type FileEntry,
-  type FileResult
+  type FileEntry
 } from '@common/types/file'
 
 export interface StorageBreadcrumb {
@@ -73,137 +74,9 @@ export function useStorageBrowser(connectionId: Ref<string>) {
     void go(dirnameRemotePath(path.value))
   }
 
+  /** 只用于进入目录：文件由预览抽屉负责 */
   function open(entry: FileEntry): void {
     if (entry.type === 'directory') void go(entry.path)
-  }
-
-  async function execute(
-    action: () => Promise<FileResult<void>>,
-    successText: string
-  ): Promise<boolean> {
-    const result = await action()
-    if (!result.ok) {
-      MessagePlugin.error(result.message)
-      return false
-    }
-    MessagePlugin.success(successText)
-    return true
-  }
-
-  /** 名称合法性最终由主进程复检，这里只挡掉空名与斜杠 */
-  function nameError(name: string): string | null {
-    const trimmed = name.trim()
-    if (trimmed.length === 0) return '名称不能为空'
-    if (trimmed.includes('/') || trimmed.includes('\\')) return '名称不能包含斜杠'
-    return null
-  }
-
-  async function mkdir(name: string): Promise<void> {
-    const invalid = nameError(name)
-    if (invalid) {
-      MessagePlugin.warning(invalid)
-      return
-    }
-    const target = joinRemotePath(path.value, name.trim())
-    const done = await execute(
-      () => fileApi.mkdir({ connectionId: connectionId.value, path: target }),
-      '文件夹已创建'
-    )
-    if (done) await load()
-  }
-
-  async function createFile(name: string): Promise<void> {
-    const invalid = nameError(name)
-    if (invalid) {
-      MessagePlugin.warning(invalid)
-      return
-    }
-    const target = joinRemotePath(path.value, name.trim())
-    const done = await execute(
-      () => fileApi.createFile({ connectionId: connectionId.value, path: target }),
-      '文件已创建'
-    )
-    if (done) await load()
-  }
-
-  async function rename(entry: FileEntry, name: string): Promise<void> {
-    const invalid = nameError(name)
-    if (invalid) {
-      MessagePlugin.warning(invalid)
-      return
-    }
-    const trimmed = name.trim()
-    if (trimmed === entry.name) return
-    const target = joinRemotePath(dirnameRemotePath(entry.path), trimmed)
-    const done = await execute(
-      () => fileApi.move({ connectionId: connectionId.value, from: entry.path, to: target }),
-      '已重命名'
-    )
-    if (done) await load()
-  }
-
-  async function copy(entry: FileEntry, target: string, overwrite: boolean): Promise<void> {
-    const done = await execute(
-      () =>
-        fileApi.copy({
-          connectionId: connectionId.value,
-          from: entry.path,
-          to: normalizeRemotePath(target),
-          overwrite
-        }),
-      '已复制'
-    )
-    if (done) await load()
-  }
-
-  async function move(entry: FileEntry, target: string, overwrite: boolean): Promise<void> {
-    const done = await execute(
-      () =>
-        fileApi.move({
-          connectionId: connectionId.value,
-          from: entry.path,
-          to: normalizeRemotePath(target),
-          overwrite
-        }),
-      '已移动'
-    )
-    if (done) await load()
-  }
-
-  async function remove(entry: FileEntry): Promise<void> {
-    if (isFileRoot(entry.path)) {
-      MessagePlugin.warning('不能删除连接根目录')
-      return
-    }
-    const done = await execute(
-      () => fileApi.remove({ connectionId: connectionId.value, path: entry.path }),
-      '已删除'
-    )
-    if (done) await load()
-  }
-
-  async function readText(entry: FileEntry): Promise<string | null> {
-    const result = await fileApi.readText({ connectionId: connectionId.value, path: entry.path })
-    if (!result.ok) {
-      MessagePlugin.error(result.message)
-      return null
-    }
-    return result.data
-  }
-
-  async function writeText(entry: FileEntry, content: string): Promise<boolean> {
-    const result = await fileApi.writeText({
-      connectionId: connectionId.value,
-      path: entry.path,
-      content
-    })
-    if (!result.ok) {
-      MessagePlugin.error(result.message)
-      return false
-    }
-    MessagePlugin.success('已保存')
-    await load()
-    return true
   }
 
   watch(
@@ -216,23 +89,5 @@ export function useStorageBrowser(connectionId: Ref<string>) {
     { immediate: true }
   )
 
-  return {
-    path,
-    entries,
-    loading,
-    isRoot,
-    breadcrumb,
-    load,
-    go,
-    goParent,
-    open,
-    mkdir,
-    createFile,
-    rename,
-    copy,
-    move,
-    remove,
-    readText,
-    writeText
-  }
+  return { entries, loading, isRoot, breadcrumb, load, go, goParent, open }
 }

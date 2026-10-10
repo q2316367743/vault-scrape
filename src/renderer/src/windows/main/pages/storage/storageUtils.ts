@@ -1,5 +1,5 @@
 /**
- * 存储管理页的纯展示工具：图标映射、尺寸/时间格式化、本机路径取名。
+ * 存储管理页的纯展示工具：图标映射、尺寸/时间格式化、可预览判定。
  *
  * 只放无状态的常量与函数，页面状态在 ./composables 下。
  */
@@ -19,7 +19,7 @@ import {
   ServerIcon,
   VideoIcon
 } from 'tdesign-icons-vue-next'
-import type { FileEntry, FileProtocol } from '@common/types/file'
+import { filePreviewKindOf, type FileEntry, type FileProtocol } from '@common/types/file'
 
 /** 协议图标：数据源列表与浏览器标题共用 */
 export const PROTOCOL_ICONS: Readonly<Record<FileProtocol, Component>> = {
@@ -51,18 +51,15 @@ const TEXT_EXTENSIONS = [
   'm3u8'
 ] as const
 
-/** 可当作文本读取的扩展名（“编辑文本”入口的判定依据之一） */
-const TEXTUAL_EXTENSIONS: readonly string[] = [...CODE_EXTENSIONS, ...TEXT_EXTENSIONS]
-
 const ICON_GROUPS: readonly { icon: Component; extensions: readonly string[] }[] = [
   { icon: FileCodeIcon, extensions: CODE_EXTENSIONS },
   { icon: FileTxtIcon, extensions: TEXT_EXTENSIONS },
-  { icon: FileImageIcon, extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif'] },
+  { icon: FileImageIcon, extensions: ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'avif', 'svg'] },
   {
     icon: VideoIcon,
     extensions: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'ts', 'm2ts', 'mpg', 'mpeg', 'rmvb', 'iso']
   },
-  { icon: FileMusicIcon, extensions: ['mp3', 'flac', 'wav', 'aac', 'm4a'] },
+  { icon: FileMusicIcon, extensions: ['mp3', 'flac', 'wav', 'aac', 'm4a', 'ogg', 'oga', 'opus', 'weba'] },
   { icon: FileZipIcon, extensions: ['zip', 'rar', '7z'] },
   { icon: FilePdfIcon, extensions: ['pdf'] }
 ]
@@ -74,11 +71,10 @@ export function entryIcon(entry: FileEntry): Component {
   return group ? group.icon : FileIcon
 }
 
-/** 扩展名或 MIME 任一命中即认为可以按文本读取 */
-export function isTextEntry(entry: FileEntry): boolean {
-  if (entry.type === 'directory') return false
-  if (TEXTUAL_EXTENSIONS.includes(entry.extname)) return true
-  return entry.mime.startsWith('text/')
+/** 可预览：媒体（视频 / 图片 / 音频）与 nfo；目录与其它类型没有预览入口 */
+export function isPreviewable(entry: FileEntry): boolean {
+  if (entry.type !== 'file') return false
+  return filePreviewKindOf(entry.mime, entry.extname) !== 'other'
 }
 
 /** 字节数按 1024 进制折算，目录与空文件显示为 “—” */
@@ -99,10 +95,4 @@ export function formatFileSize(size: number): string {
 export function formatEntryTime(modifiedAt: number): string {
   if (modifiedAt <= 0) return '—'
   return dayjs(modifiedAt).format('YYYY-MM-DD HH:mm')
-}
-
-/** 取本机绝对路径的文件名，兼容 Windows 反斜杠 */
-export function localFileName(localPath: string): string {
-  const segments = localPath.replace(/\\/g, '/').split('/')
-  return segments[segments.length - 1] ?? ''
 }

@@ -51,6 +51,15 @@ export {
   type WebdavConnectionDraft
 } from './connection'
 
+export {
+  FILE_PREVIEW_SEGMENT,
+  buildFilePreviewUrl,
+  filePreviewKindOf,
+  parseFilePreviewUrl,
+  type FilePreviewKind,
+  type FilePreviewTarget
+} from './preview'
+
 export type {
   FileCopyRequest,
   FileCreateOptions,

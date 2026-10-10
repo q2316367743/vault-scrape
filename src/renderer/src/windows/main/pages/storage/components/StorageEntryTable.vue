@@ -1,7 +1,12 @@
 <script setup lang="ts">
-import { DownloadIcon, FolderOpenIcon, MoreIcon } from 'tdesign-icons-vue-next'
+/**
+ * 存储页的目录表格：只读，没有任何写操作。
+ *
+ * 契约：目录 → 打开；媒体（视频 / 图片 / 音频）与 nfo → 预览；其它类型不给入口。
+ */
+import { BrowseIcon, FolderOpenIcon } from 'tdesign-icons-vue-next'
 import type { FileEntry } from '@common/types/file'
-import { entryIcon, formatEntryTime, formatFileSize, isTextEntry } from '../storageUtils'
+import { entryIcon, formatEntryTime, formatFileSize, isPreviewable } from '../storageUtils'
 
 defineProps<{
   /** 当前目录的条目 */
@@ -12,63 +17,20 @@ defineProps<{
 
 const emit = defineEmits<{
   open: [entry: FileEntry]
-  download: [entry: FileEntry]
-  'edit-text': [entry: FileEntry]
-  rename: [entry: FileEntry]
-  copy: [entry: FileEntry]
-  move: [entry: FileEntry]
-  remove: [entry: FileEntry]
+  preview: [entry: FileEntry]
 }>()
-
-interface RowAction {
-  value: string
-  content: string
-  theme?: 'error'
-}
 
 const columns = [
   { colKey: 'name', title: '名称', ellipsis: true },
   { colKey: 'size', title: '大小', width: 110 },
   { colKey: 'modifiedAt', title: '修改时间', width: 170 },
-  { colKey: 'op', title: '操作', width: 110 }
+  { colKey: 'op', title: '操作', width: 88 }
 ]
 
-/** 目录与文件的操作项不同：目录给“打开”，文件给“下载”，文本文件多一项“编辑文本” */
-function rowActions(entry: FileEntry): RowAction[] {
-  const actions: RowAction[] = []
-  if (entry.type === 'directory') actions.push({ value: 'open', content: '打开' })
-  else actions.push({ value: 'download', content: '下载' })
-  if (entry.type === 'file' && isTextEntry(entry)) {
-    actions.push({ value: 'edit-text', content: '编辑文本' })
-  }
-  actions.push(
-    { value: 'rename', content: '重命名' },
-    { value: 'copy', content: '复制到…' },
-    { value: 'move', content: '移动到…' },
-    { value: 'remove', content: '删除', theme: 'error' }
-  )
-  return actions
-}
-
-function onPrimary(entry: FileEntry): void {
+/** 目录进得去、可预览文件点得开，其余没有主操作 */
+function onEntryClick(entry: FileEntry): void {
   if (entry.type === 'directory') emit('open', entry)
-  else emit('download', entry)
-}
-
-function onNameClick(entry: FileEntry): void {
-  if (entry.type === 'directory') emit('open', entry)
-}
-
-function onAction(entry: FileEntry, payload: unknown): void {
-  if (typeof payload !== 'object' || payload === null || !('value' in payload)) return
-  const action = String(payload.value)
-  if (action === 'open') emit('open', entry)
-  else if (action === 'download') emit('download', entry)
-  else if (action === 'edit-text') emit('edit-text', entry)
-  else if (action === 'rename') emit('rename', entry)
-  else if (action === 'copy') emit('copy', entry)
-  else if (action === 'move') emit('move', entry)
-  else if (action === 'remove') emit('remove', entry)
+  else if (isPreviewable(entry)) emit('preview', entry)
 }
 </script>
 
@@ -85,8 +47,8 @@ function onAction(entry: FileEntry, payload: unknown): void {
     <template #name="{ row }">
       <div
         class="entry-name"
-        :class="{ 'is-directory': row.type === 'directory' }"
-        @click="onNameClick(row)"
+        :class="{ 'is-directory': row.type === 'directory', 'is-clickable': isPreviewable(row) }"
+        @click="onEntryClick(row)"
       >
         <component :is="entryIcon(row)" class="entry-icon" />
         <span class="entry-text">{{ row.name }}</span>
@@ -99,19 +61,17 @@ function onAction(entry: FileEntry, payload: unknown): void {
 
     <template #op="{ row }">
       <div class="entry-actions">
-        <t-tooltip :content="row.type === 'directory' ? '打开' : '下载'">
-          <t-button variant="text" size="small" @click="onPrimary(row)">
-            <template #icon>
-              <folder-open-icon v-if="row.type === 'directory'" />
-              <download-icon v-else />
-            </template>
+        <t-tooltip v-if="row.type === 'directory'" content="打开">
+          <t-button variant="text" size="small" @click="emit('open', row)">
+            <template #icon><folder-open-icon /></template>
           </t-button>
         </t-tooltip>
-        <t-dropdown :options="rowActions(row)" trigger="click" @click="(data) => onAction(row, data)">
-          <t-button variant="text" size="small">
-            <template #icon><more-icon /></template>
+        <t-tooltip v-else-if="isPreviewable(row)" content="预览">
+          <t-button variant="text" size="small" @click="emit('preview', row)">
+            <template #icon><browse-icon /></template>
           </t-button>
-        </t-dropdown>
+        </t-tooltip>
+        <span v-else class="entry-none">—</span>
       </div>
     </template>
   </t-table>
@@ -125,7 +85,8 @@ function onAction(entry: FileEntry, payload: unknown): void {
   min-width: 0;
 }
 
-.entry-name.is-directory {
+.entry-name.is-directory,
+.entry-name.is-clickable {
   cursor: pointer;
 }
 
@@ -145,7 +106,8 @@ function onAction(entry: FileEntry, payload: unknown): void {
   white-space: nowrap;
 }
 
-.entry-name.is-directory:hover .entry-text {
+.entry-name.is-directory:hover .entry-text,
+.entry-name.is-clickable:hover .entry-text {
   color: var(--td-brand-color);
 }
 
@@ -153,5 +115,9 @@ function onAction(entry: FileEntry, payload: unknown): void {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+
+.entry-none {
+  color: var(--td-text-color-placeholder);
 }
 </style>

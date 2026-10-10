@@ -95,11 +95,11 @@
 - 取值路径：本机连接（`protocol === 'local'`）直读；远端视频 / 图片先落到 `~/.vault-scrape/cache/media/<媒体ID>`（总量上限 512MB，超了按 mtime 由旧到新剪到 80%）再读；`imageSaveMode='appdata'` 的图片走伪连接 `appdata`，协议层复核目标路径确实在 `~/.vault-scrape/media/images` 之下后用 `net.fetch(pathToFileURL)` 直读。
 - 区间读与流适配：`FileClient.readRange(path, start, end)`（**闭区间，含 end**）返回 node 流，再用 `modules/file/streamToWeb.ts` 的 `toWebStream` 适配成 `Response` 的 body（队列积压时 `pause()` 源流、`pull` 时 `resume()`，下游 `cancel` 时 `destroy()` 源流）。
 - 任何异常都记一条去重 warn（同一媒体 60s 内只记一条）并返回 404，不在渲染层抛异常；**唯一的例外是下面的路径自愈**。
-- **播放期路径自愈**（`src/main/src/modules/media/mediaLocator.ts`）：`media_source.path` 只在扫描与刮削改名 / 移动时更新，用户在文件管理器里手工把 `.mp4` 挪走又不重扫时，`client.stat()` 会抛 ENOENT——以前直接变 404（封面还在原地，所以表现为「图片正常、视频 404」）。现在 `handleVideoRequest` 把 `stat` 包进 try/catch，命中 `isNotFoundError(error)` 且请求来自**媒体源**时按「文件名等价（trim + 忽略大小写）+ 字节数相同」找回：
+- **播放期路径自愈**（`src/main/src/modules/media/mediaLocator.ts`）：`media_source.path` 只在扫描与刮削改名 / 移动时更新，用户在文件管理器里手工把 `.mp4` 挪走又不重扫时，`client.stat()` 会抛 ENOENT——以前直接变 404（封面还在原地，所以表现为「图片正常、视频 404」）。现在 `handleRangeRequest`（媒体源与存储页路径预览共用的区间请求入口）把 `stat` 包进 try/catch，命中 `isNotFoundError(error)` 且请求来自**媒体源**时按「文件名等价（trim + 忽略大小写）+ 字节数相同」找回：
   - 先在同目录 `client.list(dirname(path))` 快查（同目录改名、移进子目录最常见），再从该资料库配置的媒体目录（`getLibrary(libraryId).paths` 里 `connectionId` 匹配的，`/` = 连接根）广度优先遍历；单目录列不出来只跳过该目录，单次最多 `MAX_ENTRIES = 20_000` 条、`MAX_DEPTH = 8` 层；不做标题 / 番号模糊匹配——宁可继续 404，也不放错片子。
   - 命中后用 `updateSourcePath(source.id, …)` 只改 `media_source` 的 `path` / `name` / `extname` / `mime` / `size` / `modified_at`：**source id 不变**，`storage://` 地址与远端缓存都不失效；`media_item.path` / `parentId` 不动。成功记 info 日志「索引路径失效，已按文件名找回：<旧> → <新>」；写库失败只记 warn，本次播放照常返回。
   - 找不到的结论按「资料库 + 连接 + 文件名 + 字节数」缓存 `MISS_TTL_MS = 60_000`，同一媒体源的并发 Range 请求共享一次查找（模块级 `healing: Map<sourceId, Promise<FileEntry | null>>`）。不主动扫盘、不监听文件系统、不新增 IPC；真删掉的文件仍然 404。
-- 渲染层 `MediaPlayer.vue` 监听 artplayer 的 `video:error`：视频读不出来（文件被移走 / 删除，或封装、编码放不了）时不再留一块黑屏，而是在播放器位置盖一层 `poster`（就是上面的 `coverUrl`，通常已回退到快照）加一句说明文案——「文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录，**也可以在影视墙里对资料库重新扫描一次**」；换片（`url` 变化）或重新起播时清掉这个状态，本版本不做转码。
+- 渲染层 `MediaPlayer.vue`（已移到共用目录 `src/renderer/src/components/media/MediaPlayer.vue`，影视墙详情页与[存储页预览](./02-storage-page.md)共用）监听 artplayer 的 `video:error`：视频读不出来（文件被移走 / 删除，或封装、编码放不了）时不再留一块黑屏，而是在播放器位置盖一层 `poster`（就是上面的 `coverUrl`，通常已回退到快照）加一句说明文案（详情页用组件默认的 `fallbackText`——「文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录，**也可以在影视墙里对资料库重新扫描一次**」，存储页预览另传一句「……可以先用本机播放器打开它」）；换片（`url` 变化）或重新起播时清掉这个状态，本版本不做转码。
 - 协议在 app ready 之前由 `registerMediaScheme()` 登记为特权 scheme（`standard` / `secure` / `supportFetchAPI` / `stream`），ready 之后、开窗之前 `registerMediaProtocol()` 接管（见 `src/main/index.ts`）。
 
 ## 5. 资料库抽屉与表单
@@ -146,9 +146,8 @@ src/renderer/src/windows/main/pages/media/
 ├── detail/                               # /media/detail（详情页）
 │   ├── MediaDetailPage.vue               # 播放器 + 磁盘事实 + NFO 元信息
 │   ├── mediaDetailCells.ts               # 两块信息格的字段口径（纯函数）
-│   ├── mediaPlayerI18n.ts                # artplayer 简体中文词条（官方语言包没有 zh-cn）
 │   ├── composables/useMediaDetail.ts     # 从 query 取参、调 mediaApi.detail
-│   └── components/{MediaPlayer,MediaFactGrid,MediaNfoBlock}.vue
+│   └── components/{MediaFactGrid,MediaNfoBlock}.vue
 └── library/                              # 首页 / 内容页共用的资料库管理
     ├── components/
     │   ├── LibraryDrawer.tsx / LibraryDrawerContent.vue

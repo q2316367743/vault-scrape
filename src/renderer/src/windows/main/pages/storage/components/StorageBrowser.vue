@@ -1,13 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { AddIcon, FolderAddIcon, RefreshIcon, UploadIcon } from 'tdesign-icons-vue-next'
-import { FILE_PROTOCOL_LABELS, type FileConnection } from '@common/types/file'
+/**
+ * 存储页右侧浏览器：只读目录浏览 + 预览入口。
+ *
+ * 契约：没有写操作（新建 / 上传 / 重命名 / 复制 / 移动 / 删除 / 编辑文本全部下线），
+ * 工具栏只留「上级目录 / 刷新」；预览统一走 StoragePreviewDrawer。
+ */
+import { computed, toRef } from 'vue'
+import { RefreshIcon } from 'tdesign-icons-vue-next'
+import { FILE_PROTOCOL_LABELS, type FileConnection, type FileEntry } from '@common/types/file'
+import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { useStorageBrowser, type StorageBreadcrumb } from '../composables/useStorageBrowser'
-import { useStorageTransfers } from '../composables/useStorageTransfers'
-import { useStorageActions } from '../composables/useStorageActions'
+import { openStoragePreviewDrawer } from '../modals/StoragePreviewDrawer'
 import { PROTOCOL_ICONS } from '../storageUtils'
 import StorageEntryTable from './StorageEntryTable.vue'
-import StorageTransferList from './StorageTransferList.vue'
 
 const props = defineProps<{
   /** 当前选中的数据源，未选中时展示占位 */
@@ -15,8 +20,10 @@ const props = defineProps<{
 }>()
 
 const connectionId = computed(() => props.connection?.id ?? '')
-const browser = useStorageBrowser(connectionId)
-const { entries, loading, isRoot, breadcrumb, load, go, goParent, open } = browser
+const { entries, loading, isRoot, breadcrumb, load, go, goParent, open } = useStorageBrowser(connectionId)
+
+/** NSFW 保护：带存储上下文必须用 active（应用总开关 + 该连接的 nsfw 标记同时成立） */
+const { active } = useNsfwProtection(toRef(props, 'connection'))
 
 /**
  * 面包屑跳转。
@@ -28,24 +35,12 @@ function onCrumbClick(segment: StorageBreadcrumb, isCurrent: boolean): void {
   void go(segment.path)
 }
 
-const transfers = useStorageTransfers({
-  onSettled: (event) => {
-    if (event.ok && event.connectionId === connectionId.value) void load()
-  }
-})
-const { items: transferItems, cancel: cancelTransfer, clearFinished } = transfers
-
-const {
-  onCreateFolder,
-  onCreateFile,
-  onUpload,
-  onDownload,
-  onRename,
-  onCopy,
-  onMove,
-  onRemove,
-  onEditText
-} = useStorageActions(connectionId, browser, transfers)
+/** 打开预览抽屉；保护状态在打开时定格，与详情页一次点击的语义一致 */
+function onPreview(entry: FileEntry): void {
+  const connection = props.connection
+  if (!connection) return
+  openStoragePreviewDrawer({ connection, entry, protect: active.value })
+}
 </script>
 
 <template>
@@ -71,18 +66,6 @@ const {
             <template #icon><refresh-icon /></template>
             刷新
           </t-button>
-          <t-button size="small" variant="outline" @click="onCreateFolder">
-            <template #icon><folder-add-icon /></template>
-            新建文件夹
-          </t-button>
-          <t-button size="small" variant="outline" @click="onCreateFile">
-            <template #icon><add-icon /></template>
-            新建文件
-          </t-button>
-          <t-button size="small" theme="primary" @click="onUpload">
-            <template #icon><upload-icon /></template>
-            上传
-          </t-button>
         </div>
       </header>
 
@@ -102,20 +85,9 @@ const {
           :entries="entries"
           :loading="loading"
           @open="open"
-          @download="onDownload"
-          @edit-text="onEditText"
-          @rename="onRename"
-          @copy="onCopy"
-          @move="onMove"
-          @remove="onRemove"
+          @preview="onPreview"
         />
       </div>
-
-      <storage-transfer-list
-        :items="transferItems"
-        @cancel="cancelTransfer"
-        @clear="clearFinished"
-      />
     </template>
   </section>
 </template>

@@ -13,6 +13,8 @@
 本轮范围：接口 + 三个实现 + 连接配置存储 + IPC 契约 + 公共类型 + 文档。 **不含连接管理 UI**
 ；界面随后落在独立的一级页面「存储」（见[存储管理页面](../page/02-storage-page.md)），渲染层直接调用 `@/api/file`。
 
+> 注意：存储页已改为**只读**（浏览 + 媒体 / nfo 预览），写类能力与传输推送在渲染层**没有入口**，但本模块的 18 个 invoke + 2 个推送通道**一个都没删**——它们是三协议通用能力，保留成本最低。渲染层仍然在用的是：连接的增删改查与测试、`list` / `stat` / `readText`（读 nfo 原文）与 `storage://` 路径预览背后的 `readRange`。
+
 ## 2. 目录结构
 
 ```
@@ -20,6 +22,7 @@ src/common/types/file/          # 三端共享的纯类型与纯函数（不含�
 ├── error.ts                    # FileErrorCode（13 个）+ FileError + describeFileError
 ├── path.ts                     # 统一 POSIX 路径：归一化 / 拼接 / 父目录 / 扩展名 / 拆段
 ├── entry.ts                    # FileEntry 统一形状 + MIME 兜底表 + 排序
+├── preview.ts                  # storage:// 路径形式的预览地址：buildFilePreviewUrl / parseFilePreviewUrl / filePreviewKindOf（存储页预览用）
 ├── connection.ts               # 三种连接与草稿的形状 + describeConnection（策略字段只剩 nsfw）
 ├── request.ts                  # 各 IPC 方法的请求载荷
 ├── transfer.ts                 # 传输进度 / 结束事件

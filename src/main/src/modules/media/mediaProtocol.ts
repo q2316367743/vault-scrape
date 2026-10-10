@@ -4,6 +4,10 @@
  * 契约：
  * - 地址形如 `storage://{存储ID}/{媒体ID}/{原始文件名}`，**只认 ID，不接受绝对路径**，
  *   所以渲染层拿不到、也构造不出越权地址；
+ * - 存储页的只读预览另有路径形式 `storage://{存储ID}/path/{编码后的连接内路径}`
+ *   （构造与解析见 `@common/types/file` 的 buildFilePreviewUrl / parseFilePreviewUrl）：
+ *   只复核「连接存在 + 路径落在连接根内 + 确实是文件」，越界或不存在一律 404；
+ *   视频与音频走 Range，图片与 NFO 走 `net.fetch`（远端先落缓存）；
  * - 解析顺序：媒体源表（`media_source`）→ 图片表（`media_image`，刮削图 / 扫描封面）；
  * - 视频（`kind === 'video'`）走 Range 流式：主进程自己解析 Range 头按区间读，
  *   本机直读磁盘、WebDAV 用原生 Range、SMB 用补丁后的区间读，应答 200 / 206 / 416
@@ -14,12 +18,19 @@
  *   找不回来仍是 404；
  * - 任何失败都返回 404 并只记日志（同一媒体 60 秒内只记一条），不把异常抛回渲染层。
  */
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID } from 'crypto'
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlinkSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { app, net, protocol } from 'electron'
-import { guessMimeType, type FileConnection, type FileEntry } from '@common/types/file'
+import {
+  filePreviewKindOf,
+  guessMimeType,
+  parseFilePreviewUrl,
+  type FileConnection,
+  type FileEntry,
+  type FilePreviewTarget
+} from '@common/types/file'
 import {
   MEDIA_ID_PATTERN,
   MEDIA_SCHEME,
@@ -81,17 +92,21 @@ function warnOnce(key: string, message: string): void {
   appendLog({ level: 'warn', scope: 'media', message })
 }
 
-interface MediaTarget {
+/** Range 流式服务需要的最小上下文（存储页预览没有索引，两个 ID 为空串） */
+interface RangeTarget {
   /** 连接内绝对路径 */
   path: string
   /** 已知大小；0 表示未知（图片不记大小） */
   size: number
-  /** 媒体类型：决定走 Range 流式（video）还是 `net.fetch` */
-  kind: MediaSourceKind
   /** 媒体源 ID（图片为空串）：路径自愈要拿它把新路径写回索引 */
   sourceId: string
   /** 媒体源所属资料库（图片为空串）：自愈时用它圈定查找范围 */
   libraryId: string
+}
+
+interface MediaTarget extends RangeTarget {
+  /** 媒体类型：决定走 Range 流式（video）还是 `net.fetch` */
+  kind: MediaSourceKind
 }
 
 /** 媒体源表优先，图片表兜底（媒体源被重扫清掉后封面仍可显示） */
@@ -123,7 +138,11 @@ function isCacheUsable(file: string, size: number): boolean {
 }
 
 /** 远端媒体落本机缓存；同一 ID 并发只下载一次 */
-async function ensureCached(connection: FileConnection, mediaId: string, target: MediaTarget): Promise<string> {
+async function ensureCached(
+  connection: FileConnection,
+  mediaId: string,
+  target: RangeTarget
+): Promise<string> {
   const file = join(cacheDir(), mediaId)
   if (isCacheUsable(file, target.size)) return file
   const existing = pending.get(mediaId)
@@ -135,7 +154,11 @@ async function ensureCached(connection: FileConnection, mediaId: string, target:
   return task
 }
 
-async function downloadToCache(connection: FileConnection, target: MediaTarget, file: string): Promise<string> {
+async function downloadToCache(
+  connection: FileConnection,
+  target: RangeTarget,
+  file: string
+): Promise<string> {
   const temp = `${file}.${randomUUID()}.tmp`
   mkdirSync(cacheDir(), { recursive: true })
   try {
@@ -235,7 +258,7 @@ const healing = new Map<string, Promise<FileEntry | null>>()
  */
 function healMovedVideo(
   connectionId: string,
-  target: MediaTarget,
+  target: RangeTarget,
   error: unknown
 ): Promise<FileEntry | null> {
   if (!isNotFoundError(error) || target.sourceId.length === 0) return Promise.resolve(null)
@@ -248,7 +271,7 @@ function healMovedVideo(
   return task
 }
 
-async function relocateSource(connectionId: string, target: MediaTarget): Promise<FileEntry | null> {
+async function relocateSource(connectionId: string, target: RangeTarget): Promise<FileEntry | null> {
   const located = await locateMovedFile({
     connectionId,
     libraryId: target.libraryId,
@@ -278,15 +301,16 @@ async function relocateSource(connectionId: string, target: MediaTarget): Promis
 }
 
 /**
- * 视频请求：当自己的 Range 服务端。
+ * 当自己的 Range 服务端：影视墙的视频、存储页预览里的视频与音频都走这里。
  *
  * 大小与 MIME 以 `stat` 为准（索引可能过期，而 206 的 `Content-Range` 必须和真实大小一致）；
- * stat 报「文件不存在」时先尝试按文件名 + 大小自愈一次，找回来的新路径同时用于 `readRange`；
+ * stat 报「文件不存在」时先尝试按文件名 + 大小自愈一次，找回来的新路径同时用于 `readRange`
+ * （存储页预览的 sourceId 为空，自愈直接不触发）；
  * 流的取消由 `toWebStream` 传播成 `destroy()`，拖进度条 / 关页面都不会漏句柄。
  */
-async function handleVideoRequest(
+async function handleRangeRequest(
   connection: FileConnection,
-  target: MediaTarget,
+  target: RangeTarget,
   request: Request
 ): Promise<Response> {
   const client = await getFileClient(connection.id)
@@ -315,7 +339,7 @@ async function handleVideoRequest(
   const end = parsed ? parsed.end : total - 1
   const stream = await client.readRange(filePath, start, end)
   const headers = new Headers({
-    'Content-Type': info.mime.length > 0 ? info.mime : guessMimeType(info.name),
+    'Content-Type': contentTypeOf(info),
     'Content-Length': `${end - start + 1}`,
     'Accept-Ranges': 'bytes'
   })
@@ -327,7 +351,77 @@ async function handleVideoRequest(
   return new Response(toWebStream(stream), { status: 206, headers })
 }
 
+/** 响应 MIME：协议给的优先，没有就按扩展名兜底 */
+function contentTypeOf(info: FileEntry): string {
+  return info.mime.length > 0 ? info.mime : guessMimeType(info.name)
+}
+
+/** 磁盘文件交给 `net.fetch` 读，并显式带上 MIME（远端缓存文件名没有扩展名，兜不出类型） */
+async function serveFile(file: string, info: FileEntry): Promise<Response> {
+  const response = await net.fetch(pathToFileURL(file).toString())
+  const headers = new Headers(response.headers)
+  headers.set('Content-Type', contentTypeOf(info))
+  return new Response(response.body, { status: response.status, headers })
+}
+
+/** 存储页预览的缓存键：连接 + 路径的哈希（缓存文件名不能带路径分隔符） */
+function previewCacheKey(connectionId: string, path: string): string {
+  return createHash('sha1').update(`${connectionId}\n${path}`).digest('hex')
+}
+
+/**
+ * 存储页只读预览：`storage://{连接ID}/path/{编码后的连接内路径}`。
+ *
+ * 与媒体 ID 地址不同，这里没有索引可用，只能按真实路径读，所以每条请求都现场 stat 一次；
+ * 路径归属由 `resolveInsideRoot`（本地）与 FileClient 内的 `normalizeRemotePath`（远端）
+ * 双重保证，出不了连接根。视频与音频走 Range，图片与 NFO 走 `net.fetch`。
+ */
+async function handleFilePreviewRequest(target: FilePreviewTarget, request: Request): Promise<Response> {
+  const { connectionId, path } = target
+  if (!CONNECTION_ID_PATTERN.test(connectionId)) return notFound()
+  const connection = getConnection(connectionId)
+  if (!connection) return notFound()
+
+  const client = await getFileClient(connectionId)
+  const info = await client.stat(path)
+  if (info.type !== 'file' || info.size <= 0) return notFound()
+
+  const kind = filePreviewKindOf(info.mime, info.extname)
+  if (kind === 'video' || kind === 'audio') {
+    return await handleRangeRequest(
+      connection,
+      { path, size: info.size, sourceId: '', libraryId: '' },
+      request
+    )
+  }
+
+  if (connection.protocol === 'local') {
+    return await serveFile(resolveInsideRoot(connection.rootPath, path), info)
+  }
+  const cached = await ensureCached(connection, previewCacheKey(connectionId, path), {
+    path,
+    size: info.size,
+    sourceId: '',
+    libraryId: ''
+  })
+  return await serveFile(cached, info)
+}
+
 async function handleMediaRequest(request: Request): Promise<Response> {
+  const preview = parseFilePreviewUrl(request.url)
+  if (preview) {
+    try {
+      return await handleFilePreviewRequest(preview, request)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      warnOnce(
+        `preview:${preview.connectionId}:${preview.path}`,
+        `存储页预览读取失败（${preview.connectionId}/${preview.path}）：${message}`
+      )
+      return notFound()
+    }
+  }
+
   const parts = parseMediaUrl(request.url)
   if (!parts) return notFound()
   const { connectionId, mediaId } = parts
@@ -347,7 +441,7 @@ async function handleMediaRequest(request: Request): Promise<Response> {
     }
     const connection = getConnection(connectionId)
     if (!connection) return notFound()
-    if (target.kind === 'video') return await handleVideoRequest(connection, target, request)
+    if (target.kind === 'video') return await handleRangeRequest(connection, target, request)
     if (connection.protocol === 'local') {
       const osPath = resolveInsideRoot(connection.rootPath, target.path)
       return await net.fetch(pathToFileURL(osPath).toString())

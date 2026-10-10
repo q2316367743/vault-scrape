@@ -36,7 +36,8 @@
 | `src/main/src/modules/library/libraryEvents.ts` | 扫描进度广播 |
 | `src/main/src/modules/media/mediaIndexer.ts` | 目录游标 BFS、条目 / 媒体源 / 图片落库、配合 `extensions` 判定视频、清理未扫到的行 |
 | `src/main/src/modules/media/mediaWall.ts` | 首页 / 整墙与详情读模型、`browseLibrary` 逐级浏览 |
-| `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口） |
+| `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口）；另有一种**路径形式** `storage://{连接ID}/path/{连接内路径}`，给存储页预览未入库的任意文件用（见 [存储页 §7.1](../page/02-storage-page.md)） |
+| `src/common/types/file/preview.ts` | 存储页预览地址的公共纯函数：`FILE_PREVIEW_SEGMENT`、`buildFilePreviewUrl()`、`parseFilePreviewUrl()`、`filePreviewKindOf()`（路径形式只在这里构造与解析，主进程侧只复核路径必须落在连接根内） |
 | `src/main/src/modules/media/mediaLocator.ts` | 播放期按「文件名 + 字节数」在资料库范围内找回被移动的视频（见 §4.5） |
 | `src/main/src/modules/media/mediaAppData.ts` | 伪连接 `appdata` 与 `~/.vault-scrape/media/images` 根目录 |
 | `src/main/src/modules/scrape/scrapeLocalAsset.ts` | `imageSaveMode='appdata'` 的图片落到条目目录 |
@@ -159,13 +160,13 @@
 
 `media_source.path` 只在**扫描**与**刮削改名 / 移动**时更新。用户在文件管理器里把影片挪走（例如挪进自己建的 `failed/` 目录）又不重扫，索引里的路径就是死的：`storage://` 请求在 `stat` 处抛 ENOENT，被收敛成 404——而封面 / 缩略图往往还留在原地，所以表现为「**图片正常、视频 404**」。
 
-- **触发**：`handleVideoRequest()` 把 `client.stat(target.path)` 包进 try/catch，只有 `isNotFoundError(error)`（ENOENT / `FileError` 的 `notFound`）且请求来自**媒体源**（不是图片）时才尝试自愈；其它错误照旧走原来的 404 + 去重日志。
+- **触发**：`handleRangeRequest()` 把 `client.stat(target.path)` 包进 try/catch，只有 `isNotFoundError(error)`（ENOENT / `FileError` 的 `notFound`）且请求来自**媒体源**（不是图片、也不是存储页的路径预览）时才尝试自愈；其它错误照旧走原来的 404 + 去重日志。
 - **查找**（`mediaLocator.locateMovedFile()`）：先在同目录 `client.list(dirname(path))` 快查一次（同目录改名、移进子目录最常见），再回到该**资料库配置的媒体目录**（`getLibrary(libraryId).paths` 里 `connectionId` 匹配的那些，`/` = 连接根）做广度优先遍历。匹配条件是**文件名等价（trim + 忽略大小写）+ 字节数相同**，不做标题 / 番号模糊匹配——宁可继续 404，也不放错片子。
 - **上限**：单次最多检查 `MAX_ENTRIES = 20_000` 个条目、递归 `MAX_DEPTH = 8` 层，超限即放弃；单个目录列不出来（没权限 / 断线 / 已删除）只跳过该目录。
 - **写回**：命中后用 `updateSourcePath(source.id, …)` 只改 `media_source` 的 `path` / `name` / `extname` / `mime` / `size` / `modified_at`——**source id 不变**，`storage://` 地址与远端缓存都不失效；`media_item.path` / `parentId` 不动。成功记一条 info 日志「索引路径失效，已按文件名找回：<旧> → <新>」；写库失败（新路径已被别的媒体源占用）只记 warn，本次播放照常返回。
 - **找不到的缓存**：结论按「资料库 + 连接 + 文件名 + 字节数」缓存 `MISS_TTL_MS = 60_000`，播放器反复重试同一个源时不会一遍遍遍历整个资料库。
 - **并发去重**：主进程里同一个媒体源的并发 Range 请求共享一次查找（`healing: Map<sourceId, Promise<FileEntry | null>>`）。
-- **不做**：不主动扫盘、不监听文件系统、不新增 IPC、不改表结构。真删掉的文件仍然 404，渲染层由 `MediaPlayer.vue` 的封面兜底层提示「文件可能已被移动或删除……也可以在影视墙里对资料库重新扫描一次」。
+- **不做**：不主动扫盘、不监听文件系统、不新增 IPC、不改表结构。真删掉的文件仍然 404，渲染层由共用的 `src/renderer/src/components/media/MediaPlayer.vue` 的封面兜底层提示（存储页预览另给它一句「可以先用本机播放器打开它」，影视墙详情页仍提示「……也可以在影视墙里对资料库重新扫描一次」）。
 
 ## 5. 刮削（`libraryScrape.ts`）
 
@@ -228,7 +229,7 @@
 - **入口分工**：**扫描**只在影视墙的资料库抽屉里；**刮削**有两个入口——资料库抽屉的「刮削」（整库待刮削候选）与工作台的逐级勾选（`scrape:start { libraryId, itemIds }`）。工作台**不再扫盘、不再自己建索引**。
 - **影视墙**：[影视墙页面](../page/04-media-wall-page.md)分首页（`/media`：资料库横排 + 最近添加 / 推荐两排）与内容页（`/media/library?libraryId=…`，空串 = 全部影片）；只列各资料库的 `type='movie'` 条目（不属于任何库的影片不会出现在墙上），封面取条目自己的 primary 图、否则退回父目录条目的 primary 图；`indexedAt` = 最新媒体源的 `indexed_at`。**影视墙不按刮削与否分类**（没有「待刮削 / 已刮削」标记、排序与统计，详情页也没有「刮削状态」格）。
 - **工作台**：[工作台页面](../page/03-workspace-page.md)先用 `scrape:browse { libraryId, dirPath }` 逐级浏览（返回 `MediaBrowseEntry`，含 movie / folder），再勾选启动。
-- **存储页**：[存储页](../page/02-storage-page.md)删连接时主进程会级联 `deleteLibrariesByConnection(connectionId)`（删库 + 媒体条目 / 媒体源 / 图片），避免留下悬空数据；连接上不再有刮削器配置。
+- **存储页**：[存储页](../page/02-storage-page.md)是只读浏览 + 预览：删连接时主进程会级联 `deleteLibrariesByConnection(connectionId)`（删库 + 媒体条目 / 媒体源 / 图片），避免留下悬空数据；连接上不再有刮削器配置。预览走 `storage://` 的**路径形式**（不依赖媒体索引），因此未入库的任意视频 / 图片 / 音频 / nfo 也能看，与影视墙走的是同一条区间流式通道。
 - **数据落盘位置**：
 
 | 内容 | 位置 |

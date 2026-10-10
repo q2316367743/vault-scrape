@@ -1,28 +1,35 @@
 <script setup lang="ts">
 /**
- * 播放器：artplayer 的 Vue 外壳。
+ * 播放器：artplayer 的 Vue 外壳（影视墙详情页与存储页预览共用）。
  *
  * 契约：
- * - `url` 变化（换片 / 重新读取）时销毁重建，避免上一部影片的缓冲与错误残留；
+ * - `url` 变化（换片 / 换文件 / 重新读取）时销毁重建，避免上一部影片的缓冲与错误残留；
  * - 主题色从 tdesign token 读（`--td-brand-color`），不写死品牌色；
  * - NSFW 保护未解除时盖一层不透明遮罩并挡住播放器交互，点击后解除并起播；
  * - 封装 / 编码放不了或文件读不出来时，不是留一块黑屏：在播放器位置盖一层
- *   「该影片的封面（快照）+ 说明文案」，本版本不做转码；
+ *   「封面（可无）+ 说明文案」，说明文案由调用方传 `fallbackText`（本版本不做转码）；
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
-import { artplayerI18n } from '../mediaPlayerI18n'
+import { artplayerI18n } from './mediaPlayerI18n'
 
 const props = withDefaults(
   defineProps<{
-    /** `storage://` 播放地址，由主进程用资源 ID 构造 */
+    /** `storage://` 播放地址（媒体 ID 或存储页预览路径），由主进程解析 */
     url: string
     /** 封面地址（`storage://`），空串表示没有封面 */
     poster?: string
     /** NSFW 保护是否生效 */
     protect?: boolean
+    /** 播放失败时的说明文案，由调用方按场景给 */
+    fallbackText?: string
   }>(),
-  { poster: '', protect: false }
+  {
+    poster: '',
+    protect: false,
+    fallbackText:
+      '视频读不出来：文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录，也可以在影视墙里对资料库重新扫描一次。'
+  }
 )
 
 const container = ref<HTMLDivElement | null>(null)
@@ -89,10 +96,14 @@ watch(() => props.url, create)
   <div class="media-player">
     <div ref="container" class="player-container"></div>
     <div v-if="failed" class="player-fallback">
-      <t-image v-if="revealed && poster" class="player-fallback-cover" :src="poster" fit="contain" alt="影片封面" />
-      <p class="player-fallback-text">
-        视频读不出来：文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录，也可以在影视墙里对资料库重新扫描一次。
-      </p>
+      <t-image
+        v-if="revealed && poster"
+        class="player-fallback-cover"
+        :src="poster"
+        fit="contain"
+        alt="封面"
+      />
+      <p class="player-fallback-text">{{ fallbackText }}</p>
     </div>
     <div v-if="!revealed" class="player-guard">
       <t-button theme="primary" variant="outline" @click="reveal">内容已隐藏，点击播放</t-button>

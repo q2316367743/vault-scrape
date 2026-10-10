@@ -127,7 +127,7 @@ form.rootPath = result.filePaths[0]
 | 位置 | 现状 |
 | --- | --- |
 | 设置 → 应用设置（演员头像目录） | `SettingAppPanel.vue` 的 `pickDirectory()` 仍是 `MessagePlugin.info('目录选择待接入，请先手动输入绝对路径')` |
-| 存储 → 上传 / 下载的本机路径 | `PathDialogContent.vue` 仍是纯输入框 |
+| 存储 → 上传 / 下载的本机路径 | 随存储页只读改造**已下线**：`PathDialog`（上传 / 下载 / 复制到 / 移动到）整套删除，存储页现在只浏览与预览（见[存储页](../page/02-storage-page.md)）；将来要恢复上传 / 下载时，接法就是把输入框换成「只读输入框 + 选择按钮」 |
 | 「保存」框 | 已有 `dialog:save` 通道，暂无消费方（可用于导出、另存为等） |
 
 > 另注：**资料库的媒体目录不走这个模块**——那是连接内路径，用 `pages/media/library/components/RemoteDirDialog.tsx`（`fileApi.list` 列目录），详见 §6.1 与[影视墙页面](../page/04-media-wall-page.md)。
