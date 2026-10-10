@@ -84,7 +84,7 @@ onMounted(() => {
           />
           <div v-else class="overview-cover is-empty">
             <film-icon size="32px" />
-            <span>{{ detail.item.scraped ? '没有找到封面' : '未刮削' }}</span>
+            <span>没有找到封面</span>
           </div>
 
           <div class="overview-facts">

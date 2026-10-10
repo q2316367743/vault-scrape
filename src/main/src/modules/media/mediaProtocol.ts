@@ -9,6 +9,9 @@
  *   本机直读磁盘、WebDAV 用原生 Range、SMB 用补丁后的区间读，应答 200 / 206 / 416
  *   （`net.fetch` 不会转发 Range 头，非 faststart 的 MP4 会整段加载失败，故不能走它）；
  * - 其它媒体（图片、NFO）沿用 `net.fetch`：本地直接读磁盘，远端先落本机缓存再读；
+ * - 视频请求发现索引路径过期（文件被移动 / 整理过）时，先按「文件名 + 字节数」在本资料库
+ *   范围内找回文件并把新路径写回 `media_source`（source ID 不变），再把这次请求读完；
+ *   找不回来仍是 404；
  * - 任何失败都返回 404 并只记日志（同一媒体 60 秒内只记一条），不把异常抛回渲染层。
  */
 import { randomUUID } from 'crypto'
@@ -16,7 +19,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlin
 import { join, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import { app, net, protocol } from 'electron'
-import { guessMimeType, type FileConnection } from '@common/types/file'
+import { guessMimeType, type FileConnection, type FileEntry } from '@common/types/file'
 import {
   MEDIA_ID_PATTERN,
   MEDIA_SCHEME,
@@ -26,11 +29,13 @@ import {
 } from '@common/types/media'
 import { appendLog } from '$/db/repo/logRepo'
 import { getImage } from '$/db/repo/mediaImageRepo'
-import { getSource } from '$/db/repo/mediaRepo'
+import { getSource, updateSourcePath } from '$/db/repo/mediaRepo'
 import { getConnection } from '$/modules/file/fileConnectionStore'
 import { APPDATA_CONNECTION_ID, appDataImageRoot } from '$/modules/media/mediaAppData'
 import { resolveInsideRoot } from '$/modules/file/impl/local/localPath'
+import { isNotFoundError } from '$/modules/file/fileErrorUtils'
 import { getFileClient } from '$/modules/file/fileClientManager'
+import { locateMovedFile } from '$/modules/media/mediaLocator'
 import { toWebStream } from '$/modules/file/streamToWeb'
 
 const CONNECTION_ID_PATTERN = /^[a-z0-9-]{1,64}$/
@@ -83,18 +88,28 @@ interface MediaTarget {
   size: number
   /** 媒体类型：决定走 Range 流式（video）还是 `net.fetch` */
   kind: MediaSourceKind
+  /** 媒体源 ID（图片为空串）：路径自愈要拿它把新路径写回索引 */
+  sourceId: string
+  /** 媒体源所属资料库（图片为空串）：自愈时用它圈定查找范围 */
+  libraryId: string
 }
 
 /** 媒体源表优先，图片表兜底（媒体源被重扫清掉后封面仍可显示） */
 function resolveTarget(connectionId: string, mediaId: string): MediaTarget | null {
   const source = getSource(mediaId)
   if (source && source.connectionId === connectionId) {
-    return { path: source.path, size: source.size, kind: mediaSourceKindOf(source.mime, source.extname) }
+    return {
+      path: source.path,
+      size: source.size,
+      kind: mediaSourceKindOf(source.mime, source.extname),
+      sourceId: source.id,
+      libraryId: source.libraryId
+    }
   }
 
   const image = getImage(mediaId)
   if (!image || image.connectionId !== connectionId || image.path.length === 0) return null
-  return { path: image.path, size: 0, kind: 'image' }
+  return { path: image.path, size: 0, kind: 'image', sourceId: '', libraryId: '' }
 }
 
 function isCacheUsable(file: string, size: number): boolean {
@@ -209,10 +224,64 @@ function parseByteRange(header: string | null, total: number): ByteRange | 'unsa
   return { start, end: Math.min(end, total - 1) }
 }
 
+/** 正在自愈的媒体源：同一个源的并发 Range 请求共享一次查找 */
+const healing = new Map<string, Promise<FileEntry | null>>()
+
+/**
+ * 索引里的路径失效时，按「文件名 + 字节数」把文件找回来并把新路径写回媒体源。
+ *
+ * 只处理「文件不存在」：权限 / 断线之类的错误照旧抛给上层记日志。写库失败（例如新路径
+ * 已经被别的媒体源占用）不影响本次播放，只是下次起播还要再找一次。
+ */
+function healMovedVideo(
+  connectionId: string,
+  target: MediaTarget,
+  error: unknown
+): Promise<FileEntry | null> {
+  if (!isNotFoundError(error) || target.sourceId.length === 0) return Promise.resolve(null)
+  const existing = healing.get(target.sourceId)
+  if (existing) return existing
+  const task = relocateSource(connectionId, target).finally(() => {
+    healing.delete(target.sourceId)
+  })
+  healing.set(target.sourceId, task)
+  return task
+}
+
+async function relocateSource(connectionId: string, target: MediaTarget): Promise<FileEntry | null> {
+  const located = await locateMovedFile({
+    connectionId,
+    libraryId: target.libraryId,
+    path: target.path,
+    size: target.size
+  })
+  if (!located) return null
+  try {
+    updateSourcePath(target.sourceId, {
+      path: located.path,
+      name: located.name,
+      extname: located.extname,
+      mime: located.mime,
+      size: located.size,
+      modifiedAt: located.modifiedAt
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    warnOnce(target.sourceId, `索引路径已找回但写回失败（${connectionId}/${target.sourceId}）：${message}`)
+  }
+  appendLog({
+    level: 'info',
+    scope: 'media',
+    message: `索引路径失效，已按文件名找回：${target.path} → ${located.path}`
+  })
+  return located
+}
+
 /**
  * 视频请求：当自己的 Range 服务端。
  *
  * 大小与 MIME 以 `stat` 为准（索引可能过期，而 206 的 `Content-Range` 必须和真实大小一致）；
+ * stat 报「文件不存在」时先尝试按文件名 + 大小自愈一次，找回来的新路径同时用于 `readRange`；
  * 流的取消由 `toWebStream` 传播成 `destroy()`，拖进度条 / 关页面都不会漏句柄。
  */
 async function handleVideoRequest(
@@ -221,7 +290,16 @@ async function handleVideoRequest(
   request: Request
 ): Promise<Response> {
   const client = await getFileClient(connection.id)
-  const info = await client.stat(target.path)
+  let filePath = target.path
+  let info: FileEntry
+  try {
+    info = await client.stat(filePath)
+  } catch (error) {
+    const healed = await healMovedVideo(connection.id, target, error)
+    if (!healed) throw error
+    filePath = healed.path
+    info = healed
+  }
   if (info.type !== 'file' || info.size <= 0) return notFound()
 
   const total = info.size
@@ -235,7 +313,7 @@ async function handleVideoRequest(
 
   const start = parsed ? parsed.start : 0
   const end = parsed ? parsed.end : total - 1
-  const stream = await client.readRange(target.path, start, end)
+  const stream = await client.readRange(filePath, start, end)
   const headers = new Headers({
     'Content-Type': info.mime.length > 0 ? info.mime : guessMimeType(info.name),
     'Content-Length': `${end - start + 1}`,

@@ -76,7 +76,6 @@ interface WallOption {
 }
 
 const SORT_OPTIONS: WallOption[] = [
-  { value: 'scraped', label: '已刮削优先' },
   { value: 'title', label: '按标题' },
   { value: 'size', label: '按体积' },
   { value: 'modified', label: '按磁盘时间' }
@@ -92,8 +91,7 @@ const libraryId = ref(queryText(route.query.libraryId))
 const libraryName = ref('')
 
 const { connections, refresh: refreshConnections } = useFileConnections()
-const { loading, failure, indexedAt, keyword, sort, visible, scrapedCount, load } =
-  useMediaWall(libraryId)
+const { loading, failure, indexedAt, keyword, sort, visible, load } = useMediaWall(libraryId)
 
 keyword.value = queryText(route.query.keyword)
 
@@ -109,7 +107,7 @@ const emptyTitle = computed(() =>
 
 const summary = computed(() => {
   const indexed = indexedAt.value > 0 ? ` · 索引更新于 ${formatTime(indexedAt.value)}` : ''
-  return `共 ${visible.value.length} 部 · 已刮削 ${scrapedCount.value} 部${indexed}`
+  return `共 ${visible.value.length} 部${indexed}`
 })
 
 function connectionOf(connectionId: string): FileConnection | null {
@@ -117,7 +115,7 @@ function connectionOf(connectionId: string): FileConnection | null {
 }
 
 function onSortChange(value: unknown): void {
-  if (value === 'scraped' || value === 'title' || value === 'size' || value === 'modified') {
+  if (value === 'title' || value === 'size' || value === 'modified') {
     sort.value = value
   }
 }

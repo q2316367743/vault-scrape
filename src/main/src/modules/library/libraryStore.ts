@@ -10,7 +10,6 @@
  */
 import {
   countMovieItems,
-  countScrapedMovieItems,
   deleteItemsByConnection,
   deleteItemsByLibrary,
   deleteSourcesByConnection,
@@ -187,7 +186,6 @@ export function listSummaries(): MediaLibrarySummary[] {
   return readLibraries().map((library) => ({
     ...library,
     videoCount: countMovieItems(library.id),
-    scrapedCount: countScrapedMovieItems(library.id),
     coverUrls: coverUrlsOf(library.id)
   }))
 }

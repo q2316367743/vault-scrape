@@ -48,16 +48,8 @@ function openDetail(): void {
       />
       <div v-else class="cover-placeholder">
         <film-icon size="28px" />
-        <span>{{ item.scraped ? '没有封面' : '未刮削' }}</span>
+        <span>没有封面</span>
       </div>
-      <t-tag
-        class="cover-badge"
-        size="small"
-        :theme="item.scraped ? 'success' : 'default'"
-        variant="light-outline"
-      >
-        {{ item.scraped ? '已刮削' : '未刮削' }}
-      </t-tag>
     </div>
 
     <div class="card-body">
@@ -115,12 +107,6 @@ function openDetail(): void {
   height: 100%;
   font-size: 12px;
   color: var(--td-text-color-placeholder);
-}
-
-.cover-badge {
-  position: absolute;
-  top: 6px;
-  right: 6px;
 }
 
 .card-body {

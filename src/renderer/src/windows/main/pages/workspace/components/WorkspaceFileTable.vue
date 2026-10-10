@@ -64,12 +64,10 @@
       </template>
       <template #status="{ row }">
         <div v-if="row.type === 'movie'" class="cell-status">
-          <t-tag size="small" :theme="row.scraped ? 'success' : 'default'" variant="light-outline">
-            {{ row.scraped ? '已刮削' : '未刮削' }}
-          </t-tag>
           <t-tag v-if="!row.hasSource" size="small" theme="warning" variant="light-outline">
             没有播放源
           </t-tag>
+          <span v-else>—</span>
         </div>
         <span v-else>—</span>
       </template>
@@ -82,7 +80,8 @@
  *
  * 契约：
  * - 勾选状态由父级持有（`selected` 是条目 ID 数组），本组件只发 `toggle` / `toggle-all`；
- * - 状态列展示的是条目是否已刮削，不展示任务逐文件进度（那属于任务卡片）。
+ * - 状态列只提示「没有播放源」这类异常，不展示是否已刮削，也不展示任务逐文件进度
+ *   （那属于任务卡片）。
  */
 import { computed } from 'vue'
 import { FilmIcon, FolderIcon } from 'tdesign-icons-vue-next'
@@ -112,7 +111,7 @@ const columns = [
   { colKey: 'type', title: '类型', width: 88 },
   { colKey: 'size', title: '大小', width: 110 },
   { colKey: 'modifiedAt', title: '修改时间', width: 160 },
-  { colKey: 'status', title: '刮削状态', width: 170 }
+  { colKey: 'status', title: '状态', width: 120 }
 ]
 
 const movieCount = computed(() => props.rows.filter((row) => row.type === 'movie').length)

@@ -44,10 +44,6 @@ export interface MediaWallItem {
   coverUrl: string
   /** 播放地址（`storage://`），可直接喂给 video / artplayer */
   playUrl: string
-  /** 条目是否已经刮削过（`scrapedAt > 0`） */
-  scraped: boolean
-  /** 上次刮削完成时间；未刮削为 0（仅用于排序） */
-  scrapedAt: number
   /** 上次命中的插件 ID，未命中为空串 */
   pluginId: string
   /** 条目入库时间（首次被扫描到的时间），「最近添加」按它排序 */
@@ -62,8 +58,8 @@ export interface MediaWallRequest {
   libraryId: string
 }
 
-/** 首页横排的 ID：最近添加 / 待刮削 / 推荐（均匀取样，避免整排与最近添加重复） */
-export type MediaHomeRowId = 'recent' | 'pending' | 'discover'
+/** 首页横排的 ID：最近添加 / 推荐（均匀取样，避免整排与最近添加重复） */
+export type MediaHomeRowId = 'recent' | 'discover'
 
 /** 首页的一横排：标题 + 最多 `MEDIA_HOME_ROW_LIMIT` 张卡 */
 export interface MediaHomeRow {
@@ -83,7 +79,6 @@ export interface MediaHomeResult {
   libraries: MediaLibrarySummary[]
   rows: MediaHomeRow[]
   total: number
-  scrapedCount: number
   indexedAt: number
 }
 
@@ -95,8 +90,6 @@ export interface MediaWallResult {
   items: MediaWallItem[]
   /** 视频总数（当前等于 items.length，保留字段以便将来改成分页） */
   total: number
-  /** 其中已刮削的数量 */
-  scrapedCount: number
   /** 媒体库里最新的索引时间；没有任何条目时为 0 */
   indexedAt: number
   /**
@@ -117,7 +110,6 @@ export interface MediaBrowseEntry {
   name: string
   num: string
   title: string
-  scraped: boolean
   /** 文件夹条目：子树里是否有影片；影片条目：是否已经有媒体源 */
   hasSource: boolean
   size: number

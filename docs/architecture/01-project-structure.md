@@ -30,7 +30,7 @@ src/
 │   └── types/
 │       ├── setting/         # 设置类型：shared / library（媒体后缀清单）/ scrape / network / translate / naming / download / file / index
 │       ├── file/            # 文件类型：error / path / entry / connection / request / transfer / result / index
-│       ├── media/           # 媒体类型：媒体源 / 图片类型与 storage:// 地址、墙面条目、首页三排、浏览条目、详情请求与结果、NFO 解析、错误与信封
+│       ├── media/           # 媒体类型：媒体源 / 图片类型与 storage:// 地址、墙面条目、首页两排、浏览条目、详情请求与结果、NFO 解析、错误与信封
 │       ├── library/         # 资料库类型：MediaLibrary（类型 type / 多根目录 / 库级刮削器，空数组 = 不刮削）/ `LibraryType` 与标签 / 草稿 / 摘要（含 `coverUrls`）/ 扫描与任务结果 / 进度事件 / 错误码与 LibraryResult 信封
 │       ├── plugin/          # 插件类型：asset / movie / manifest / env / define / builtin（`R18_OFFLINE_PLUGIN_ID`）/ normalize / error / result / index
 │       ├── log.ts           # 日志类型与查询条件
@@ -44,7 +44,7 @@ src/
 │       ├── modules/dialog/  # 对话框域：把 Electron dialog 的「打开 / 保存」框收窄后暴露给渲染层
 │       ├── modules/file/    # 文件域：FileClient 接口 + 本地 / WebDAV / SMB 三实现 + 连接存储 + IPC
 │       ├── modules/http/    # HTTP 域：axios 单例 + 请求拦截器按网络设置注入代理
-│       ├── modules/media/   # 媒体域：扫描索引引擎（mediaIndexer，按传入的 extensions 判视频）+ storage:// 协议与 Range 流式（mediaProtocol）+ 首页 / 整墙 / 详情 / 逐级浏览读模型（mediaWall）+ appdata 图片路径（mediaAppData）+ IPC
+│       ├── modules/media/   # 媒体域：扫描索引引擎（mediaIndexer，按传入的 extensions 判视频）+ storage:// 协议与 Range 流式（mediaProtocol）+ 播放期路径自愈（mediaLocator）+ 首页 / 整墙 / 详情 / 逐级浏览读模型（mediaWall）+ appdata 图片路径（mediaAppData）+ IPC
 │       ├── modules/library/ # 资料库域：配置落 sqlite（类型 / 多根目录 / 空刮削器 = 不刮削 / 库级选项）+ 目录重叠校验（libraryStore.normalizePaths）+ 扫描编排与取消（libraryScan，按库类型取后缀、扫后自动刮削）+ 待刮削候选与任务启动（libraryScrape）+ 进度广播 + IPC
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
 │       ├── modules/scrape/  # 刮削域：任务编排 + 单文件流水线 + 资料库候选入口 + 单文件资源落盘（scrapeLocalAsset）+ IPC 与进度推送
@@ -89,7 +89,7 @@ src/renderer/src/windows/main/pages/media/
 ### 媒体域与资料库域的边界
 
 - **资料库域**（`src/main/src/modules/library/`）拥有「配置 + 编排」：目录合法性与重叠校验、按库类型取后缀、扫描互斥与取消、扫后清理与自动刮削、待刮削候选去重、任务启动。**扫描的调度入口在这里。**
-- **媒体域**（`src/main/src/modules/media/`）拥有「索引 + 读模型 + 取值」：BFS 遍历与条目 / 媒体源 / 图片落库、`storage://` 协议与 Range 流式、首页三排 / 整墙 / 详情 / 逐级浏览。
+- **媒体域**（`src/main/src/modules/media/`）拥有「索引 + 读模型 + 取值」：BFS 遍历与条目 / 媒体源 / 图片落库、`storage://` 协议与 Range 流式（含播放期路径自愈 `mediaLocator.ts`）、首页两排 / 整墙 / 详情 / 逐级浏览。
 - **刮削域**（`src/main/src/modules/scrape/`）只负责执行任务：流水线、资源下载、命名、NFO；它不决定「刮哪些、用什么刮削器」，那由资料库域传进来。
 
 ## 路径别名

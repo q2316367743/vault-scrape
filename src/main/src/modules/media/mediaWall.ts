@@ -6,11 +6,12 @@
  *   磁盘上删掉的影片会随扫描清理一起消失；
  * - 封面先看条目自己、再退回**父目录条目**，按「主图 → 缩略图 → 背景图 → 剧照 → 其他」
  *   找第一张（扫描期把目录级图片挂在目录条目上、`extrafanart/still*.jpg` 挂在影片上，见 `mediaIndexer`）；
- * - 「是否刮削」= 自己跑过刮削（`scrapedAt > 0`）或磁盘上已经有产出（同目录 NFO / 图片），
- *   与 `countScrapedMovieItems` 同一口径；
+ * - 影视墙**不按刮削与否分类**（Jellyfin 也没有这种分类）：展示标题只看条目是否
+ *   真的跑过刮削（`scrapedAt > 0`，此时 `media_item.name` 已被刮削标题覆盖），
+ *   没跑过的用去掉扩展名的文件名；
  * - 播放地址与封面地址都走 `storage://{连接}/{媒体ID}/{文件名}`，只认 ID 不认路径；
  * - 墙面可以按资料库过滤（`MediaWallRequest.libraryId`，空串 = 全部库）；
- * - 首页三排（最近添加 / 待刮削 / 全部影片）与墙面同一套条目口径，只做排序与截断；
+ * - 首页两排（最近添加 / 推荐）与墙面同一套条目口径，只做排序与截断；
  * - 详情另外读同目录 NFO 作为元信息；读失败不抛错，只当没有。
  */
 import { FILE_ROOT, basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
@@ -85,29 +86,12 @@ function coverUrlOf(item: MediaItemRow, images: Map<string, MediaImageRow[]>): s
   return ''
 }
 
-/** 条目自己或父目录条目上有没有图片（有图 = 磁盘上已经有刮削产出） */
-function hasImageEvidence(item: MediaItemRow, images: Map<string, MediaImageRow[]>): boolean {
-  if ((images.get(item.id)?.length ?? 0) > 0) return true
-  return item.parentId.length > 0 && (images.get(item.parentId)?.length ?? 0) > 0
-}
-
-/**
- * 「是否刮削」：自己跑过刮削（`scrapedAt > 0`），或者磁盘上已经有产出——
- * 同目录 NFO（扫描写在 `hasNfo` 上）或图片（条目 / 父目录条目上的图）。
- *
- * 与 `countScrapedMovieItems` 的口径保持一致；刮削队列（`scrapedAt === 0`）不受影响。
- */
-function scrapedOf(item: MediaItemRow, images: Map<string, MediaImageRow[]>): boolean {
-  return item.scrapedAt > 0 || item.hasNfo > 0 || hasImageEvidence(item, images)
-}
-
 function toWallItem(
   item: MediaItemRow,
   source: MediaSourceRow,
   images: Map<string, MediaImageRow[]>,
   library: MediaLibrary | null
 ): MediaWallItem {
-  const scraped = scrapedOf(item, images)
   return {
     itemId: item.id,
     libraryId: item.libraryId,
@@ -118,11 +102,9 @@ function toWallItem(
     dirPath: dirnameRemotePath(source.path),
     name: item.name,
     num: item.num,
-    title: scraped ? item.name : stripExtension(item.name),
+    title: item.scrapedAt > 0 ? item.name : stripExtension(item.name),
     coverUrl: coverUrlOf(item, images),
     playUrl: buildMediaUrl(source.connectionId, source.id, source.name),
-    scraped,
-    scrapedAt: item.scrapedAt,
     dateAdded: item.dateAdded,
     pluginId: item.scraperId,
     size: source.size,
@@ -156,7 +138,6 @@ export function loadMediaWall(request: MediaWallRequest = { libraryId: '' }): Me
   return {
     items,
     total: items.length,
-    scrapedCount: items.filter((item) => item.scraped).length,
     indexedAt: maxSourceIndexedAt(),
     libraries: listSummaries()
   }
@@ -195,7 +176,7 @@ function spreadSample(items: MediaWallItem[], limit: number): MediaWallItem[] {
 }
 
 /**
- * 首页读模型：库摘要 + 三排固定顺序的影片（最近添加 / 待刮削 / 推荐）。
+ * 首页读模型：库摘要 + 两排固定顺序的影片（最近添加 / 推荐）。
  *
  * 每排取前 `MEDIA_HOME_ROW_LIMIT` 张，统计口径与 `loadMediaWall` 完全一致。
  */
@@ -204,18 +185,12 @@ export function loadMediaHome(): MediaHomeResult {
   const sorted = [...wall.items].sort(byTimeDesc)
   const rows: MediaHomeRow[] = [
     { id: 'recent', title: '最近添加', items: sorted.slice(0, MEDIA_HOME_ROW_LIMIT) },
-    {
-      id: 'pending',
-      title: '待刮削',
-      items: sorted.filter((item) => !item.scraped).slice(0, MEDIA_HOME_ROW_LIMIT)
-    },
     { id: 'discover', title: '推荐', items: spreadSample(sorted, MEDIA_HOME_ROW_LIMIT) }
   ]
   return {
     libraries: wall.libraries,
     rows,
     total: wall.total,
-    scrapedCount: wall.scrapedCount,
     indexedAt: wall.indexedAt
   }
 }
@@ -260,11 +235,7 @@ function movieSubtree(libraryId: string): Map<string, boolean> {
   return memo
 }
 
-function toBrowseEntry(
-  row: MediaItemRow,
-  withMovies: Map<string, boolean>,
-  images: Map<string, MediaImageRow[]>
-): MediaBrowseEntry {
+function toBrowseEntry(row: MediaItemRow, withMovies: Map<string, boolean>): MediaBrowseEntry {
   if (row.type === 'folder') {
     return {
       itemId: row.id,
@@ -274,7 +245,6 @@ function toBrowseEntry(
       name: row.name,
       num: '',
       title: row.name,
-      scraped: false,
       hasSource: withMovies.get(row.id) === true,
       size: 0,
       modifiedAt: 0
@@ -282,7 +252,6 @@ function toBrowseEntry(
   }
   const sources = listSourcesByItem(row.id)
   const source = primarySourceOf(row, sources)
-  const scraped = scrapedOf(row, images)
   return {
     itemId: row.id,
     type: 'movie',
@@ -290,8 +259,7 @@ function toBrowseEntry(
     path: row.path,
     name: row.name,
     num: row.num,
-    title: scraped ? row.name : stripExtension(row.name),
-    scraped,
+    title: row.scrapedAt > 0 ? row.name : stripExtension(row.name),
     hasSource: sources.length > 0,
     size: source?.size ?? 0,
     modifiedAt: source?.modifiedAt ?? 0
@@ -328,14 +296,13 @@ export function browseLibrary(request: ScrapeBrowseRequest): MediaBrowseEntry[] 
   }
 
   const withMovies = movieSubtree(library.id)
-  const images = imagesByItem(listImagesByLibrary(library.id))
   const seen = new Set<string>()
   const entries: MediaBrowseEntry[] = []
   for (const parentId of parents) {
     for (const row of listChildItems(library.id, parentId)) {
       if (seen.has(row.id)) continue
       seen.add(row.id)
-      entries.push(toBrowseEntry(row, withMovies, images))
+      entries.push(toBrowseEntry(row, withMovies))
     }
   }
   return entries.sort(compareBrowse)

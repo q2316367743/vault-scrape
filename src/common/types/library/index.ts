@@ -102,8 +102,6 @@ export interface MediaLibraryDraft {
 export interface MediaLibrarySummary extends MediaLibrary {
   /** 该库在墙上的影片数 */
   videoCount: number
-  /** 其中已刮削的数量 */
-  scrapedCount: number
   /**
    * 库卡片封面拼贴用的海报地址（`storage://`），最多 4 张、按最近添加排序。
    *

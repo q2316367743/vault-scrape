@@ -101,7 +101,7 @@ const scraperText = computed(() =>
 const summaryText = computed(() => {
   const summary = props.summary
   if (!summary) return '还没有影片'
-  return `影片 ${summary.videoCount} 部 · 已刮削 ${summary.scrapedCount} 部`
+  return `影片 ${summary.videoCount} 部`
 })
 
 function pathTextOf(connectionId: string, path: string): string {

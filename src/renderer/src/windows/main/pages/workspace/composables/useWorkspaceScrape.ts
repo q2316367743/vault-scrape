@@ -228,7 +228,7 @@ export function useWorkspaceScrape() {
     const wasRunning = running.value
     task.value = event.task
     running.value = event.task.status === 'running'
-    // 任务停下来时目录里的「已刮削」状态可能变了，静默刷新一次
+    // 任务停下来时目录里的刮削产出可能变了，静默刷新一次
     if (wasRunning && !running.value) void browse(dirPath.value)
   }
 

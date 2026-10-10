@@ -42,8 +42,8 @@ export const mediaItemTable = sqliteTable(
     /**
      * 上次扫描时同目录有没有 NFO（`movie.nfo` 或与视频同名的 `.nfo`）；1 = 有。
      *
-     * 这一列归**扫描**维护（刮削元数据列不归扫描管），用于「是否刮削」判定：
-     * 磁盘上已经有刮削产出（NFO / 图片）时，即使没跑过刮削流程也算已刮削。
+     * 这一列归**扫描**维护（刮削元数据列不归扫描管），只是「磁盘上有没有 NFO」的事实
+     * 标记——影视墙不再按刮削与否分类，所以它当前不参与任何界面判定。
      */
     hasNfo: integer('has_nfo').notNull().default(0),
     dateAdded: integer('date_added').notNull(),

@@ -87,7 +87,7 @@
 - 表之间**没有外键**：`library_id` / `item_id` / `parent_id` 都是普通 text 列，级联清理由仓储函数显式完成（`deleteItemsWithoutSource` → `deleteImagesByIds` → `deleteSourcesNotInScan`；删库走 `purgeLibraryMedia`；删连接走 `deleteLibrariesByConnection`）。
 - 唯一索引是去重与 upsert 的落点：`library_path (connection_id, path)`（一条目录只能属于一个库，嵌套与重叠由 `libraryStore.normalizePaths()` 在保存时先用 `isRemotePathInside` 拦下）、`media_source (connection_id, path)`（重扫 `upsertSource` 的冲突目标，**id 不变**）、`media_image (connection_id, path)`。
 - 刮削元数据写在 `media_item` 上（`title` / `num` / `overview` / 评分 / JSON 列 `genres` / `studios` / `tags` / `provider_ids` / `scraped_at` / `scraper_id`），所以重扫只更新 `media_source`，元数据与图片不会丢。
-- `media_item.has_nfo`（迁移 `0002_damp_mandarin.sql` 加列）反过来是**扫描拥有**的列：扫描时同目录有 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它和 `scraped_at`（跑过刮削）、图片（条目自己或父目录条目有 `media_image` 行）一起构成「是否刮削」的判定，见 [资料库](../media/01-media-library.md)。
+- `media_item.has_nfo`（迁移 `0002_damp_mandarin.sql` 加列）反过来是**扫描拥有**的列：扫描时同目录有 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它现在只是「磁盘上有没有 NFO」的**事实标记，当前不参与任何界面判定**——旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径已下线，列保留是为了不改表结构；刮削队列仍只看 `scraped_at === 0`，见 [资料库](../media/01-media-library.md)。
 
 时间一律使用整数毫秒，避免时区与字符串格式歧义。
 
@@ -143,7 +143,7 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 - **媒体层重建这一轮重新生了迁移**：旧的 4 个迁移（`0000_typical_paibok.sql` ~ `0003_tiresome_gressill.sql`）与 `meta/` 全部删除，现在的迁移一共三份：
   - `resources/drizzle/0000_heavy_hardball.sql`——媒体层重建后的基线（**8 张表、0 外键**）；
   - `resources/drizzle/0001_smooth_micromacro.sql`——全文一行 `ALTER TABLE \`library\` ADD \`type\` text DEFAULT 'movie' NOT NULL;`（资料库类型）；
-  - `resources/drizzle/0002_damp_mandarin.sql`——全文一行 `ALTER TABLE \`media_item\` ADD \`has_nfo\` integer DEFAULT 0 NOT NULL;`（扫描侧的 NFO 证据列）。
+  - `resources/drizzle/0002_damp_mandarin.sql`——全文一行 `ALTER TABLE \`media_item\` ADD \`has_nfo\` integer DEFAULT 0 NOT NULL;`（扫描侧的事实列，当前不参与分类）。
   `meta/_journal.json` 里有 idx 0（tag `0000_heavy_hardball`）、idx 1（tag `0001_smooth_micromacro`）与 idx 2（tag `0002_damp_mandarin`）三条，快照为 `meta/0000_snapshot.json` + `meta/0001_snapshot.json` + `meta/0002_snapshot.json`；`0000` 本身未被改动。**历史迁移（含 0000）永远不要改**，之后改表结构继续 generate 出新的 `000X_*.sql`。
 - **旧库不做兼容、不迁移数据**：drizzle 的记账表里记着旧 tag / hash，与新迁移对不上时启动会报 `table ... already exists`；因此本机旧库 `~/.vault-scrape/db/vault-scrape.db` 已改名归档为 `vault-scrape.db.old-20261010`，新库首次启动时按新迁移从零建表。旧库里的刮削记录 / 任务历史一律不带过来。
 - **资料库配置这一轮进了 sqlite**（`library` / `library_path`）：`~/.vault-scrape/media/libraries.json` 已废弃、不再读写，删除存储时的库级联也变成数据库操作（`deleteLibrariesByConnection`）。

@@ -91,7 +91,7 @@ watch(() => props.url, create)
     <div v-if="failed" class="player-fallback">
       <t-image v-if="revealed && poster" class="player-fallback-cover" :src="poster" fit="contain" alt="影片封面" />
       <p class="player-fallback-text">
-        视频读不出来：文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录。
+        视频读不出来：文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录，也可以在影视墙里对资料库重新扫描一次。
       </p>
     </div>
     <div v-if="!revealed" class="player-guard">

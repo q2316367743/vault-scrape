@@ -10,7 +10,7 @@
  *   （poster / fanart / thumb / still…）与 `<视频名>-<固定名>` 前缀名按用途挂影片或目录条目；
  *   `extrafanart` / `extrathumbs` 子目录里的图算上一层目录影片的产出；
  * - 同目录有 `movie.nfo` 或与视频同名的 `.nfo` 时把 `hasNfo = 1` 记在影片条目上，
- *   供「是否刮削」判定使用（磁盘上已有产出也算已刮削）；
+ *   仅作为「磁盘上有没有 NFO」的事实标记（影视墙不再按它分类）；
  * - 哪些后缀算视频由调用方按资料库设置传入（`IndexPathOptions.extensions`），
  *   本文件不硬编码扩展名；
  * - `cleanupUnseen` 删除本次没扫到的媒体源、失去源的影片条目与其图片。

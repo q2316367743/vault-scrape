@@ -36,7 +36,8 @@
 | `src/main/src/modules/library/libraryEvents.ts` | 扫描进度广播 |
 | `src/main/src/modules/media/mediaIndexer.ts` | 目录游标 BFS、条目 / 媒体源 / 图片落库、配合 `extensions` 判定视频、清理未扫到的行 |
 | `src/main/src/modules/media/mediaWall.ts` | 首页 / 整墙与详情读模型、`browseLibrary` 逐级浏览 |
-| `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式） |
+| `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口） |
+| `src/main/src/modules/media/mediaLocator.ts` | 播放期按「文件名 + 字节数」在资料库范围内找回被移动的视频（见 §4.5） |
 | `src/main/src/modules/media/mediaAppData.ts` | 伪连接 `appdata` 与 `~/.vault-scrape/media/images` 根目录 |
 | `src/main/src/modules/scrape/scrapeLocalAsset.ts` | `imageSaveMode='appdata'` 的图片落到条目目录 |
 | `src/renderer/src/windows/main/pages/media/` | 影视墙首页 / 内容页 / 详情页与资料库抽屉、表单（抽屉与表单在 `media/library/`） |
@@ -79,7 +80,7 @@
 
 条目侧三张表（`media_item` 26 列 / `media_source` 12 列 / `media_image` 9 列）的逐列说明见 [SQLite 存储](../data/01-sqlite-storage.md)。
 
-`media_item.has_nfo`（迁移 `0002_damp_mandarin.sql` 加列）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。影视墙的「是否刮削」= 跑过刮削（`scraped_at > 0`）**或**有 NFO（`has_nfo > 0`）**或**有图片（条目自己或父目录条目有 `media_image` 行）任一命中（`mediaWall.scrapedOf()`，与 `countScrapedMovieItems` 同口径）；刮削队列仍只看 `scrapedAt === 0`，两者是不同口径（见 §9）。
+`media_item.has_nfo`（迁移 `0002_damp_mandarin.sql` 加列）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它现在只是「磁盘上有没有 NFO」的事实标记，**不参与任何界面判定**——影视墙不按刮削与否分类，旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线（`has_nfo` 列保留，避免改动表结构与迁移）；**刮削队列**仍只看 `scrapedAt === 0`（见 §5）。
 
 契约类型（`src/common/types/library/index.ts`）：
 
@@ -87,7 +88,7 @@
 - `MediaLibrary`：`{ id, name, type, scrapers, paths: MediaLibraryPath[], nsfwProtection, writeNfo, renameEnabled, moveEnabled, moveDirectory, imageSaveMode, lastScanAt, lastScrapeAt, createdAt, updatedAt }`——**顶层没有 `connectionId` / `rootPath`**，目录在 `paths` 里；`path` 一律是**连接内绝对路径**（`/` = 连接根）。
 - `MediaLibraryPath`：`{ id, connectionId, path }`；草稿里是 `MediaLibraryPathDraft`（无 `id`）。
 - `MediaLibraryDraft`：`id` 缺省 = 新建；`type` 也在这里。
-- `MediaLibrarySummary extends MediaLibrary`：多出 `videoCount`（`countMovieItems`）、`scrapedCount`（`countScrapedMovieItems`）与 **`coverUrls: string[]`**——封面拼贴用的最多 4 张 `storage://` 地址，按**最近添加**排序，空数组时卡片退化成文字封面（`libraryStore.coverUrlsOf()`，常量 `COVER_URL_LIMIT = 4`）。
+- `MediaLibrarySummary extends MediaLibrary`：多出 `videoCount`（`countMovieItems`）与 **`coverUrls: string[]`**——封面拼贴用的最多 4 张 `storage://` 地址，按**最近添加**排序，空数组时卡片退化成文字封面（`libraryStore.coverUrlsOf()`，常量 `COVER_URL_LIMIT = 4`）。
 - `LibraryScanResult`：`{ library, indexedFiles, indexedVideos, removedItems, skippedDirs, pending, message, autoScrape, autoScrapeSkipped }`——注意是 `removedItems`（被清掉的条目数），不是旧的 `removedFiles`。
 - `LibraryProgressEvent`：`{ libraryId, phase: 'scan', scannedDirs, indexedFiles, currentPath, finished, cancelled }`。
 - `LibraryTaskResult`：`{ taskId, total }`。
@@ -154,6 +155,18 @@
 
 四条都不命中时启动刮削并把任务快照放进 `autoScrape`（`ScrapeTaskSnapshot | null`）；启动本身抛错时把中文原因写进 `autoScrapeSkipped`。
 
+### 4.5 播放期路径自愈（`mediaLocator.ts` + `mediaProtocol.ts`）
+
+`media_source.path` 只在**扫描**与**刮削改名 / 移动**时更新。用户在文件管理器里把影片挪走（例如挪进自己建的 `failed/` 目录）又不重扫，索引里的路径就是死的：`storage://` 请求在 `stat` 处抛 ENOENT，被收敛成 404——而封面 / 缩略图往往还留在原地，所以表现为「**图片正常、视频 404**」。
+
+- **触发**：`handleVideoRequest()` 把 `client.stat(target.path)` 包进 try/catch，只有 `isNotFoundError(error)`（ENOENT / `FileError` 的 `notFound`）且请求来自**媒体源**（不是图片）时才尝试自愈；其它错误照旧走原来的 404 + 去重日志。
+- **查找**（`mediaLocator.locateMovedFile()`）：先在同目录 `client.list(dirname(path))` 快查一次（同目录改名、移进子目录最常见），再回到该**资料库配置的媒体目录**（`getLibrary(libraryId).paths` 里 `connectionId` 匹配的那些，`/` = 连接根）做广度优先遍历。匹配条件是**文件名等价（trim + 忽略大小写）+ 字节数相同**，不做标题 / 番号模糊匹配——宁可继续 404，也不放错片子。
+- **上限**：单次最多检查 `MAX_ENTRIES = 20_000` 个条目、递归 `MAX_DEPTH = 8` 层，超限即放弃；单个目录列不出来（没权限 / 断线 / 已删除）只跳过该目录。
+- **写回**：命中后用 `updateSourcePath(source.id, …)` 只改 `media_source` 的 `path` / `name` / `extname` / `mime` / `size` / `modified_at`——**source id 不变**，`storage://` 地址与远端缓存都不失效；`media_item.path` / `parentId` 不动。成功记一条 info 日志「索引路径失效，已按文件名找回：<旧> → <新>」；写库失败（新路径已被别的媒体源占用）只记 warn，本次播放照常返回。
+- **找不到的缓存**：结论按「资料库 + 连接 + 文件名 + 字节数」缓存 `MISS_TTL_MS = 60_000`，播放器反复重试同一个源时不会一遍遍遍历整个资料库。
+- **并发去重**：主进程里同一个媒体源的并发 Range 请求共享一次查找（`healing: Map<sourceId, Promise<FileEntry | null>>`）。
+- **不做**：不主动扫盘、不监听文件系统、不新增 IPC、不改表结构。真删掉的文件仍然 404，渲染层由 `MediaPlayer.vue` 的封面兜底层提示「文件可能已被移动或删除……也可以在影视墙里对资料库重新扫描一次」。
+
 ## 5. 刮削（`libraryScrape.ts`）
 
 - **候选**：本库里 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）。`pendingEntries(libraryId)` 顺便做去重：同目录 + 同番号只留第一条，其余带上 `duplicateOf = 先出现者的名称`（任务里会被置为 `skipped`）。番号以 `extractKeyword(item.name)` 的解析结果为准，解析为空才退回条目上的 `num`。
@@ -213,7 +226,7 @@
 ## 8. 与「工作台 / 影视墙 / 存储页」的关系
 
 - **入口分工**：**扫描**只在影视墙的资料库抽屉里；**刮削**有两个入口——资料库抽屉的「刮削」（整库待刮削候选）与工作台的逐级勾选（`scrape:start { libraryId, itemIds }`）。工作台**不再扫盘、不再自己建索引**。
-- **影视墙**：[影视墙页面](../page/04-media-wall-page.md)分首页（`/media`：资料库横排 + 最近添加 / 待刮削 / 推荐三排）与内容页（`/media/library?libraryId=…`，空串 = 全部影片）；只列各资料库的 `type='movie'` 条目（不属于任何库的影片不会出现在墙上），封面取条目自己的 primary 图、否则退回父目录条目的 primary 图；`indexedAt` = 最新媒体源的 `indexed_at`。
+- **影视墙**：[影视墙页面](../page/04-media-wall-page.md)分首页（`/media`：资料库横排 + 最近添加 / 推荐两排）与内容页（`/media/library?libraryId=…`，空串 = 全部影片）；只列各资料库的 `type='movie'` 条目（不属于任何库的影片不会出现在墙上），封面取条目自己的 primary 图、否则退回父目录条目的 primary 图；`indexedAt` = 最新媒体源的 `indexed_at`。**影视墙不按刮削与否分类**（没有「待刮削 / 已刮削」标记、排序与统计，详情页也没有「刮削状态」格）。
 - **工作台**：[工作台页面](../page/03-workspace-page.md)先用 `scrape:browse { libraryId, dirPath }` 逐级浏览（返回 `MediaBrowseEntry`，含 movie / folder），再勾选启动。
 - **存储页**：[存储页](../page/02-storage-page.md)删连接时主进程会级联 `deleteLibrariesByConnection(connectionId)`（删库 + 媒体条目 / 媒体源 / 图片），避免留下悬空数据；连接上不再有刮削器配置。
 - **数据落盘位置**：
@@ -234,14 +247,14 @@
 - **改名 / 移动只更新媒体源**：刮削改名或移动后只改 `media_source.path`，条目上的 `media_item.path` 仍是扫描时的路径（详情页的「所在目录」等展示按主源取，不受影响）。
 - **类型只有一个、且不能改**：`LIBRARY_TYPES` 当前只有 `'movie'`，新增类型需要同时补 `LIBRARY_TYPE_LABELS` 与 `DEFAULT_LIBRARY_EXTENSIONS`；已有库的类型锁死是刻意设计（改类型会让已索引条目变成孤儿）。
 - **本阶段没有剧集 / 季 / 集的解析**：只有 `movie` 与 `folder` 两种条目。`media_item.type` 的 schema 注释写着「series 等后续再接」，但当前类型联合只声明了 `movie` / `folder`，`series` / `season` / `episode` 既没有类型也没有扫描、详情实现。
-- **没有增量扫描，也没有实时监控**：每次扫描都把整库重新走一遍，靠 `scanId` 对比来做清理；磁盘变动必须手动点「扫描」才会反映。
+- **没有增量扫描，也没有实时监控**：每次扫描都把整库重新走一遍，靠 `scanId` 对比来做清理；磁盘变动必须手动点「扫描」才会反映。唯一例外是 §4.5 的**播放期路径自愈**：只在起播 `stat` 报「文件不存在」时按文件名 + 字节数找回一次，不改条目、不做全库扫描。
 - **没有库封面列**：`library` 表没有封面字段；首页资料库卡片的四宫格是**影片封面拼贴**（`MediaLibrarySummary.coverUrls`，最多 4 张、按最近添加排序），不是库自己的封面。
 - 路径冲突统一报 `invalidArgument`：同库重复报「媒体目录重复添加」，同库嵌套报「媒体目录不能互相嵌套：A 与 B」，跨库重叠报「媒体目录与资料库「N」的 X 重叠，请改用不重叠的目录」——旧的 `findPathOwner` 精确归属规则与 `pathOverlap` 错误码都已移除。
 - 扫描上限是**全局计数**（`listed > 200_000` 即停），触顶时结果可能不完整，只给 `truncated` 提示、不做断点续扫。
 
 ## 10. 手工验证清单
 
-按项目约定只跑 `yarn typecheck`（不 build、不写测试），运行时行为手工验证：
+按项目约定只跑 `yarn run typecheck`（不 build、不写测试），运行时行为手工验证：
 
 1. 新建资料库：影视墙首页 →「资料库」→「新建」，填名称、加两个不同存储的媒体目录（**必须用「选择目录」弹窗从存储里挑**，不能填本机路径），刮削器默认已勾上「R18 离线数据包」→ 保存。抽屉里该行显示类型标签、「2 个目录」「1 个刮削器」，首页资料库横排多出该库卡片。
 2. 类型不可改：新建时类型下拉可用（只有「影视」）；保存后重新打开编辑抽屉，类型下拉应为禁用（说明「类型创建后不可修改」）。
@@ -252,7 +265,7 @@
 7. 扫描期间再点一次「扫描」（或另一个库的「扫描」）→ 报「已有扫描任务在运行，请稍候」。
 8. 扫描进行中点「取消扫描」→ 进度事件带 `cancelled`、返回「扫描已取消」，且**本次不做清理、`上次扫描` 不变**；再扫一次能正常跑完。
 9. 多层目录：`库/番号A/番号A.mp4` 这类结构扫描后，影视墙能看到该影片，工作台从库根逐级点进去也能看到同一批条目（目录条目为 `folder`）。
-10. 重扫不丢元数据：刮削成功一个影片后手动再扫一次，标题 / 封面 / 已刮削状态都还在（只刷新了媒体源的大小与时间）。
+10. 重扫不丢元数据：刮削成功一个影片后手动再扫一次，标题 / 封面都还在（只刷新了媒体源的大小与时间）。
 11. 磁盘上删掉一个视频后再扫描：该影片从墙上消失，提示里的「清理 N 个失效条目」与 `removedItems` 对得上；库内其它影片不受影响。
 12. 目录级封面：在影片所在目录放 `poster.jpg` 与 `fanart.jpg`，扫描后影视墙该影片（或它所在目录的子项）应显示封面；把这两个文件删掉再扫，封面消失。
 13. 首页封面拼贴：给库里最近的几个影片刮出封面后回首页，该库卡片显示最多 4 张的四宫格（按最近添加排序）；不足 4 张按实际张数，没有封面时显示文字占位。
@@ -265,6 +278,6 @@
 20. 删除资料库：确认文案写明只删配置与库内影片记录；删完该库从首页横排 / 内容页消失、它的影片从墙上移除，磁盘文件仍在。
 21. 删除一个存储：刷新影视墙，该存储名下的资料库全部消失，库内影片也从墙上移除（级联删除媒体行）；刮削任务记录保留。
 22. 子目录读不到时不误删：让某个子目录暂时读不到（如远端权限或短时断连）后点「扫描」→ 提示「跳过 N 个读不到的目录」，**该目录下的影片不会从墙上消失**，也不会出现「清理 N 个失效条目」；恢复后再扫仍正常。
-23. 首页三排与「全部影片」：库里既有已刮削影片也有新入库影片时回首页，应看到「最近添加」「待刮削」「推荐」三排（各排最多 24 条，`MEDIA_HOME_ROW_LIMIT`，整排无内容则整排不渲染）；点右上「全部影片」进入 `/media/library`（不带 `libraryId`），标题为「全部影片」、摘要不含「K 个资料库」；在首页搜索框输入关键词回车 → 跳 `/media/library?keyword=…`，关键词为空时不带该参数。
-24. **「已刮削」看磁盘产出**：找一个目录里有 `movie.nfo`（或 `poster.jpg` / `thumb.jpg`）但从未跑过刮削的影片，扫描后卡片角标应是「已刮削」而不是「未刮削」，摘要里的「已刮削 M 部」与可见卡片一致；该条目仍应出现在「待刮削」排里（队列口径仍是 `scrapedAt === 0`）。
+23. 首页两排与「全部影片」：库里既有老片也有新入库影片时回首页，应看到「最近添加」「推荐」两排（各排最多 24 条，`MEDIA_HOME_ROW_LIMIT`，整排无内容则整排不渲染），**不应出现「待刮削」排**；点右上「全部影片」进入 `/media/library`（不带 `libraryId`），标题为「全部影片」、摘要不含「K 个资料库」；在首页搜索框输入关键词回车 → 跳 `/media/library?keyword=…`，关键词为空时不带该参数。
+24. **播放期路径自愈**：在文件管理器里把某个已入库的 `.mp4` 挪到库里别的子目录（例如手工建的 `failed/`），**不要重扫**，回到详情页点播放 → 应能正常起播、能拖进度；主进程日志（`~/.vault-scrape/db` 的 `log` 表或日志页）应有一条 info「索引路径失效，已按文件名找回：<旧路径> → <新路径>」，且 `media_source.path` 已更新到新位置、`id` 没变（封面等 `storage://` 地址不受影响）；再点一次播放不再触发查找。若把视频**改名**（文件名变了）或**真删掉**，则仍应 404，详情页播放器显示封面 + 「视频读不出来……也可以在影视墙里对资料库重新扫描一次」。自愈只对视频生效（`media_source`），图片按原路径读。
 25. **封面回退到快照**：影片所在目录只放 `thumb.jpg`（不放 `poster`）→ 扫描后墙上卡片、详情页大封面与播放器封面都应是这张缩略图；再补一张 `poster.jpg` 重扫 → 回到主图优先。刮削器写的 `{视频基名}-thumb.jpg`、`{视频基名}-poster.jpg` 与 `extrafanart/still1.jpg` 同样要被收录（`extrafanart` 里的图算上一层目录影片的产出）。

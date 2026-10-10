@@ -6,24 +6,20 @@
  *   渲染层不再自己按库过滤，也不再提供资料库下拉；
  * - 整库一次拉全，搜索与排序在渲染层做，主进程不复制排序规则；
  * - 只有失败才写 `failure`，成功的空结果是正常状态（这个库里就是没有视频）；
- * - 排序默认「已刮削优先」，同组内按刮削时间倒序，未刮削的排在最后；
+ * - 排序默认「按磁盘时间（最新在前）」；
  * - 列表以 `itemId` 去重并作为渲染 key：影片身份是「库 + 源文件」，路径不再参与身份判定。
  */
 import { computed, ref, watch, type Ref } from 'vue'
 import { mediaApi } from '@/api'
 import type { MediaWallItem } from '@common/types/media'
 
-/** 排序口径：默认按刮削情况，其余按标题 / 体积 / 磁盘修改时间 */
-export type MediaSortKey = 'scraped' | 'title' | 'size' | 'modified'
+/** 排序口径：按标题 / 体积 / 磁盘修改时间（不按刮削情况分类） */
+export type MediaSortKey = 'title' | 'size' | 'modified'
 
 function comparatorOf(sort: MediaSortKey): (left: MediaWallItem, right: MediaWallItem) => number {
   if (sort === 'title') return (left, right) => left.title.localeCompare(right.title, 'zh-Hans-CN')
   if (sort === 'size') return (left, right) => right.size - left.size
-  if (sort === 'modified') return (left, right) => right.modifiedAt - left.modifiedAt
-  return (left, right) => {
-    if (left.scraped !== right.scraped) return left.scraped ? -1 : 1
-    return right.scrapedAt - left.scrapedAt
-  }
+  return (left, right) => right.modifiedAt - left.modifiedAt
 }
 
 /** 主进程理论上已按 itemId 去重，渲染层再兜一次：重复条目会让 key 冲突 */
@@ -46,7 +42,7 @@ export function useMediaWall(libraryId: Ref<string>) {
   const indexedAt = ref(0)
 
   const keyword = ref('')
-  const sort = ref<MediaSortKey>('scraped')
+  const sort = ref<MediaSortKey>('modified')
 
   async function load(): Promise<void> {
     loading.value = true
@@ -84,9 +80,6 @@ export function useMediaWall(libraryId: Ref<string>) {
     return [...filtered].sort(comparatorOf(sort.value))
   })
 
-  /** 当前筛选结果里的已刮削数（与摘要文案同口径） */
-  const scrapedCount = computed(() => visible.value.filter((item) => item.scraped).length)
-
   return {
     items,
     loading,
@@ -95,7 +88,6 @@ export function useMediaWall(libraryId: Ref<string>) {
     keyword,
     sort,
     visible,
-    scrapedCount,
     load
   }
 }

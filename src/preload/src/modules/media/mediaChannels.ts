@@ -7,7 +7,7 @@
 export const MediaChannels = {
   /** 拉取整面墙（所有数据源的视频 + 刮削补全结果；可按资料库过滤） */
   wall: 'media:wall',
-  /** 首页读模型：库摘要 + 最近添加 / 待刮削 / 全部影片三排 */
+  /** 首页读模型：库摘要 + 最近添加 / 推荐两排 */
   home: 'media:home',
   /** 单个视频的详情（含同目录 NFO 解析结果） */
   detail: 'media:detail'

@@ -9,7 +9,7 @@
         <span class="lib-name">{{ library.name }}</span>
         <t-tag size="small" variant="outline">{{ typeText }}</t-tag>
       </div>
-      <div class="lib-meta">影片 {{ library.videoCount }} 部 · 已刮削 {{ library.scrapedCount }} 部</div>
+      <div class="lib-meta">影片 {{ library.videoCount }} 部</div>
     </div>
   </div>
 </template>

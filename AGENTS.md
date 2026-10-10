@@ -10,7 +10,7 @@
 | RL‑04 | UI 强制：所有 UI 元素必须使用 `tdesign`；禁用原生 `alert` / `select`                       |
 | RL‑05 | 文件长度：vue 文件 ≤ 300 行，ts 文件 ≤ 500 行，超出必须拆分                                |
 | RL‑06 | 文档同步：功能实现后，必须将技术文档写入或更新 `docs/` 目录，供后续 AI 参考                |
-| RL-07 | 不需要 build，只需要 typecheck，禁止做任何验证/测试，如需验证/测试，请让我来做             |
+| RL-07 | 不需要 build，只需要 `yarn typecheck`，禁止做任何验证/测试，如需验证/测试，请让我来做      |
 | RL-08 | 未经我的允许，禁止读取 node_modules 目录下文件                                             |
 | RL-09 | 页面目录分层：禁止在页面目录下平铺多个页面文件，每个页面独占子目录（详见「页面目录组织」） |
 
@@ -72,8 +72,9 @@
 - 弹窗 / 抽屉一律使用 tdesign **命令式 API**：`DialogPlugin`（默认 `placement: 'center'`）或 `DrawerPlugin`（内容较多、需更宽编辑面板时）
 - 每个弹窗拆成两个文件：
   - `.tsx` **外壳**：导出 `openXxx(options)` 打开函数，内部调用 `DialogPlugin` / `DrawerPlugin`；`destroyOnClose: true`；
-    `body: () => <XxxContent … />` 只负责渲染 `.vue` 内容组件，**操作按钮由外壳的 `footer` 提供**（用 JSX 渲染 `tdesign` 的 `Button`）
-  - `.vue` **内容**：命名 `XxxContent.vue`，承载表单 / 列表等主体 UI 与提交状态，**不含操作按钮**；用
+    `body: () => <XxxContent … />` 只负责渲染 `.vue` 内容组件， **操作按钮由外壳的 `footer` 提供**（用 JSX 渲染 `tdesign`
+    的 `Button`）
+  - `.vue` **内容**：命名 `XxxContent.vue`，承载表单 / 列表等主体 UI 与提交状态， **不含操作按钮**；用
     `defineExpose` 暴露 `src/renderer/src/utils/modal/ModalContent.ts` 里的 `ModalContentExpose`（`submit()` 给外壳主按钮调用，
     `saving` / `canSubmit` 给按钮绑 `loading` / `disabled`），并用 `emit('success', 载荷)` 回传结果、`emit('close')` 表达
     「内容自己要求关闭」（保存成功、加载失败等）
@@ -179,21 +180,21 @@ src/
 
 ### ❌ 错误示例与原因
 
-| 错误示例                                                       | 原因                                                                      |
-|----------------------------------------------------------------|---------------------------------------------------------------------------|
-| `src/UserList.vue`                                             | 违反 RL‑02，业务代码不应放在根目录                                        |
-| `pages/dashboard/api.ts`                                       | 违反 RL‑03，API 必须集中在 `@/api`                                        |
-| `components/OrderDetailModal.vue`                              | 违反组件存放规则，非通用组件不应放在 `src/components`                     |
-| 页面中直接使用 `fetch('/api/user')`                            | 违反 RL‑03，绕过 `@/api`                                                  |
-| 使用 `<select>` 或 `alert()`                                   | 违反 RL‑05，必须使用 `tdesign`                                            |
-| 手写 SVG 图标                                                  | 违反 UI 约定，应使用 `tdesign` 图标                                       |
-| `const data: any = res.data`                                   | 违反 RL‑04，禁止 `any`                                                    |
-| `color: #1677ff;`                                              | 违反样式约定，应使用 tdesign CSS Token                                    |
-| `FilterModal.vue` 作为弹窗                                     | 违反约定，弹窗外壳必须用 `.tsx`（`DialogPlugin` 命令式）                  |
-| 弹窗内容直接写在 `.tsx` 内                                     | 违反约定，弹窗内容必须用 `.vue` 组件（`XxxContent.vue`）                  |
+| 错误示例                                                       | 原因                                                                                                                                  |
+|----------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------|
+| `src/UserList.vue`                                             | 违反 RL‑02，业务代码不应放在根目录                                                                                                    |
+| `pages/dashboard/api.ts`                                       | 违反 RL‑03，API 必须集中在 `@/api`                                                                                                    |
+| `components/OrderDetailModal.vue`                              | 违反组件存放规则，非通用组件不应放在 `src/components`                                                                                 |
+| 页面中直接使用 `fetch('/api/user')`                            | 违反 RL‑03，绕过 `@/api`                                                                                                              |
+| 使用 `<select>` 或 `alert()`                                   | 违反 RL‑05，必须使用 `tdesign`                                                                                                        |
+| 手写 SVG 图标                                                  | 违反 UI 约定，应使用 `tdesign` 图标                                                                                                   |
+| `const data: any = res.data`                                   | 违反 RL‑04，禁止 `any`                                                                                                                |
+| `color: #1677ff;`                                              | 违反样式约定，应使用 tdesign CSS Token                                                                                                |
+| `FilterModal.vue` 作为弹窗                                     | 违反约定，弹窗外壳必须用 `.tsx`（`DialogPlugin` 命令式）                                                                              |
+| 弹窗内容直接写在 `.tsx` 内                                     | 违反约定，弹窗内容必须用 `.vue` 组件（`XxxContent.vue`）                                                                              |
 | 内容组件 `template` 里写 `<footer>` 放取消 / 保存按钮          | 违反约定，操作按钮必须放弹窗 `footer`（外壳用 JSX 渲染 `<Button>`），内容组件用 `defineExpose` 暴露 `submit` / `saving` / `canSubmit` |
-| 外壳写 `footer: false` 却在内容里放操作按钮                    | 违反约定，`footer: false` 只用于没有操作按钮的场景（如只读抽屉）          |
-| `.tsx` 外壳里用 `h('div', …)` / `h(Button, …)` 拼 VNode        | 违反约定，`.tsx` 里一律写 JSX（`<div>` / `<Button>`），`h()` 只在 `.ts` 等非 JSX 文件里用 |
-| `<t-dialog :visible>` + `v-if` 声明式弹窗                      | 违反约定，应使用 `DialogPlugin` / `DrawerPlugin` 命令式 API               |
-| 单文件超过 300 行未拆分                                        | 违反 RL-06                                                                |
-| `pages/media/` 下平铺 `MediaWallPage.vue`、`MediaHomePage.vue` | 违反 RL-09，页面必须各占一个子目录（`media/{home,wall,detail,library}/`） |
+| 外壳写 `footer: false` 却在内容里放操作按钮                    | 违反约定，`footer: false` 只用于没有操作按钮的场景（如只读抽屉）                                                                      |
+| `.tsx` 外壳里用 `h('div', …)` / `h(Button, …)` 拼 VNode        | 违反约定，`.tsx` 里一律写 JSX（`<div>` / `<Button>`），`h()` 只在 `.ts` 等非 JSX 文件里用                                             |
+| `<t-dialog :visible>` + `v-if` 声明式弹窗                      | 违反约定，应使用 `DialogPlugin` / `DrawerPlugin` 命令式 API                                                                           |
+| 单文件超过 300 行未拆分                                        | 违反 RL-06                                                                                                                            |
+| `pages/media/` 下平铺 `MediaWallPage.vue`、`MediaHomePage.vue` | 违反 RL-09，页面必须各占一个子目录（`media/{home,wall,detail,library}/`）                                                             |

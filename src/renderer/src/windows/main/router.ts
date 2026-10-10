@@ -9,7 +9,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/windows/main/pages/overview/OverviewPage.vue')
   },
   {
-    // 影视墙首页：资料库横排 + 最近添加 / 待刮削 / 推荐三排
+    // 影视墙首页：资料库横排 + 最近添加 / 推荐两排
     path: '/media',
     name: '影视墙',
     component: () => import('@/windows/main/pages/media/home/MediaHomePage.vue')

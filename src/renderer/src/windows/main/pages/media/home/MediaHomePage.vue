@@ -1,7 +1,7 @@
 <template>
   <page-layout
     title="影视墙"
-    description="把磁盘上的视频收进资料库，刮削后按最近添加 / 待刮削 / 推荐浏览"
+    description="把磁盘上的视频收进资料库，按最近添加 / 推荐浏览"
   >
     <template #extra>
       <t-button variant="outline" :loading="loading" @click="load">
@@ -67,10 +67,10 @@
 </template>
 <script setup lang="ts">
 /**
- * 影视墙首页（Jellyfin 式）：资料库横排 + 最近添加 / 待刮削 / 推荐三排。
+ * 影视墙首页（Jellyfin 式）：资料库横排 + 最近添加 / 推荐两排。
  *
  * 契约：
- * - 数据全部来自 `mediaApi.home()`，三排的顺序、标题与每排上限由主进程决定，
+ * - 数据全部来自 `mediaApi.home()`，两排的顺序、标题与每排上限由主进程决定，
  *   渲染层不重排、不合并，整排为空就整排不渲染；
  * - 搜索框回车后跳到内容页（`/media/library`）并把关键词带过去，关键词为空则不带；
  *   「全部影片」按钮同样跳到内容页，但不带关键词；
@@ -92,14 +92,14 @@ const router = useRouter()
 const keyword = ref('')
 
 const { connections, refresh: refreshConnections } = useFileConnections()
-const { libraries, rows, loading, failure, total, scrapedCount, indexedAt, load } = useMediaHome()
+const { libraries, rows, loading, failure, total, indexedAt, load } = useMediaHome()
 
 /** 整排为空就不渲染这一排（主进程给的排可能还没有内容） */
 const visibleRows = computed(() => rows.value.filter((row) => row.items.length > 0))
 
 const summary = computed(() => {
   const indexed = indexedAt.value > 0 ? ` · 索引更新于 ${formatTime(indexedAt.value)}` : ''
-  return `共 ${total.value} 部 · 已刮削 ${scrapedCount.value} 部 · ${libraries.value.length} 个资料库${indexed}`
+  return `共 ${total.value} 部 · ${libraries.value.length} 个资料库${indexed}`
 })
 
 function connectionOf(connectionId: string): FileConnection | null {

@@ -4,7 +4,7 @@
  * 契约：只决定「取哪个字段、怎么格式化」，不取数、不持有状态；
  * 字段口径与 NFO 写入侧保持一致，避免同名字段两边解释不同。
  */
-import type { MediaDetailResult, MediaWallItem } from '@common/types/media'
+import type { MediaDetailResult } from '@common/types/media'
 import { formatDuration, formatSize, formatTime } from '@/utils/format'
 
 /** 一格键值；`wide` 表示长文本占满整行 */
@@ -12,12 +12,6 @@ export interface DetailCell {
   label: string
   value: string
   wide?: boolean
-}
-
-/** 刮削状态：靠同目录产出判定「已刮削」时没有刮削时间可显示 */
-export function scrapedText(item: MediaWallItem): string {
-  if (!item.scraped) return '未刮削'
-  return item.scrapedAt > 0 ? `已刮削 · ${formatTime(item.scrapedAt)}` : '已刮削'
 }
 
 /** 磁盘上的事实：这条记录是什么、在哪、多大 */
@@ -30,8 +24,7 @@ export function fileCells(detail: MediaDetailResult, sourceName: string): Detail
     { label: '文件名', value: item.name, wide: true },
     { label: '所在目录', value: item.dirPath || '—', wide: true },
     { label: '体积', value: formatSize(item.size) },
-    { label: '磁盘修改时间', value: formatTime(item.modifiedAt) },
-    { label: '刮削状态', value: scrapedText(item) }
+    { label: '磁盘修改时间', value: formatTime(item.modifiedAt) }
   ]
 }
 

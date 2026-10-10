@@ -20,7 +20,7 @@ export const mediaApi = {
   wall: (request: MediaWallRequest = { libraryId: '' }): Promise<MediaResult<MediaWallResult>> =>
     ipcRenderer.invoke(MediaChannels.wall, request),
 
-  /** 拉取首页读模型（库摘要 + 最近添加 / 待刮削 / 全部影片三排） */
+  /** 拉取首页读模型（库摘要 + 最近添加 / 推荐两排） */
   home: (): Promise<MediaResult<MediaHomeResult>> => ipcRenderer.invoke(MediaChannels.home),
 
   /** 拉取单个视频的详情与 NFO 元信息 */

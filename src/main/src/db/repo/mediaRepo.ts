@@ -307,27 +307,6 @@ export function countMovieItems(libraryId: string): number {
   return row?.value ?? 0
 }
 
-export function countScrapedMovieItems(libraryId: string): number {
-  const row = db()
-    .select({ value: sql<number>`count(*)` })
-    .from(mediaItemTable)
-    .where(
-      and(
-        eq(mediaItemTable.libraryId, libraryId),
-        eq(mediaItemTable.type, 'movie'),
-        // 与 mediaWall.scrapedOf 同一口径：自己跑过刮削，或磁盘上已经有产出（NFO / 图片）。
-        // `media_image` 即 schema/mediaImage.ts 的表，这里用字面量是为了在 where 里写 exists 子查询。
-        sql`(${mediaItemTable.scrapedAt} > 0 or ${mediaItemTable.hasNfo} > 0 or exists (
-          select 1 from media_image
-          where media_image.item_id = ${mediaItemTable.id}
-             or media_image.item_id = ${mediaItemTable.parentId}
-        ))`
-      )
-    )
-    .get()
-  return row?.value ?? 0
-}
-
 export function getSource(id: string): MediaSourceRow | null {
   return db().select().from(mediaSourceTable).where(eq(mediaSourceTable.id, id)).get() ?? null
 }
