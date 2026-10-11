@@ -16,7 +16,7 @@
 - 内容口径：**以磁盘为准**。墙面主体是资料库扫描出来的影片条目，未刮削的视频也会上墙（文件名占位），磁盘上被删掉的视频会在下次扫描后从墙上消失。
 - 资料库范围：所有数据源（本机 / WebDAV / SMB）聚合成一堵墙，每张卡片带**资料库角标**（`item.libraryName`）。**每个影片都归属于某个资料库**（归属是条目上的真实外键，不再按路径最长前缀猜），因此没有「未归入资料库」这一档。
 - 取数：`@/api` 的 `mediaApi`（`home()` / `wall()` / `detail()`），主进程实现见 `src/main/src/modules/media/mediaWall.ts`。
-- 详情页另有「**还原刮削前**」入口（页头按钮，通道仍是 `media:clear-nfo`）：二次确认后清掉这条影片的刮削数据与磁盘 NFO，并按 NFO 里记的「刮削前位置」把文件改回原名、搬回原目录，用来处理刮错的数据，见 §4。这是影视墙域唯一的写操作。
+- 详情页另有「**还原刮削前**」入口（详情页右上角「更多」菜单里，通道仍是 `media:clear-nfo`）：二次确认后清掉这条影片的刮削数据与磁盘 NFO，并按 NFO 里记的「刮削前位置」把文件改回原名、搬回原目录，用来处理刮错的数据，见 §4。这是影视墙域唯一的写操作。
 
 ## 2. 首页（`home/MediaHomePage.vue`）
 
@@ -71,7 +71,7 @@
 
 **整墙**（`media:wall`）：`loadMediaWall({ libraryId })` —— `libraryId` 为空串时遍历 `listLibraries()`，否则只取 `getLibrary(libraryId)`（库不存在抛 `notFound`「资料库不存在」）。每个库取 `listMovieItems(libraryId)`——**只列 `type='movie'` 的条目**，不属于任何资料库的影片不会出现在墙上；条目没有主源（已被清理）时跳过。`indexedAt = maxSourceIndexedAt()`（最新媒体源的 `indexed_at`），`libraries = listSummaries()`（带 `videoCount` / `coverUrls`，**0 个视频的库也会出现**），返回 `MediaWallResult{ items, total, indexedAt, libraries }`。整墙一次拉全，搜索 / 排序全在渲染层做，主进程不复制排序规则（首页两排的取样在**主进程**做，见 §2）。
 
-**详情**（`media:detail`）：`loadMediaDetail({ itemId })`——空 id 报 `invalidArgument`「缺少影片 ID」；条目不存在、不是 `movie` 条目、或没有主源时报 `notFound`（「索引里没有这个视频，磁盘上可能已被删除」）。返回 `MediaDetailResult{ item, meta, nfoPath, actors }`，`item` 与墙上同一套卡片数据（含 `playUrl`），详情页不需要再拼任何地址。`actors` 是**参演演员**（`MediaActorRef{ actorId, name, avatarUrl }[]`，按 `media_cast.ordinal` 出演顺序；没有名单时是空数组，`avatarUrl` 为空串表示没头像），由 `actorRefsOfItem(itemId)` 组装、头像是 `storage://actor/...` 地址；演员与影片是**按名字的弱关联**（`media_cast` 只记姓名归一化键，演员行被删掉时 `actorId` 回落空串、渲染层不跳转），名单在刮削入库与扫描 NFO 时写入（见[演员模块](../actor/01-actor-module.md)）。详情页用 `MediaActorStrip.vue` 渲染成「头像 + 姓名」并跳[演员详情页](./05-actor-pages.md)。
+**详情**（`media:detail`）：`loadMediaDetail({ itemId })`——空 id 报 `invalidArgument`「缺少影片 ID」；条目不存在、不是 `movie` 条目、或没有主源时报 `notFound`（「索引里没有这个视频，磁盘上可能已被删除」）。返回 `MediaDetailResult{ item, meta, nfoPath, actors, images }`，`item` 与墙上同一套卡片数据（含 `playUrl`），详情页不需要再拼任何地址。`actors` 是**参演演员**（`MediaActorRef{ actorId, name, avatarUrl }[]`，按 `media_cast.ordinal` 出演顺序；没有名单时是空数组，`avatarUrl` 为空串表示没头像），由 `actorRefsOfItem(itemId)` 组装、头像是 `storage://actor/...` 地址；演员与影片是**按名字的弱关联**（`media_cast` 只记姓名归一化键，演员行被删掉时 `actorId` 回落空串、渲染层不跳转），名单在刮削入库与扫描 NFO 时写入（见[演员模块](../actor/01-actor-module.md)）。详情页用 `MediaActorStrip.vue` 渲染成「头像 + 姓名」并跳[演员详情页](./05-actor-pages.md)。`images` 是这部影片的全部图片（`MediaDetailImage{ type, url }[]`，`detailImagesOf()`）：与封面同一套归属规则——**条目自己的图在前、父目录条目的兜底图在后**（目录级图片会被同目录多部影片共用），各自按 `MEDIA_IMAGE_TYPES`（主图 → 背景图 → 缩略图 → 剧照 → 徽标 → 横幅 → 其他）排序、按地址去重；一张都没有时是空数组，封面仍以 `item.coverUrl` 为准。渲染层拿它喂沉浸头部的背景大图与剧照墙，只按 `type` 分工、不再取数（见 §4「详情页版式」）。
 
 - NFO 候选顺序 `movie.nfo` → `{文件名}.nfo`（文件名取主源 `name`），路径为空或读失败 / 解析不出内容都算「没有 NFO」，不报错；
 - NFO 解析用三端共享的纯函数 `parseNfoXml`（`@common/types/media/nfo.ts`），字段口径与写入侧 `buildNfoXml` 对齐；`runtime` 转成分钟。
@@ -122,6 +122,35 @@
 - 渲染层 `MediaPlayer.vue`（已移到共用目录 `src/renderer/src/components/media/MediaPlayer.vue`，影视墙详情页与[存储页预览](./02-storage-page.md)共用）监听 artplayer 的 `video:error`：视频读不出来（文件被移走 / 删除，或封装、编码放不了）时不再留一块黑屏，而是在播放器位置盖一层 `poster`（就是上面的 `coverUrl`，通常已回退到快照）加一句说明文案（详情页用组件默认的 `fallbackText`——「文件可能已被移动或删除，也可能是封装 / 编码放不了；可以先用本机播放器打开这个目录，**也可以在影视墙里对资料库重新扫描一次**」，存储页预览另传一句「……可以先用本机播放器打开它」）；换片（`url` 变化）或重新起播时清掉这个状态，本版本不做转码。
 - 协议在 app ready 之前由 `registerMediaScheme()` 登记为特权 scheme（`standard` / `secure` / `supportFetchAPI` / `stream`），ready 之后、开窗之前 `registerMediaProtocol()` 接管（见 `src/main/index.ts`）。
 
+### 详情页版式（`detail/MediaDetailPage.vue` + `detail/components/`）
+
+页面**不用 `SubPageLayout`**：没有页头横条，页顶只有一枚**吸顶悬浮条** `detail/components/MediaDetailToolbar.vue`——`position: sticky; top: 0`，高度 56px，再用 `margin-bottom: -56px` 负掉自己的高度所以**不占流内空间**，头部图片依旧贴到容器顶边，因此它必须是滚动容器的第一个子节点。返回图标压在封面图左上角，「更多」（`t-dropdown`，`trigger="click"`、`placement="bottom-right"`；菜单项「重新读取」始终可用、详情没读出来时它就是重试入口，「还原刮削前」只在详情读出来后出现、是危险操作所以用 `theme: 'error'` 标红）在右上角；**头部的标题被滚出视野后**，这条退成一抹半透明横幅（毛玻璃 + 单行省略号的标题 + 收成圆形、与返回同形的「更多」），判断见 `composables/useDetailScroll.ts`。代价是页面自己就是滚动容器（根节点 `.media-detail { height: 100%; overflow: auto }`），正文左右内边距从页头挪到 `.detail-body`（20px），头部因此天然通栏、不再需要负外边距出血。正文自上而下七块，版式取主流影视站的沉浸头部 + 数据应用的信息密度：
+
+| 顺序 | 区块 | 组件 / 口径 |
+| --- | --- | --- |
+| 1 | 沉浸头部 | `MediaDetailHero.vue`：通栏背景大图 + 底部渐隐 + 标题 / 原名 / 要点行 / 标签 + 「播放」 |
+| 2 | 播放器 | 共用 `@/components/media/MediaPlayer.vue`（16:9，自带边框）；没有 `playUrl` 时换成 `t-alert` 警告 |
+| 3 | 剧情简介 | 只在 `meta.plot` 去空白后非空时出现（原 NFO 块里的只读 `t-textarea` 已去掉，简介不再被塞进输入框） |
+| 4 | 封面 | 168×238 的 `SensitiveImage` + 标题 + 「番号 · 体积」；头部用封面兜底时那张是模糊的，这块给一张清晰的 |
+| 5 | 两栏信息 | 左 `MediaNfoBlock.vue`（NFO 元信息 + 来源路径 + 无 NFO 时的 `t-empty`），右「磁盘上的事实」+ `MediaFactGrid.vue`；`grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))`，窄窗口自动叠成一栏 |
+| 6 | 剧照墙 | `MediaStillWall.vue`：缩略图网格 + `t-image-viewer` 大图浏览 |
+| 7 | 参演演员 | `MediaActorStrip.vue`（本轮未改） |
+
+- **无卡片留白分区**：区块一律不画底板 / 描边 / 圆角，只靠 14px 小节标题与 24px 留白分隔（上一版每块都套 `--td-bg-color-container` + 1px 边框，视觉上是一摞横条，已按反馈去掉）。唯一保留圆角的是封面与剧照缩略图；播放器自带边框，不再套第二层。
+- 头部左右**出血**是天然的：滚动容器自己不设内边距，20px 只加在 `.detail-body` 上（`.detail-bleed` 这个负外边距类已随 `SubPageLayout` 一起删掉）。悬浮条自己就是横幅：整条 `pointer-events: none`，只有两枚按钮 `pointer-events: auto`——中间空档必须放行事件，否则会挡住头部那层「点击查看原图」（`.hero-mask` 是 z-index 2，悬浮条取 z-index 3）。横幅底色用 `::before` + `opacity`（不用 `color-mix`，兼容面更宽），`.is-solid` 时淡入到 0.82 并加 `backdrop-filter: blur(12px)` 与下边框，标题同时淡入。**56px 这个高度是硬约束**：详情页 `useDetailScroll` 拿同一个数字当 `rootMargin`，改一处要一起改。加载 / 失败 / 空态走 `v-else` 分支（`.detail-fallback`，顶部留 96px 给悬浮条），失败提示在正文顶部。
+- 横幅什么时候显形**不按 `scrollTop` 猜阈值**（头部高度随窗口宽度与标题 / 要点行换行而变）：头部正下方埋一枚 1px 哨兵 `.hero-end`，`IntersectionObserver` 以滚动容器为 root、`rootMargin` 收掉横幅那一条，哨兵跑到它上面（`entry.boundingClientRect.top < entry.rootBounds.top`）就是标题已经滚出去了，`collapsed` 交给悬浮条。刷新后恢复滚动位置、窗口拉伸、要点行换行都不用额外处理，相交变化会自己重算。
+- 头部要点行（`heroFacts()`）只列**真正有值**的项——番号 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 体积，没有值就整项不出现，未刮削的影片不会是一排「—」，项之间用 `/` 分隔；标签取 NFO `tags` 去空去重（`heroTags()`），用 `t-tag size="small" theme="primary" variant="light"`（light 变体没有边框）。
+- 背景大图（`heroBackdropOf()`）按**缩略图 → 横幅 → 背景图 → 剧照**取第一张现成的图：`thumb*` 是该条目的官方横图，必须排最前——`backdrop` 里混着 `extrafanart/fanartN` 这种竖版剧照（实测 `fanart1.jpg` 是 600×800），排在前面会把头部裁成一条。一张都没有时退回 `item.coverUrl` 并把它 `transform: scale(1.12)` + `filter: blur(28px)` 模糊放大铺满（2:3 竖图直接 `cover` 会被裁成一条），这时标题块下方单独给一张清晰封面。连 `coverUrl` 也没有才只留渐变底色。
+- **头部只有一张图，横竖两种来源都可能不准**：类型只决定优先级，真正的横竖由 `MediaDetailHero.vue` 在 `t-image` 的 `@load` 里量 `naturalWidth / naturalHeight`（`target instanceof HTMLImageElement` 收窄，不用 `as`）——竖图同样走模糊底图，`landscape` 与 `revealed` 跟着 `itemId` 在 `watch` 里重置（详情页是同一路由换 query，组件不会重建）。
+- **NSFW 保护命中时头部给模糊底图 + 「点击查看原图」**（`.hero-mask` 盖一层可点区域，点一下 `revealed = true` 换成清晰原图）：既不第一眼就露出未经确认的敏感画面，也不会像完全不放图那样只剩一块底色（上一版就是这么做的，反馈是「横幅是个白灰白色的方块」）。封面与剧照仍由 `SensitiveImage` 自己按需遮罩。
+- 标题压在图片下缘的渐隐区里（`.hero-scrim` = `transparent 0% → transparent 32% → var(--td-bg-color-container) 82%`，82% 就收满，保证 `margin-top: -64px` 叠上来的标题第一行落在已完全收满的纯色区，画面上不会有图从字后面透出来；`.hero-body` 用 `margin-top: -64px` 叠上去），文字用 `--td-text-color-primary` 落在渐隐到面板底色的区域——深浅两套主题都读得清；**不用白字压原图**，避免亮色主题下白字贴浅图不可读。渐隐的 token 是硬约束：页面容器是 `windows/main/App.vue` 的 `.main-container { background: var(--td-bg-color-container) }`，渐隐若取 `--td-bg-color-page`（亮 `#f3f3f3` / 暗 `#141414`）就会与面板（亮 `#ffffff` / 暗 `#292929`）不同色，头部底边会压出一条横切标题文字的硬边色带（用户反馈原话：「你上面的横幅盖到了视频标题的文字上面了」）。头部渐隐之外，详情页其余区块一律不铺底色。
+- **头部的层级必须显式写死**（用户反馈原话：「你的图片层级在文件文字的层级上面……导致文字看不到」——实测标题第一行真的被图片像素盖掉）：tdesign 的图片根节点是 `.t-image__wrapper { position: relative; z-index: 1 }`，`t-image` 外面那层若只有 `position: relative`（`z-index: auto`）就**不成层叠上下文**，这枚 `z-index: 1` 会被提升到外层、画进「正 z-index 层」，压过 `z-index: auto` 的兄弟节点。修法是 `.hero-media` 自己写 `z-index: 0` 成层，`.hero-scrim` 写 `z-index: 1`、`.hero-mask` 写 `z-index: 2`、`.hero-body`（标题层）写 `z-index: 1`——图片带整层永远在文字层之下。以后在别的页面把 `t-image` 叠在任何块内定位元素上，都要按这个分层写。
+- **播放器那一块的层级同样要写死**（用户反馈原话：「视频的 z-index 很大，导致把最上面的标题栏给覆盖掉了」）：artplayer 的根节点 `.art-video-player` **不建层叠上下文**（它自己没写 `z-index`），内部图层会直接逃到页面这一层跟吸顶悬浮条（`3`）比大小——实测视频本体 `.art-video` 是 `10`、控制条 `.art-bottom` `60`、`.art-loading` `70`、`.art-notice` `80`、`.art-settings` `90`、`.art-info` `100`、`.art-contextmenus` `120`、`.art-mini-popup` `9999`、`[class*='hint--']` 提示气泡 `1000000 / 1000001`。**别去抬高标题栏**（要压过 1000001 就是魔法数字，还会反过来盖住网页全屏）。修法是给播放器块建层：`.player-block { position: relative; z-index: 0 }` 收住全部内部图层；网页全屏时 artplayer 给根节点加 `.art-fullscreen-web`（`position: fixed; inset: 0; z-index: var(--art-fullscreen-web-index)` = `9999`），这时反过来让播放器块抬到 `.player-block.is-fullscreen { z-index: 100 }` 盖住标题栏与页面里的图片层（`1 / 2`）。全屏状态由 `MediaPlayer.vue` 监听 artplayer 的 `fullscreenWeb` 事件 `emit('webFullscreen', boolean)` 回传（销毁播放器时补一次 `false`，否则重建后页面会一直以为还在全屏）。
+- 剧照墙（`stillImagesOf()`）去掉主图（封面）与缩略图（头部优先用这张），以及头部实际用到的那张图本身，其余按主进程给的原顺序排列；每张缩略图都走 `SensitiveImage`（保护命中时逐张点开），点开的大图是原图（用户已明确要看）。大图浏览必须写 `v-model:index` + `v-model:visible`：`index` 是受控 prop，只传值不写 `v-model` 时翻页会失效（内部只 `emit('update:index')`）；`download: false` 去掉下载按钮（这些是 `storage://` 私有协议地址，浏览器下载不了）。
+- 头部的「播放」只把播放器 `scrollIntoView` 滚进视野，**不自动播放**：`MediaDetailHero` 用 `emit('play')` 把决定权交给页面。
+- 样式写在各组件自己的 `scoped` 里（页面私有的块不往 `src/components` 放）；`MediaFactGrid` 是「88px 标签 + 值」的行列表，不再是两列网格。
+- 返回语义与改版前一致，仍是 `router.back()`：改由 `MediaDetailToolbar.vue` 里的 `useSafeBack('/media')` 提供（历史为空时兜底影视墙首页），页面不再有页头，也不要在正文里再放返回按钮；这枚返回**吸顶、不会被滚走**（见上文 `position: sticky`），滚动后它会和标题横幅、圆形「更多」并排；播放失败仍落到 `MediaPlayer` 的 `fallbackText` 兜底层（见本节前文）。
+
 ## 5. 资料库抽屉与表单
 
 资料库 = 「一个名称 + 一个类型 + 一组媒体目录（可跨存储）+ 自己的刮削器（可为空） + 库级选项」——**刮削器只能选影片信息插件（`kind: 'movie'`）**，模型与主进程契约见[资料库](../media/01-media-library.md)、插件类别见[插件类别](../plugin/03-plugin-categories.md)。影视墙页不承担资料库的配置细节，只做两件事：在首页 / 内容页用它取数，用抽屉维护它。
@@ -164,10 +193,12 @@ src/renderer/src/windows/main/pages/media/
 │   ├── MediaWallPage.vue                 # 页头（`SubPageLayout` 返回 + 标题）+ 搜索 + 排序 + 摘要 + 网格
 │   └── composables/useMediaWall.ts       # 取数、去重、搜索过滤与排序
 ├── detail/                               # /media/detail（详情页）
-│   ├── MediaDetailPage.vue               # 播放器 + 磁盘事实 + NFO 元信息
-│   ├── mediaDetailCells.ts               # 两块信息格的字段口径（纯函数）
+│   ├── MediaDetailPage.vue               # 吸顶悬浮条（无页头）+ 沉浸头部 + 播放器 + 剧情简介 + 两栏信息 + 剧照墙 + 演员条
+│   ├── mediaDetailCells.ts               # 信息格 + 头部要点 / 标签 / 背景图 / 剧照墙的字段口径（纯函数）
+│   ├── composables/useDetailScroll.ts    # 头部哨兵 + IntersectionObserver → collapsed（标题滚出后横幅显形）
+│   ├── composables/useDetailView.ts      # 展示口径：连接反查、NSFW 判定、封面块 / 剧照墙 / 信息格
 │   ├── composables/useMediaDetail.ts     # 从 query 取参、调 mediaApi.detail
-│   └── components/{MediaFactGrid,MediaNfoBlock}.vue
+│   └── components/{MediaDetailToolbar,MediaDetailHero,MediaStillWall,MediaFactGrid,MediaNfoBlock,MediaActorStrip}.vue
 └── library/                              # 首页 / 内容页共用的资料库管理
     ├── components/
     │   ├── LibraryDrawer.tsx / LibraryDrawerContent.vue
@@ -188,7 +219,7 @@ src/renderer/src/windows/main/pages/media/
 - 首页 / 内容页卡片：`MediaWallCard.vue` 用 `useNsfwProtection(computed(() => props.connection))` 取 `active`（全局开关 + 该存储的 `nsfw` 标记同时成立），再与 `item.nsfwProtected`（所属资料库的 `nsfwProtection`）取或：**任一命中即遮罩**，封面统一走 `@/components/SensitiveImage.vue`。资料库表单里的「NSFW 保护」因此既能强制遮罩本库内容，也不影响存储级标记对其它内容的作用。
 - 首页的资料库卡片封面（`coverUrls`）同样走 `SensitiveImage`；库级 `nsfwProtection` 为真时也按敏感内容处理。
 - 详情页**自己**拉一次连接列表（`useFileConnections().refresh()`），按 `detail.item.connectionId` 找到连接后再 `useNsfwProtection(connection)` 判定；不从列表页传保护快照，所以进详情页后立刻切换总开关，行为与列表页一致。
-- 播放器在 `protect` 为真时盖一层不透明遮罩（`--td-bg-color-container`）+「内容已隐藏，点击播放」，点击后撤遮罩并 `art.play()`；详情页的大封面沿用 `SensitiveImage` 自己的遮罩。
+- 播放器在 `protect` 为真时盖一层不透明遮罩（`--td-bg-color-container`）+「内容已隐藏，点击播放」，点击后撤遮罩并 `art.play()`；详情页的头部**在保护命中时先给模糊底图 + 「点击查看原图」**（点一下才换成清晰原图，见 §4），海报与剧照仍沿用 `SensitiveImage` 自己的遮罩（剧照逐张点开）。
 - `SensitiveImage` 的遮罩容器带 `@click.stop`：在卡片上点「内容已隐藏，点击查看」只放行图片，不会顺带跳进详情页。
 - `active` 依赖 `connections` 与模块级的总开关缓存，两者都到位才有遮罩。总开关由应用设置保存成功后的回调刷新（见[设置存储](../setting/01-setting-storage.md)）：在影视墙（或详情页）开着的时候去打开「应用设置 → NSFW 保护」，回来约 300ms 内遮罩应当直接出现，不需要刷新页面；反过来关掉开关，遮罩应立即消失。
 
@@ -218,15 +249,22 @@ src/renderer/src/windows/main/pages/media/
 20. 点卡片进入详情页：地址栏变成 `#/media/detail?itemId=…`，侧栏仍高亮「影视墙」，左上角返回按钮能回到内容页；把 `itemId` 手动删掉再刷新，应显示「地址里缺少影片参数，请从影视墙点进来」而不是白屏。
 21. 播放：封面出现后点播放能起播；拖进度条能跳、暂停 / 继续 / 倍速 / 音量 / 全屏 / 画中画正常；**拖到影片中间位置能立刻出画**说明 Range 生效（本机、WebDAV、SMB 三种数据源都要过一遍，SMB 依赖 `patches/@awo00+smb2+1.1.1.patch`）。**再把某个 `mp4` 在文件管理器里挪到库里别的目录（不重扫）**，回详情页仍应能起播，日志里有 info「索引路径失效，已按文件名找回：<旧> → <新>」。
 22. 播放中途切走 / 关掉页面，再回来看日志：不应出现重复的资源读取失败记录（说明被取消的流已经 `destroy()`）。
-23. 详情页点「重新读取」前先把文件从磁盘删掉：提示「索引里没有这个视频，磁盘上可能已被删除」（或资源读取失败），界面不崩。
+23. 详情页在「更多」里点「重新读取」前先把文件从磁盘删掉：提示「索引里没有这个视频，磁盘上可能已被删除」（或资源读取失败），界面不崩；页面此时没有详情，但「更多」仍在，菜单里只剩「重新读取」可用作重试。
 24. 同目录没有 NFO：NFO 块给出「同目录没有可用的 NFO…」提示，播放器与磁盘事实照常显示。
 25. 开启 NSFW 保护并把数据源标记 NSFW：列表封面显示遮罩；点进详情页后播放器显示「内容已隐藏，点击播放」，点击后撤遮罩并起播。
 26. 缩放窗口宽度：首页资料库横排与两排横向滚动正常（卡片不压缩），内容页网格列数自适应，详情页播放器按 16:9 等比缩放。
 27. **播放失败兜底 + 路径自愈**：把一个已入库影片的**文件名改掉**（或真删掉）后直接进详情页（不重扫）→ 播放器位置不再是黑屏，而是显示该影片封面（通常是快照）+「视频读不出来……也可以在影视墙里对资料库重新扫描一次」；把文件放回去重新进页面 → 正常起播、兜底层消失。只是**挪到别的目录**（同名同大小）时不该看到兜底，见第 21 条的自愈。
-28. **还原刮削前**：进一个已刮削影片的详情页 → 页头应出现「还原刮削前」（详情没读到时按钮不显示）；点它 → 二次确认写明「清空刮削数据 + 删磁盘 NFO 与刮削下载的图片 / 预告片 + 视频改回原名并搬回原位，原位置有同名文件时不覆盖，不自动重刮」，点「取消」什么都不发生。确认后：标题回到**刮削前的原始文件名**、简介 / 分类 / 封面 / 参演名单消失，`movie.nfo` / `<文件名>.nfo` 与刮削下载的图片 / 预告片被删掉，本地沿用的图片搬回原文件名，视频回到刮削前的位置与文件名（被搬进 `<根>/<base>/` 的应搬回原目录，空掉的影片文件夹一并删掉），演员本人档案仍在，提示形如「已清除刮削数据，视频已改回原文件名并移回原位置，删掉 1 个 NFO 文件」。
+28. **还原刮削前**：进一个已刮削影片的详情页 → 封面图右上角的「更多」里应有「还原刮削前」（详情没读到时「更多」整枚不显示，菜单项在读取 / 还原中禁用）；展开点它 → 二次确认写明「清空刮削数据 + 删磁盘 NFO 与刮削下载的图片 / 预告片 + 视频改回原名并搬回原位，原位置有同名文件时不覆盖，不自动重刮」，点「取消」什么都不发生。确认后：标题回到**刮削前的原始文件名**、简介 / 分类 / 封面 / 参演名单消失，`movie.nfo` / `<文件名>.nfo` 与刮削下载的图片 / 预告片被删掉，本地沿用的图片搬回原文件名，视频回到刮削前的位置与文件名（被搬进 `<根>/<base>/` 的应搬回原目录，空掉的影片文件夹一并删掉），演员本人档案仍在，提示形如「已清除刮削数据，视频已改回原文件名并移回原位置，删掉 1 个 NFO 文件」。
 29. **没有记录的旧数据**：把 NFO 里的 `<originalfilename>` / `<originaldirectory>` 标签删掉（模拟旧版本刮削）再点「还原刮削前」→ 数据照样清干净、NFO 删掉，视频保持当前位置，提示里带「视频保持当前位置（NFO 里没有可用的还原记录，或原位置已被占用）」。
 30. 还原后**不自动重刮**：还原完详情页不应自己发起刮削；此时到资料库抽屉点「刮削」，这条影片应像没刮过一样重新进入队列（`scrapedAt === 0`），刮完标题 / 封面 / 演员回来。
 31. 清不掉时保持原样：把该影片所在目录设成只读（或让连接离线、删掉连接）再点「还原刮削前」→ 提示「磁盘上的 NFO 没有删除（原因），刮削数据保持不变」，库内标题 / 封面 / 演员仍在（不允许出现「库清了、NFO 还在」的半成品状态）。
+32. 详情页版式：进一个已刮削且刮到背景图 / 剧照的影片 → **没有页头横条**，顶部只有一条**吸顶**的悬浮条（左「返回」圆钮、右「更多」，点「更多」弹出「重新读取 / 还原刮削前」），**不显示页头标题**；往下滚时这条**留在顶部、不跟着滚走**，一旦头部那个大标题滚出视野，它就淡入成一抹半透明横幅——毛玻璃底 + 单行省略号的标题（长标题末尾截断成「…」、宽度被挤时也不换行）+ 收成圆形的「更多」（与返回同形），滚回顶部再淡出、露出压在封面图上的返回与「更多」；横幅显形后点「返回」/「更多」都应正常响应（条子本身不吃事件，但两枚按钮要能点）；头部是通栏背景大图铺到窗口左右边缘，标题（有原名时带大写副标题）**完整可见、不被图片盖住任何一行**，标题压在图片下缘的渐隐区里，然后一行「播放」按钮 + 右侧 `/` 分隔的要点行 + 标签；要点行只出现**有值**的项（未刮削的影片不应出现一排「—」）；正文各块之间**不应出现带边框的卡片或横条**；头部图片带的底边与页面**不应有色差或硬边**（渐隐必须落到内容面板底色上，不能横切标题文字）；点头部「播放」只把播放器滚进视野，**不自动起播**；页面滚到底时最下面的演员条不被裁掉（本页自己是滚动容器）；滚到播放器那一段时悬浮条仍压在播放器上面（视频本体、控制条、设置菜单、提示气泡一个都不该盖住它），点播放器的「网页全屏」后反过来——视频铺满窗口、悬浮条被它盖住、页面里的封面与剧照也不该在视频上透出来，退出全屏恢复。
+33. 剧情简介：NFO 里有简介时单独成一块（可选中复制）；没写简介时这块整块不出现；NFO 元信息块里**不应再有简介输入框**。
+34. 剧照墙：有多张剧照时显示「剧照（N）」网格（主图 / 缩略图与头部实际用到的那张不在墙上，总数与网格数一致），点任意一张打开大图浏览，翻页 / 左右切换正常（`v-model:index` 生效），大图浏览里**没有下载按钮**；一张剧照都没有时整块不渲染。
+35. 封面兜底：找一部只刮到竖版 `primary` 封面、没有任何背景图 / 横幅 / 剧照的影片 → 头部应是这张封面模糊放大铺满（不出现被裁成一条的清晰竖图），标题块下方另有一张 168×238 的清晰封面 + 标题 + 「番号 · 体积」。
+36. 头部选图：找一部同时有 `thumb.jpg`（官方横图）与 `extrafanart/fanartN.jpg`（竖版剧照）的影片 → 头部应是那张 `thumb`；只有竖版 `backdrop` 的影片 → 头部走模糊底图（竖图不应被裁成一条）。
+37. 窄窗口：把窗口拉窄 → 两栏信息（NFO 元信息 / 磁盘上的事实）叠成一栏，头部标题 / 要点行 / 标签自动换行不溢出，封面与剧照网格自适应。
+38. NSFW 保护命中时进详情页：头部先显示**模糊**的背景大图 + 一枚「点击查看原图」，点一下变清晰（点过之后不再回到模糊）；头部下方那张封面是遮罩状态、要点行与标题仍在（标题来自索引，不算敏感画面）；剧照墙每张都要点一下才显示；从详情页切到另一部影片（同路由换 query）时头部的「已点开」状态不能带过去。
 
 ## 9. 限制与后续
 
@@ -236,7 +274,7 @@ src/renderer/src/windows/main/pages/media/
 - **不支持 MPEG-TS 封装**：内置播放器就是 Chromium 的 `<video>`，桌面版不解 MPEG-TS（`.ts` / `.m2ts`，或扩展名被写成 `.mp4` 的 TS 流——`ffprobe` 报 `mpegts`、文件头 `47 40 11 10`），改 `Content-Type` 也没用（解封装器只嗅探字节流）。这类文件播放时必然落到 §4 的 `fallbackText` 兜底层，**本版本不做转封装**，只能先用 `ffmpeg -i 原文件 -c copy -movflags +faststart 新文件.mp4` 转成真 MP4 再看。扫描是按扩展名判 MIME 的（`mediaIndexer` 用 `guessMimeType`），所以库里这类文件的 `mime` 会记成 `video/mp4`，与实际封装不符。
 - 远端（WebDAV / SMB）视频按区间实时读，不再整文件落本机缓存：好处是点开即播、不占磁盘，代价是每次拖动都要向远端重新要数据，网络差时会有缓冲等待；后续若要顺滑可以加一小段本地分片缓存。
 - 没有「重新配对」这一步：整墙直接读条目与媒体源，刮削成功即写库，不需要重建索引；磁盘上消失的文件要靠资料库抽屉的「扫描」清理（本轮没有文件系统监控）。**唯一例外**是播放期的路径自愈（§4）：同名同大小、只是被挪了目录的视频能在起播时自己找回，改名 / 删除仍要重扫。
-- 封面只认两级：条目自己的 `primary` 图片，以及**父目录条目**的 `primary` 图片（扫描时把目录级 `poster` / `cover` / `folder` 挂在目录条目上）。旧版按文件名在索引里找封面的「同目录产出」兜底已随资源索引删除；一个目录里有多个视频（例如一季剧集）时会共用父目录的封面。
+- 封面只认两级：条目自己的 `primary` 图片，以及**父目录条目**的 `primary` 图片（扫描时把目录级 `poster` / `cover` / `folder` 挂在目录条目上）。旧版按文件名在索引里找封面的「同目录产出」兜底已随资源索引删除；一个目录里有多个视频（例如一季剧集）时会共用父目录的封面。详情页的背景大图与剧照墙同源，也只看这两级（`detailImagesOf()`），不做全库图集；剧照墙只做「点开大图 + 左右切换」，没有缩放 / 旋转 / 幻灯片 / 下载（`storage://` 是私有协议地址，浏览器下载不了）。
 - **多目录资料库的刮削一次只跑一组**：任务表只支持一个「连接 + 目录」，所以一次「刮削」只处理条目最多的那一组目录，其余条目保持 `scrapedAt = 0`，要再点一次「刮削」才会轮到下一组（详见[资料库 · 已知限制](../media/01-media-library.md)）。
 - 删除资料库**只删配置与库内影片记录**，磁盘文件一个都不动；反过来，删除存储会级联删掉它名下的资料库（见[存储页](./02-storage-page.md)），刮削记录同样保留，重新建库扫描后会重新配上。
 - **归属是条目上的外键**，不再是取数时按「最长前缀」现算：改资料库的媒体目录后，需要重新扫描才会把影片划到新的库里（不再是一刷新就自动改归属）。

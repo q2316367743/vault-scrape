@@ -11,6 +11,7 @@
  */
 import type { MediaLibrarySummary } from '../library'
 import type { MediaNfoMeta } from './nfo'
+import type { MediaImageType } from './source'
 
 export { parseNfoRestore, parseNfoXml } from './nfo'
 export type { MediaNfoMeta, NfoRestoreFile, NfoRestoreInfo } from './nfo'
@@ -129,6 +130,17 @@ export interface MediaActorRef {
   avatarUrl: string
 }
 
+/**
+ * 详情页里的一张图（沉浸头部的背景大图、剧照墙的缩略图都从这里取）。
+ *
+ * 契约：`url` 是 `storage://` 地址，只能喂给 tdesign 的图片组件，渲染层不解析它；
+ * `type` 是刮削写下的用途，同一地址只会出现一次。
+ */
+export interface MediaDetailImage {
+  type: MediaImageType
+  url: string
+}
+
 export interface MediaDetailResult {
   /** 与墙上同一套解析结果；找不到该条目时主进程直接报错，不会返回空 item */
   item: MediaWallItem
@@ -138,6 +150,13 @@ export interface MediaDetailResult {
   nfoPath: string
   /** 该影片的参演演员，按出演顺序；没有演员时为空数组 */
   actors: MediaActorRef[]
+  /**
+   * 这部影片的全部图片：条目自己的在前、同目录（父条目）的兜底图在后，各自按用途排序。
+   *
+   * 契约：与封面同一套归属规则（父目录的图会被同目录多部影片共用），按地址去重；
+   * 一张图都没有时是空数组，封面仍以 `item.coverUrl` 为准。
+   */
+  images: MediaDetailImage[]
 }
 
 export interface MediaClearNfoRequest {

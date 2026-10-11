@@ -19,10 +19,12 @@ import type { MediaLibrary } from '@common/types/library'
 import {
   MEDIA_COVER_IMAGE_TYPE_ORDER,
   MEDIA_HOME_ROW_LIMIT,
+  MEDIA_IMAGE_TYPES,
   MediaError,
   buildMediaUrl,
   parseNfoXml,
   type MediaBrowseEntry,
+  type MediaDetailImage,
   type MediaDetailRequest,
   type MediaDetailResult,
   type MediaHomeResult,
@@ -88,6 +90,32 @@ function coverUrlOf(item: MediaItemRow, images: Map<string, MediaImageRow[]>): s
     }
   }
   return ''
+}
+
+/**
+ * 详情页的画廊：条目自己的图在前、同目录（父条目）的兜底图在后，
+ * 各自按 `MEDIA_IMAGE_TYPES`（主图 → 背景图 → 缩略图 → 剧照 → 徽标 → 横幅 → 其他）排序。
+ *
+ * 契约：与封面同一套归属规则，同一地址只留一次（目录级图片会被同目录多部影片共用）；
+ * 渲染层再按 `type` 决定谁当背景大图、谁上剧照墙。
+ */
+function detailImagesOf(item: MediaItemRow, images: Map<string, MediaImageRow[]>): MediaDetailImage[] {
+  const owners = item.parentId.length > 0 ? [item.id, item.parentId] : [item.id]
+  const seen = new Set<string>()
+  const result: MediaDetailImage[] = []
+  for (const ownerId of owners) {
+    const rows = images.get(ownerId) ?? []
+    for (const type of MEDIA_IMAGE_TYPES) {
+      for (const row of rows) {
+        if (row.type !== type) continue
+        const url = buildMediaUrl(row.connectionId, row.id, basenameRemotePath(row.path))
+        if (seen.has(url)) continue
+        seen.add(url)
+        result.push({ type: row.type, url })
+      }
+    }
+  }
+  return result
 }
 
 function toWallItem(
@@ -378,7 +406,8 @@ export async function loadMediaDetail(request: MediaDetailRequest): Promise<Medi
     item: toWallItem(item, source, images, library ?? null),
     meta: nfo.meta,
     nfoPath: nfo.path,
-    actors: actorRefsOfItem(item.id)
+    actors: actorRefsOfItem(item.id),
+    images: detailImagesOf(item, images)
   }
 }
 

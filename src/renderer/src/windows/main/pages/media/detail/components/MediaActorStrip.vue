@@ -4,19 +4,17 @@
  *
  * 契约：
  * - 数据来自影片详情的 `actors`（主进程已按出演顺序返回），本组件不取数；
- * - 演员图片没有存储上下文，NSFW 保护只看应用总开关；
+ * - 头像走 `SensitiveImage` 但不传 `protect`：演员图片不参与 NSFW 保护，永远直接显示；
  * - 没有头像时用姓名首字占位，绝不显示破图。
  */
 import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import SensitiveImage from '@/components/SensitiveImage.vue'
-import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import type { MediaActorRef } from '@common/types/media'
 
 const props = defineProps<{ actors: MediaActorRef[] }>()
 
 const router = useRouter()
-const { protection } = useNsfwProtection()
 
 /** 头像缺失时用首字占位，和演员列表卡片保持一致 */
 function initialOf(actor: MediaActorRef): string {
@@ -46,7 +44,6 @@ function open(actorId: string): void {
           v-if="actor.avatarUrl"
           class="actor-avatar"
           :src="actor.avatarUrl"
-          :protect="protection"
           :width="56"
           :height="56"
           :alt="actor.name"

@@ -1,114 +1,143 @@
 <template>
-  <sub-page-layout :title="description">
-    <template #extra>
-      <t-button variant="outline" :loading="loading" @click="load">
-        <template #icon><refresh-icon /></template>
-        重新读取
-      </t-button>
-      <t-tooltip v-if="detail" content="清掉刮削数据，并把文件还原成刮削前的名字与位置">
-        <t-button variant="outline" theme="danger" :loading="clearing" @click="onClearNfo">
-          <template #icon><rollback-icon /></template>
-          还原刮削前
-        </t-button>
-      </t-tooltip>
-    </template>
+  <div ref="scrollBox" class="media-detail">
+    <media-detail-toolbar
+      :loaded="detail !== null"
+      :busy="loading || clearing"
+      :collapsed="collapsed"
+      :title="posterTitle"
+      @reload="load"
+      @restore="onClearNfo"
+    />
 
-    <div class="media-detail">
-      <t-alert v-if="failure" theme="error" :message="failure" />
+    <template v-if="detail">
+      <media-detail-hero :detail="detail" :protect="protect" @play="play" />
+      <div ref="heroEnd" class="hero-end" aria-hidden="true"></div>
 
-      <t-loading v-if="loading && !detail" size="small" text="正在读取影片信息…" />
+      <div class="detail-body">
+        <t-alert v-if="failure" theme="error" :message="failure" />
 
-      <template v-else-if="detail">
-        <media-player
-          v-if="detail.item.playUrl"
-          :url="detail.item.playUrl"
-          :poster="detail.item.coverUrl"
-          :protect="protect"
-        />
-        <t-alert
-          v-else
-          theme="warning"
-          message="没有找到这个影片的播放地址，请回影视墙刷新后再试"
-        />
-
-        <section class="detail-block overview">
-          <sensitive-image
-            v-if="detail.item.coverUrl"
-            class="overview-cover"
-            :src="detail.item.coverUrl"
+        <section
+          ref="playerBlock"
+          class="detail-section player-block"
+          :class="{ 'is-fullscreen': playerFullscreen }"
+        >
+          <media-player
+            v-if="detail.item.playUrl"
+            :url="detail.item.playUrl"
+            :poster="detail.item.coverUrl"
             :protect="protect"
-            :width="200"
-            :height="280"
+            @web-fullscreen="playerFullscreen = $event"
+          />
+          <t-alert
+            v-else
+            theme="warning"
+            message="没有找到这个影片的播放地址，请回影视墙刷新后再试"
+          />
+        </section>
+
+        <section v-if="plot.length > 0" class="detail-section">
+          <h4 class="section-title">剧情简介</h4>
+          <p class="plot">{{ plot }}</p>
+        </section>
+
+        <section v-if="posterUrl.length > 0" class="detail-poster">
+          <sensitive-image
+            class="poster-image"
+            :src="posterUrl"
+            :protect="protect"
+            :width="168"
+            :height="238"
             alt="影片封面"
             fit="cover"
           />
-          <div v-else class="overview-cover is-empty">
-            <film-icon size="32px" />
-            <span>没有找到封面</span>
-          </div>
-
-          <div class="overview-facts">
-            <h4 class="block-title">磁盘上的事实</h4>
-            <media-fact-grid :cells="factCells" />
-          </div>
+          <span class="poster-title" :title="detail.item.title">{{ posterTitle }}</span>
+          <span v-if="posterNote.length > 0" class="poster-note">{{ posterNote }}</span>
         </section>
 
+        <div class="detail-columns">
+          <media-nfo-block :detail="detail" />
+          <section class="detail-section">
+            <h4 class="section-title">磁盘上的事实</h4>
+            <media-fact-grid :cells="factCells" />
+          </section>
+        </div>
+
+        <media-still-wall :images="stillImages" :protect="protect" />
+
         <media-actor-strip v-if="detail.actors.length > 0" :actors="detail.actors" />
+      </div>
+    </template>
 
-        <media-nfo-block :detail="detail" />
-      </template>
-
-      <t-empty v-else-if="!failure" description="还没有影片信息" />
+    <div v-else class="detail-fallback">
+      <t-loading v-if="loading" size="small" text="正在读取影片信息…" />
+      <t-alert v-else-if="failure" theme="error" :message="failure" />
+      <t-empty v-else description="还没有影片信息" />
     </div>
-  </sub-page-layout>
+  </div>
 </template>
 <script setup lang="ts">
 /**
- * 影片详情页（`/media/detail`）：播放 + 磁盘上的事实 + NFO 元信息。
+ * 影片详情页（`/media/detail`）：沉浸头部 + 播放 + 剧情简介 + 封面 + 元信息 / 磁盘事实 + 剧照墙 + 演员。
  *
  * 契约：
  * - 参数只从路由 query 读（`itemId`）：可以直接刷新、也可以重复进入；
  * - 除「还原刮削前」（通道仍是 `media:clear-nfo`）外只读：不下载、不触发刮削、不改索引；取数一律走 mediaApi，失败只提示并允许重试；
+ * - **不用 `SubPageLayout`**：没有页头横条，返回与「更多」（重新读取 / 还原刮削前）都浮在封面图上，
+ *   由 `MediaDetailToolbar` 提供；代价是本页要自己做滚动容器（根节点 `height: 100%` + `overflow: auto`），
+ *   正文左右内边距也从页头挪到 `.detail-body`（20px），头部因此天然通栏，不再需要负外边距出血；
+ * - 悬浮条**吸顶**（`position: sticky`，靠负外边距不占流内空间）：头部的标题被滚出视野后，它退成一条
+ *   半透明横幅（毛玻璃 + 单行省略号的标题），判断在 `composables/useDetailScroll.ts`（哨兵 + 相交观察）；
+ * - 标题只写在头部一次（大字号压在背景图下缘的渐隐区上），横幅里那份是滚出去之后的替身；
+ * - **层级也是显式写死的**：播放器块 `.player-block` 自己写 `z-index: 0` 收住 artplayer 内部逃逸的
+ *   图层（视频 10、控制条 60、菜单 120、提示气泡 1000001），否则它们会把悬浮条（3）盖掉；
+ *   播放器网页全屏时（`.is-fullscreen`）反过来抬到 100，盖住悬浮条与页面里的图片层；
+ * - 版式是沉浸式：通栏背景图 + 留白分区，区块不画底板与描边；
+ *   区块底色一律不要铺：页面容器（`windows/main/App.vue` 的 `.main-container`）已经是 `--td-bg-color-container`，
+ *   只有头部渐隐需要显式取这个 token 才与面板同色（取 `--td-bg-color-page` 会压出色带）；
  * - 「还原刮削前」用于一键还原成刮削前的样子：二次确认后由主进程删掉刮削数据与磁盘 NFO，
  *   按 NFO 里记的「刮削前位置」把视频改回原名、移回原目录，本地图片搬回原处，刮削下载的
  *   图片 / 预告片删掉；目标已存在时保持现状、不覆盖，演员档案不受影响；清完重新读取详情，不自动重刮；
  * - NSFW 保护按「全局开关 + 该存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
+ *   头部在保护命中时给**模糊底图**、点一下看原图，封面与剧照逐张遮罩，播放器仍由 `MediaPlayer` 自己挡一层；
  * - 播放地址只用主进程给的 `playUrl`（`storage://`），渲染层不拼磁盘路径；
- *   返回按钮由 SubPageLayout 提供，本页不要在 `#extra` 里再放一个。
+ *   头部的「播放」只把播放器滚进视野，不自动播放。
  */
-import { computed, onMounted, ref } from 'vue'
-import { FilmIcon, RefreshIcon, RollbackIcon } from 'tdesign-icons-vue-next'
+import { onMounted, ref, useTemplateRef } from 'vue'
 import { mediaApi } from '@/api/media'
-import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import SensitiveImage from '@/components/SensitiveImage.vue'
 import MediaPlayer from '@/components/media/MediaPlayer.vue'
 import { useFileConnections } from '@/hooks/UseFileConnections'
-import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { MessageBoxUtil, MessageUtil } from '@/utils/modal'
+import MediaActorStrip from './components/MediaActorStrip.vue'
+import MediaDetailHero from './components/MediaDetailHero.vue'
+import MediaDetailToolbar from './components/MediaDetailToolbar.vue'
 import MediaFactGrid from './components/MediaFactGrid.vue'
 import MediaNfoBlock from './components/MediaNfoBlock.vue'
-import MediaActorStrip from './components/MediaActorStrip.vue'
+import MediaStillWall from './components/MediaStillWall.vue'
+import { useDetailScroll } from './composables/useDetailScroll'
+import { useDetailView } from './composables/useDetailView'
 import { useMediaDetail } from './composables/useMediaDetail'
-import { fileCells } from './mediaDetailCells'
 
-const { itemId, detail, loading, failure, load } = useMediaDetail()
+const { detail, loading, failure, load } = useMediaDetail()
 const { connections, refresh } = useFileConnections()
+/** 展示口径（连接反查 / 保护判定 / 封面块 / 剧照墙 / 信息格）都在这里 */
+const { protect, factCells, stillImages, plot, posterUrl, posterTitle, posterNote } =
+  useDetailView(detail, connections)
 
-/** 连接归属从详情结果反查：路由只带影片身份，不带路径 */
-const connection = computed(() => {
-  const id = detail.value?.item.connectionId
-  if (id === undefined || id.length === 0) return null
-  return connections.value.find((item) => item.id === id) ?? null
-})
-const { active } = useNsfwProtection(connection)
-/** 全局开关 + 存储标记命中，或所属资料库自己要求按敏感内容处理 */
-const protect = computed(() => active.value || detail.value?.item.nsfwProtected === true)
-const sourceName = computed(() => connection.value?.name ?? '')
-const factCells = computed(() => (detail.value ? fileCells(detail.value, sourceName.value) : []))
-/** 页头描述：读到详情后显示标题，否则退化成影片 ID */
-const description = computed(() => detail.value?.item.title ?? itemId)
-
+const playerBlock = ref<HTMLElement | null>(null)
+/** 播放器处于网页全屏：它要反过来盖住悬浮条 */
+const playerFullscreen = ref(false)
 const clearing = ref(false)
+
+/** 根节点是滚动容器、头部正下方那枚 1px 哨兵用来判断标题有没有滚出视野 */
+const scrollBox = useTemplateRef<HTMLElement>('scrollBox')
+const heroEnd = useTemplateRef<HTMLElement>('heroEnd')
+const collapsed = useDetailScroll(scrollBox, heroEnd)
+
+/** 头部的「播放」：把播放器滚到视野里，播放与否交给用户 */
+function play(): void {
+  playerBlock.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 
 /** 还原这部影片的刮削成果：先二次确认，清完重新读取详情 */
 async function onClearNfo(): Promise<void> {
@@ -151,54 +180,104 @@ onMounted(() => {
 </script>
 
 <style scoped lang="less">
+/* 没有页头横条，本页自己就是滚动容器；头部通栏，正文的内边距只在 `.detail-body` 上 */
 .media-detail {
+  height: 100%;
+  overflow: auto;
+}
+
+/* 头部正下方的哨兵：不占地方，只给 `IntersectionObserver` 当靶子 */
+.hero-end {
+  height: 1px;
+}
+
+.detail-body {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 24px;
+  margin-top: 20px;
+  padding: 0 20px 20px;
 }
 
-.detail-block {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.overview {
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 16px;
-}
-
-.overview-cover {
-  flex-shrink: 0;
-}
-
-.overview-cover.is-empty {
+/* 加载 / 失败 / 空态：顶上留出悬浮工具条的位置，下面居中 */
+.detail-fallback {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  width: 200px;
-  height: 280px;
-  font-size: 12px;
-  color: var(--td-text-color-placeholder);
-  background-color: var(--td-bg-color-container-hover);
-  border-radius: var(--td-radius-default);
+  gap: 12px;
+  min-height: 360px;
+  padding: 96px 20px 24px;
 }
 
-.overview-facts {
+.detail-section {
   display: flex;
-  flex: 1;
   flex-direction: column;
-  gap: 8px;
-  min-width: 0;
+  gap: 10px;
 }
 
-.block-title {
+.section-title {
   margin: 0;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--td-text-color-primary);
+}
+
+.plot {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.9;
+  color: var(--td-text-color-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.player-block {
+  /*
+   * artplayer 的根节点 `.art-video-player` 不建层叠上下文，视频本体（z-index 10）、
+   * 控制条（60）、设置 / 信息 / 右键菜单（90 / 100 / 120）、提示气泡（1000001）会一路逃到
+   * 页面这一层，把吸顶悬浮条（z-index 3）盖掉。这里给播放器块自己建一层，内部再大也跑不出来。
+   */
+  position: relative;
+  z-index: 0;
+  scroll-margin-top: 12px;
+}
+
+/* 网页全屏：播放器占满窗口，反过来要盖住标题栏（3）与页面里的图片层（1 / 2） */
+.player-block.is-fullscreen {
+  z-index: 100;
+}
+
+/* 封面块：头部是模糊底图时给一张清晰的，标题与番号 / 体积在下面收尾 */
+.detail-poster {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 168px;
+}
+
+.poster-image {
+  overflow: hidden;
+  border-radius: var(--td-radius-medium);
+}
+
+.poster-title {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--td-text-color-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.poster-note {
+  font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+.detail-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 24px;
+  align-items: start;
 }
 </style>

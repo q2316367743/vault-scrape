@@ -248,15 +248,31 @@ function mergeAliases(detail: PluginActorDetail, actor: ActorRow, state: FillSta
   return next
 }
 
-/** 资源文件名：插件给的名字优先，否则取 url 的最后一段（用来判断图片格式） */
-function assetFileName(asset: PluginAsset): string {
-  const given = asset.name?.trim() ?? ''
-  if (given.length > 0) return given
+/** url 路径的最后一段（解码后）；解析失败返回空串 */
+function assetUrlName(asset: PluginAsset): string {
   try {
-    return basename(new URL(asset.url).pathname)
+    return decodeURIComponent(basename(new URL(asset.url).pathname))
   } catch {
     return ''
   }
+}
+
+/**
+ * 图片扩展名：url 末段优先。
+ * 插件的 `name` 是展示名（如「头像」「剧照 2」），按契约不带扩展名，所以只作兜底。
+ */
+function assetExtension(asset: PluginAsset): string {
+  for (const candidate of [assetUrlName(asset), asset.name ?? '']) {
+    const extension = extname(candidate).toLowerCase().replace(/^\./, '')
+    if (isActorImageExtension(extension)) return extension
+  }
+  return ''
+}
+
+/** 图片展示名：插件给的优先，否则取 url 末段 */
+function assetDisplayName(asset: PluginAsset): string {
+  const given = asset.name?.trim() ?? ''
+  return given.length > 0 ? given : assetUrlName(asset)
 }
 
 /** 下载并保存插件给的演员图片：头像最多一张，图集受 `scrape.actorImageLimit` 限制 */
@@ -276,8 +292,8 @@ async function applyActorAssets(
     const isAvatar = asset.kind === 'poster'
     if (isAvatar && hasAvatar) continue
     if (!isAvatar && photos >= limit) continue
-    const fileName = assetFileName(asset)
-    if (!isActorImageExtension(extname(fileName))) {
+    const extension = assetExtension(asset)
+    if (extension.length === 0) {
       appendLog({
         level: 'warn',
         scope: 'actor',
@@ -293,7 +309,8 @@ async function applyActorAssets(
         sourcePath: download.localPath,
         kind: isAvatar ? 'avatar' : 'photo',
         source: 'scrape',
-        name: fileName
+        name: assetDisplayName(asset),
+        extension
       })
       saved += 1
       if (isAvatar) hasAvatar = true

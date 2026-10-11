@@ -4,12 +4,11 @@
  *
  * 契约：
  * - 纯展示，不取数、不改数据，编辑入口在页面 `#extra`；
- * - 头像走 `SensitiveImage`（演员图片没有存储上下文，只看应用总开关）；
+ * - 头像走 `SensitiveImage` 但不传 `protect`：演员图片不参与 NSFW 保护，永远直接显示；
  * - 空字段统一显示「未填写」，不隐藏行，方便一眼看出还缺什么。
  */
 import { computed } from 'vue'
 import SensitiveImage from '@/components/SensitiveImage.vue'
-import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { formatTime } from '@/utils/format'
 import {
   actorBirthplaceText,
@@ -20,8 +19,6 @@ import {
 } from '@common/types/actor'
 
 const props = defineProps<{ actor: ActorDetail }>()
-
-const { protection } = useNsfwProtection()
 
 const EMPTY = '未填写'
 
@@ -55,7 +52,6 @@ const initial = computed(() => props.actor.name.trim().slice(0, 1) || '演')
       v-if="actor.avatarUrl"
       class="profile-avatar"
       :src="actor.avatarUrl"
-      :protect="protection"
       :width="160"
       :height="160"
       :alt="actor.name"

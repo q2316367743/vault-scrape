@@ -6,20 +6,18 @@
  * - 图片本体由主进程复制进数据目录并写库，渲染层只提交本机绝对路径；
  * - 「导入图片」支持一次选多张（对话框 `multiple`），逐张校验，失败的按原因列出来；
  * - 「更换头像」单选一张，主进程会把它记为头像并同步 `avatar.avatarImageId`；
+ * - 缩略图走 `SensitiveImage` 但不传 `protect`：演员图片不参与 NSFW 保护，永远直接显示；
  * - 任何成功的增删都只 `emit('changed')`，由页面重新拉详情，组件自己不改 props。
  */
 import { computed, ref } from 'vue'
 import { DeleteIcon, UploadIcon, UserCircleIcon } from 'tdesign-icons-vue-next'
 import SensitiveImage from '@/components/SensitiveImage.vue'
 import { MessageBoxUtil, MessageUtil } from '@/utils/modal'
-import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { actorApi, dialogApi, settingApi } from '@/api'
 import { ACTOR_IMAGE_EXTENSIONS, type ActorDetail, type ActorImageKind } from '@common/types/actor'
 
 const props = defineProps<{ actor: ActorDetail }>()
 const emit = defineEmits<{ changed: [] }>()
-
-const { protection } = useNsfwProtection()
 
 const importing = ref(false)
 const busyImageId = ref('')
@@ -119,7 +117,6 @@ async function removePhoto(imageId: string): Promise<void> {
       <figure v-for="photo in photos" :key="photo.imageId" class="gallery-item">
         <sensitive-image
           :src="photo.url"
-          :protect="protection"
           :width="150"
           :height="190"
           :alt="photo.name"

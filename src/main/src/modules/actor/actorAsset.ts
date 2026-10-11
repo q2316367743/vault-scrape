@@ -78,14 +78,21 @@ export interface SaveActorImageInput {
   sourcePath: string
   kind: ActorImageKind
   source: ActorImageSource
-  /** 原始文件名；不给则取源文件名 */
+  /** 展示名；不给则取源文件名 */
   name?: string
+  /**
+   * 扩展名提示（可带点）：抓取下载的临时文件没有扩展名、展示名也不带扩展名时用，
+   * 例如从资源 url 末段取到的 `jpg`。
+   */
+  extension?: string
 }
 
 /**
- * 扩展名：源文件优先；抓取下载的临时文件没有扩展名时改用原始文件名推断。
+ * 扩展名：显式提示优先，其次源文件；抓取下载的临时文件没有扩展名时改用展示名推断。
  */
 function readExtension(input: SaveActorImageInput): string {
+  const explicit = (input.extension ?? '').toLowerCase().replace(/^\./, '')
+  if (isActorImageExtension(explicit)) return explicit
   const fromSource = extname(input.sourcePath).toLowerCase().replace(/^\./, '')
   if (isActorImageExtension(fromSource)) return fromSource
   return extname(input.name ?? '').toLowerCase().replace(/^\./, '')

@@ -2,6 +2,8 @@
 
 演员有三处界面：**演员列表页**、**演员详情页**、**演员编辑弹窗**；影视墙的影片详情页上还有一条**参演演员条**，点击即跳演员详情。主进程实现见 [演员模块](../actor/01-actor-module.md)。
 
+**演员图片不参与 NSFW 保护**：演员的头像与图集一律直接显示，不接 `useNsfwProtection`、不传 `SensitiveImage` 的 `protect`（演员图片没有存储上下文，也不属于要遮罩的影片内容）；演员页里的**影片封面**仍按影视墙规则遮罩，见下文与 [影视墙页面](./04-media-wall-page.md) 第 7 节。
+
 ## 1. 路由与入口
 
 | 路由 | 名称 | 页面 | 说明 |
@@ -39,9 +41,9 @@
 
 主体三块：
 
-- `components/ActorProfileBlock.vue`：头像（`SensitiveImage`，走全局 NSFW 保护；没有头像时显示姓名首字占位）+ 资料格（性别 / 生日 / 出生地（`actorBirthplaceText`）/ 身高（`actorHeightText`）/ 三围（`actorMeasurementsText`）/ 罩杯 / 来源链接 / 收录时间 / 刮削插件 / 资料锁定），别名与用户标签用 `t-tag`，简介按原文换行展示；空值统一显示「未填写」。
-- `components/ActorGalleryBlock.vue`：图集缩略图 + 「导入图片」「导入头像」按钮（`dialogApi.open({ multiple: true, filters: [{ name: '图片', extensions: ACTOR_IMAGE_EXTENSIONS }] })`，初始目录取 `app.actorImageDir`；「导入头像」是单选），每张图可「设为头像」或删除（删除走二次确认，本机文件与数据库记录一起清掉）；导入失败项用 `MessageUtil.warning` 列出「路径：原因」。
-- 出演作品：`MediaWallCard` 网格（`connectionOf` 从 `useFileConnections()` 取连接，用于 NSFW 判定），空态 `t-empty`。
+- `components/ActorProfileBlock.vue`：头像（`SensitiveImage`，**不传 `protect`**，不做 NSFW 遮罩；没有头像时显示姓名首字占位）+ 资料格（性别 / 生日 / 出生地（`actorBirthplaceText`）/ 身高（`actorHeightText`）/ 三围（`actorMeasurementsText`）/ 罩杯 / 来源链接 / 收录时间 / 刮削插件 / 资料锁定），别名与用户标签用 `t-tag`，简介按原文换行展示；空值统一显示「未填写」。
+- `components/ActorGalleryBlock.vue`：图集缩略图（`SensitiveImage`，同样不传 `protect`）+ 「导入图片」「导入头像」按钮（`dialogApi.open({ multiple: true, filters: [{ name: '图片', extensions: ACTOR_IMAGE_EXTENSIONS }] })`，初始目录取 `app.actorImageDir`；「导入头像」是单选），每张图可「设为头像」或删除（删除走二次确认，本机文件与数据库记录一起清掉）；导入失败项用 `MessageUtil.warning` 列出「路径：原因」。
+- 出演作品：`MediaWallCard` 网格（`connectionOf` 从 `useFileConnections()` 取连接，用于 NSFW 判定——这里是**影片封面**，不属于上文的豁免范围），空态 `t-empty`。
 
 取数组合式 `detail/composables/useActorDetail.ts`：从 `route.query.actorId` 取参，缺失时只写中文 `failure`「地址里缺少演员参数，请从演员列表点进来」并且**不发请求**；`load()` 调 `actorApi.detail({ actorId })`。
 
@@ -58,4 +60,4 @@
 
 ## 5. 影片详情页的参演演员条
 
-`pages/media/detail/components/MediaActorStrip.vue`：`props { actors: MediaActorRef[] }`，标题「参演演员（N）」，每项是 56×56 头像（`SensitiveImage` + NSFW 保护，缺失时首字占位）+ 姓名，点击跳 `{ name: '演员详情', query: { actorId } }`。数据来自 `MediaDetailResult.actors`（主进程 `actorRefsOfItem` 按 `media_cast.ordinal` 组装，弱关联只认名字，演员行缺失时 `actorId` 为空串、点击不跳转，见 [影视墙页面](./04-media-wall-page.md) 与 [资料库](../media/01-media-library.md)），在 `MediaDetailPage.vue` 里 `v-if="detail.actors.length > 0"` 挂在 NFO 区块之前。
+`pages/media/detail/components/MediaActorStrip.vue`：`props { actors: MediaActorRef[] }`，标题「参演演员（N）」，每项是 56×56 头像（`SensitiveImage`，**不传 `protect`**，不做 NSFW 遮罩，缺失时首字占位）+ 姓名，点击跳 `{ name: '演员详情', query: { actorId } }`。数据来自 `MediaDetailResult.actors`（主进程 `actorRefsOfItem` 按 `media_cast.ordinal` 组装，弱关联只认名字，演员行缺失时 `actorId` 为空串、点击不跳转，见 [影视墙页面](./04-media-wall-page.md) 与 [资料库](../media/01-media-library.md)），在 `MediaDetailPage.vue` 里 `v-if="detail.actors.length > 0"` 挂在 NFO 区块之前。

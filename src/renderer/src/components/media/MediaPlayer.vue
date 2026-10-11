@@ -8,6 +8,8 @@
  * - NSFW 保护未解除时盖一层不透明遮罩并挡住播放器交互，点击后解除并起播；
  * - 封装 / 编码放不了或文件读不出来时，不是留一块黑屏：在播放器位置盖一层
  *   「封面（可无）+ 说明文案」，说明文案由调用方传 `fallbackText`（本版本不做转码）；
+ * - 网页全屏（artplayer 的 `fullscreenWeb`，播放器 `position: fixed` 铺满窗口）要 `emit` 出去：
+ *   artplayer 的根节点不建层叠上下文，调用方得自己决定这时候谁来压谁；
  */
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import Artplayer from 'artplayer'
@@ -32,6 +34,11 @@ const props = withDefaults(
   }
 )
 
+const emit = defineEmits<{
+  /** 网页全屏开关：开时播放器占满整个窗口 */
+  webFullscreen: [boolean]
+}>()
+
 const container = ref<HTMLDivElement | null>(null)
 /** 保护未解除时盖遮罩；进入页面时若无需保护则直接可见 */
 const revealed = ref(!props.protect)
@@ -48,6 +55,8 @@ function themeColor(): string {
 function destroy(): void {
   art?.destroy()
   art = null
+  // 销毁时 artplayer 不会补发 fullscreenWeb，这里自己复位，免得调用方一直以为还在全屏
+  emit('webFullscreen', false)
 }
 
 function create(): void {
@@ -77,6 +86,9 @@ function create(): void {
   })
   player.on('video:error', () => {
     failed.value = true
+  })
+  player.on('fullscreenWeb', (state) => {
+    emit('webFullscreen', state)
   })
   art = player
 }

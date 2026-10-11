@@ -196,7 +196,7 @@ interface PluginActorDetail {
 
 - 入参：`invoke` 的 `payload.actorName`；`PluginInvokePayload` 里 `method` 为 `actor` / `actorAssets` 时 `actorName` 必填（缺失报 `invalidArgument`「缺少演员姓名 actorName」），签名是 `actor(name, env, ctx)` / `actorAssets(name, env, ctx)`；
 - `actor()` 返回**一位**演员的资料（不是数组）；`name` 为空会被 `normalizeActorDetail(raw, fallbackName)` 归一回落到入参姓名，仍为空则视为「没命中」；
-- `actorAssets()` 只产出演员图片，只接受 `poster`（头像）/ `thumb` / `still`（图集）——常量 `PLUGIN_ACTOR_ASSET_KINDS`；越界 kind 被丢弃，返回结构仍是 `PluginAsset[]`（链接 + 方法 + 请求头），与 `covers` / `extras` 完全一致；
+- `actorAssets()` 只产出演员图片，只接受 `poster`（头像）/ `thumb` / `still`（图集）——常量 `PLUGIN_ACTOR_ASSET_KINDS`；越界 kind 被丢弃，返回结构仍是 `PluginAsset[]`（链接 + 方法 + 请求头），与 `covers` / `extras` 完全一致。`PluginAsset.name` 同样是**展示名**（如「头像」），宿主从资源 url 末段推断图片扩展名，不要把文件名塞进 `name`；
 - 归一化在 `src/common/types/plugin/normalize.ts` 的 `normalizeActorDetail()`，跨 realm 重建纯对象、非法字段丢弃或截断，**绝不抛错**；运行时在 `pluginRuntime.ts` 的 `buildActorPlugin()` 里把 `actor` 挂成必需方法、`actorAssets` 按需挂上；
 - 方法表：actor 类别是 `required: ['actor']` + `optional: ['actorAssets']`，两者都在 `PLUGIN_KIND_METHODS.actor.all` 里，`plugin:actor:invoke` 的 `readMethod` 据此放行；缺 `actor` 的演员插件在编译期就报 `invalidPlugin`；
 - 抓取、合并与图片落盘策略（只补空白字段、`locked` 只填空、`actorImageLimit` 上限、串行队列）与四个触发场景见[演员模块](../actor/01-actor-module.md)与[插件类别](./03-plugin-categories.md)第 5 节。

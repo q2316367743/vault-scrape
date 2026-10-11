@@ -4,18 +4,15 @@
  *
  * 契约：
  * - 只消费 `ActorSummary`，不取数、不路由；点击只 `emit('select')`，由页面决定跳哪个详情页；
- * - 头像走 `SensitiveImage`：演员图片没有存储上下文，保护与否只看应用总开关；
+ * - 头像走 `SensitiveImage` 但不传 `protect`：演员图片不参与 NSFW 保护，永远直接显示；
  * - 没有头像时显示姓名首字占位，不请求、不报错。
  */
 import { computed } from 'vue'
 import SensitiveImage from '@/components/SensitiveImage.vue'
-import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { actorGenderLabel, type ActorSummary } from '@common/types/actor'
 
 const props = defineProps<{ actor: ActorSummary }>()
 const emit = defineEmits<{ select: [actorId: string] }>()
-
-const { protection } = useNsfwProtection()
 
 const initial = computed(() => props.actor.name.trim().slice(0, 1) || '演')
 const genderText = computed(() => (props.actor.gender ? actorGenderLabel(props.actor.gender) : ''))
@@ -32,7 +29,6 @@ const restTagCount = computed(() => Math.max(0, props.actor.tags.length - visibl
       v-if="actor.avatarUrl"
       class="actor-avatar"
       :src="actor.avatarUrl"
-      :protect="protection"
       :width="96"
       :height="96"
       :alt="actor.name"

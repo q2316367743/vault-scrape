@@ -65,7 +65,7 @@
 1. 按 `pluginIds`（为空则取全部启用的**演员信息插件**）**依次尝试**，`actor` 命中一个就停；
 2. 文本字段 `trim()` 后为空视为未提供；数字字段 `undefined` 或 `<= 0` 视为未提供；`locked` 为真时只填空白字段，未锁定时覆盖；
 3. 姓名与用户标签永不被覆盖；别名在未锁定时直接用插件结果，锁定时与原值合并去重；
-4. 图片按 `actorImageLimit` 限量（0 = 只抓资料不下图）：`poster` 只在没有头像时存一张，其余进图集；下载走刮削域的 `downloadAssetToTemp`，落盘后调 `saveActorImage({ source: 'scrape' })` 并 `cleanup` 临时文件；扩展名识别不了就跳过并记 warn；
+4. 图片按 `actorImageLimit` 限量（0 = 只抓资料不下图）：`poster` 只在没有头像时存一张，其余进图集；下载走刮削域的 `downloadAssetToTemp`，落盘后调 `saveActorImage({ source: 'scrape' })` 并 `cleanup` 临时文件；图片扩展名优先从资源 url 末段推断（`PluginAsset.name` 是展示名，如「头像」，只在 url 取不到扩展名时兜底），仍识别不了就跳过并记 warn；
 5. 命中后写回资料、`replaceAliases`（有变化时）、`scraper_id` / `scraped_at`；全部失败只记日志，不打断调用方；
 6. 自动补全走**模块级串行队列**（`enqueueActorScrape`），同一演员排队期间不重复入队，取消（`ActorError('cancelled')`）静默处理。
 
