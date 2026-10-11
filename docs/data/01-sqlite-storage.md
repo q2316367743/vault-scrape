@@ -14,7 +14,7 @@
 | `src/main/src/db/schema/task.ts` | `task` 表定义 |
 | `src/main/src/db/schema/scrapeFile.ts` | `scrape_file` 表定义 |
 | `src/main/src/db/schema/library.ts` | `library` / `library_path` 表定义（资料库配置与多根目录） |
-| `src/main/src/db/schema/mediaItem.ts` | `media_item` 表定义（Jellyfin 的 BaseItem：`movie` / `folder`） |
+| `src/main/src/db/schema/mediaItem.ts` | `media_item` 表定义（Jellyfin 的 BaseItem：影视库用 `movie` / `folder`，剧集库用 `series` / `season` / `episode` + 组织层 `folder`） |
 | `src/main/src/db/schema/mediaSource.ts` | `media_source` 表定义（一个条目下的媒体文件） |
 | `src/main/src/db/schema/mediaImage.ts` | `media_image` 表定义（primary / backdrop / thumb / …） |
 | `src/main/src/db/schema/actor.ts` | 演员域三张表 + 影视参演名单表定义（`actor` / `actor_alias` / `actor_image` / `media_cast`，见 [演员模块](../actor/01-actor-module.md)） |
@@ -32,7 +32,7 @@
 | `src/preload/src/modules/db/db.ts` | 渲染层可用的 `dbApi` |
 | `src/renderer/src/api/db.ts` | 渲染层统一出口 |
 | `drizzle.config.ts` | drizzle-kit 配置（schema 入口与迁移输出目录） |
-| `resources/drizzle/` | 迁移 SQL 与 meta：现为**一份全量基线** `0000_moaning_black_panther.sql`（12 张表），配 `meta/0000_snapshot.json` 与 `meta/_journal.json`（只有 idx 0），详见 §迁移 |
+| `resources/drizzle/` | 迁移 SQL 与 meta：**全量基线** `0000_moaning_black_panther.sql`（12 张表）+ 剧集增量 `0001_familiar_lifeguard.sql`（给 `media_item` 加 `season_number` / `episode_number`），配 `meta/0000_snapshot.json` / `meta/0001_snapshot.json` 与 `meta/_journal.json`（idx 0 / 1 两条），详见 §迁移 |
 
 ## 数据结构
 
@@ -83,10 +83,11 @@
 
 索引：`idx_scrape_file_task`（taskId）、`idx_scrape_file_status`（taskId, status）、`idx_scrape_file_item`（itemId）。
 
-媒体层的五张表（`library` 13 列 / `library_path` 5 列 / `media_item` 26 列 / `media_source` 12 列 / `media_image` 9 列）不在本文重复，逐列说明见 [资料库](../media/01-media-library.md) 的「数据结构」一节。要点：
+媒体层的五张表（`library` 13 列 / `library_path` 5 列 / `media_item` 28 列 / `media_source` 12 列 / `media_image` 9 列）不在本文重复，逐列以 `src/main/src/db/schema/*.ts` 与 `resources/drizzle/` 里的迁移 SQL 为准。要点：
 
 - `library` 表的 `type` 列（`$type<LibraryType>()`，默认 `'movie'`）现由基线迁移 `0000_moaning_black_panther.sql` 一并建立：类型决定扫描按 `setting.library.extensions` 里的哪份后缀清单识别媒体文件，建库后不可修改。库级选项只留 `min_file_size_mb`（体积过滤，默认 0）与 `local_first`（优先本地 NFO 与图片，默认 false）；写 NFO、重命名、图片落同目录是固定规范，没有对应列。
 - 表之间**没有外键**：`library_id` / `item_id` / `parent_id` 都是普通 text 列，级联清理由仓储函数显式完成（`deleteItemsWithoutSource` → `deleteImagesByIds` → `deleteSourcesNotInScan`；删库走 `purgeLibraryMedia`；删连接走 `deleteLibrariesByConnection`）。
+- `media_item.type` 的取值是 `'movie' | 'folder' | 'series' | 'season' | 'episode'`（列注释与 `$type<…>()` 同步）：影视库写 `movie`（视频）/ `folder`（目录），**剧集库写 `series`（整部剧）/ `season`（季）/ `episode`（集）**，同样用 `parent_id` 串成 剧集 → 季 → 集 三层——**没有新表**，只在增量迁移 `0001_familiar_lifeguard.sql` 里给 `media_item` 加了 `season_number`（季号，`0` 表示特别篇）与 `episode_number`（集号，从 1 开始）两列（`movie` / `folder` / `series` 两列恒 0），`path` 对 `movie` / `episode` 是主媒体源路径、对 `folder` / `series` / `season` 是目录路径。扫描按库类型分派（`libraryScrapeDispatch.ts` 的 `isTvLibrary()`），逐层建条目与季 / 集号解析见[剧集支持](../media/02-series-support.md)。
 - 唯一索引是去重与 upsert 的落点：`library_path (connection_id, path)`（一条目录只能属于一个库，嵌套与重叠由 `libraryStore.normalizePaths()` 在保存时先用 `isRemotePathInside` 拦下）、`media_source (connection_id, path)`（重扫 `upsertSource` 的冲突目标，**id 不变**）、`media_image (connection_id, path)`。
 - 刮削元数据写在 `media_item` 上（`title` / `num` / `overview` / 评分 / JSON 列 `genres` / `studios` / `tags` / `provider_ids` / `scraped_at` / `scraper_id`），所以重扫只更新 `media_source`，元数据与图片不会丢。
 - `media_item.has_nfo`（基线迁移 `0000_moaning_black_panther.sql` 里的列）反过来是**扫描拥有**的列：扫描时同目录有 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它现在只是「磁盘上有没有 NFO」的**事实标记，当前不参与任何界面判定**——旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径已下线，列保留是为了不改表结构；刮削队列仍只看 `scraped_at === 0`，见 [资料库](../media/01-media-library.md)。
@@ -144,10 +145,11 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 - 迁移文件由 `yarn db:generate`（即 `drizzle-kit generate`）生成到 `resources/drizzle/`，不手写 SQL。drizzle 的 `run()` 只支持单语句 DDL，手写多语句迁移会直接抛错；删表也走 generate 产出 `DROP`。
 - 启动时 `initDb()` 调用 `migrate(db, { migrationsFolder })`，目录在开发态为 `join(__dirname, '../../resources/drizzle')`；打包时通过 `electron-builder.yml` 的 `asarUnpack` 释放到磁盘后仍可按该相对路径解析。
 - 迁移是追加式的：改表结构后重新 generate，产生新的 `000X_*.sql`，不要修改历史迁移。
-- **本轮整库重建：迁移删光重生成，只剩一份全量基线**。旧的 `0000_heavy_hardball.sql` ~ `0006_media_cast.sql` 与整个 `meta/` 已删除，本机数据库 `~/.vault-scrape/db/vault-scrape.db`（含 `-wal` / `-shm`）也一起删了，重新 `yarn db:generate` 得到：
-  - `resources/drizzle/0000_moaning_black_panther.sql`——当前 schema 的完整建库脚本（**12 张表、0 外键**，全文 `CREATE TABLE` + `CREATE INDEX`），列数：`log` 6 / `task` 11 / `scrape_file` 12 / `library_path` 5 / `library` 13 / `media_item` 26 / `media_source` 12 / `media_image` 9 / `actor_alias` 4 / `actor_image` 12 / `actor` 24 / `media_cast` 4；索引 2 / 2 / 3 / 2 / 0 / 3 / 3 / 3 / 2 / 1 / 2 / 1；
-  - `meta/_journal.json` 只有 idx 0 一条（tag `0000_moaning_black_panther`），快照只有 `meta/0000_snapshot.json`。
-  之后改表结构照旧 `yarn db:generate` 追加 `0001_*.sql` 这类增量即可。
+- **整库重建过一次：迁移删光重生成，得到一份全量基线**。旧的 `0000_heavy_hardball.sql` ~ `0006_media_cast.sql` 与整个 `meta/` 已删除，本机数据库 `~/.vault-scrape/db/vault-scrape.db`（含 `-wal` / `-shm`）也一起删了，重新 `yarn db:generate` 得到：
+  - `resources/drizzle/0000_moaning_black_panther.sql`——基线 schema 的完整建库脚本（**12 张表、0 外键**，全文 `CREATE TABLE` + `CREATE INDEX`），列数：`log` 6 / `task` 11 / `scrape_file` 12 / `library_path` 5 / `library` 13 / `media_item` 26 / `media_source` 12 / `media_image` 9 / `actor_alias` 4 / `actor_image` 12 / `actor` 24 / `media_cast` 4；索引 2 / 2 / 3 / 2 / 0 / 3 / 3 / 3 / 2 / 1 / 2 / 1；
+  - `resources/drizzle/0001_familiar_lifeguard.sql`——剧集支持的**增量**（`ALTER TABLE media_item ADD season_number` + `ADD episode_number`）；基线 + 这份增量后 `media_item` 是 **28 列**（其余表不变）；
+  - `meta/_journal.json` 有 idx 0（tag `0000_moaning_black_panther`）与 idx 1（tag `0001_familiar_lifeguard`）两条，快照为 `meta/0000_snapshot.json` / `meta/0001_snapshot.json`。
+  之后改表结构照旧 `yarn db:generate` 追加 `0002_*.sql` 这类增量即可。
 - **旧库不做兼容、不迁移数据**：drizzle 的记账表里记着旧 tag / hash，与新迁移对不上时启动会报 `table ... already exists`；因此本机旧库一直是「删掉 + 重建」（历史归档 `vault-scrape.db.old-20261010`，最近一次直接删了当前库文件），新库首次启动时按基线迁移从零建表。旧库里的刮削记录 / 任务历史一律不带过来。
 - **资料库配置这一轮进了 sqlite**（`library` / `library_path`）：`~/.vault-scrape/media/libraries.json` 已废弃、不再读写，删除存储时的库级联也变成数据库操作（`deleteLibrariesByConnection`）。
 - 例外不变：离线插件自管的 `r18.db` 不参与 `migrate()`，不受这次重建影响。

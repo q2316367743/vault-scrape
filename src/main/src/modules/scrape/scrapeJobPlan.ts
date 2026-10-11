@@ -5,7 +5,7 @@
  */
 import { FILE_ROOT, dirnameRemotePath, joinRemotePath } from '@common/types/file'
 import type { MediaImageType } from '@common/types/media'
-import type { PluginAsset, PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
+import type { PluginAsset, PluginAssetKind, PluginMovieCandidate, PluginMovieDetail } from '@common/types/plugin'
 import { COVER_ASSET_KINDS, EXTRA_ASSET_KINDS } from '@common/types/plugin'
 import type { SettingNaming } from '@common/types/setting'
 import {
@@ -119,11 +119,19 @@ function collectAssets(
   }
 }
 
-/** 按顺序调用插件，尽可能补齐详情与资源 */
+/**
+ * 按顺序调用插件，尽可能补齐详情与资源。
+ *
+ * `pick` 是候选挑选器：影片按番号 + 标题（默认），剧集没有番号，传 `pickSeriesCandidate`。
+ */
 export async function collectFromPlugins(
   context: ScrapeJobContext,
   enabled: readonly PluginAssetKind[],
-  localKinds: ReadonlySet<PluginAssetKind>
+  localKinds: ReadonlySet<PluginAssetKind>,
+  pick: (
+    candidates: readonly PluginMovieCandidate[]
+  ) => PluginMovieCandidate | null = (candidates) =>
+    pickCandidate(candidates, context.entry.num, context.entry.keyword)
 ): Promise<{
   detail: PluginMovieDetail | null
   pluginId: string
@@ -143,7 +151,7 @@ export async function collectFromPlugins(
         const candidates = readCandidates(
           await moviePlugins.invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })
         )
-        const picked = pickCandidate(candidates, context.entry.num, context.entry.keyword)
+        const picked = pick(candidates)
         if (picked) {
           const found = readDetail(
             await moviePlugins.invokePlugin(plugin.id, 'detail', { movieId: picked.id })

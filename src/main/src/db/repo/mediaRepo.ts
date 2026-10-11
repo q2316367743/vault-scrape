@@ -13,8 +13,8 @@ import { db } from '../client'
 import { mediaItemTable, mediaSourceTable } from '../schema'
 import type { MediaItemRow, MediaItemRowInsert, MediaSourceRow } from '../schema'
 
-/** 条目类型；本阶段只落地影片与目录 */
-export type MediaItemType = 'movie' | 'folder'
+/** 条目类型；影视库用影片与目录，剧集库用剧集 / 季 / 集（只有集挂媒体源） */
+export type MediaItemType = 'movie' | 'folder' | 'series' | 'season' | 'episode'
 
 /** 刮削写回的条目元数据（整组覆盖，缺省用空值） */
 export interface MediaItemMetadataInput {
@@ -52,6 +52,10 @@ export interface MediaItemScanPatch {
   path?: string
   name?: string
   num?: string
+  /** 季号（剧集链路）；series 为 0，season / episode 是实际季号 */
+  seasonNumber?: number
+  /** 集号（剧集链路）；仅 episode 有值，从 1 开始 */
+  episodeNumber?: number
   type?: MediaItemType
   /** 同目录有没有 NFO（1 = 有）；扫描写，读侧用来判断磁盘上是否已有刮削产出 */
   hasNfo?: number
@@ -192,6 +196,8 @@ export function insertItem(input: MediaItemInput): void {
     path: input.path ?? '',
     name: input.name,
     num: input.num ?? '',
+    seasonNumber: input.seasonNumber ?? 0,
+    episodeNumber: input.episodeNumber ?? 0,
     hasNfo: input.hasNfo ?? 0,
     dateAdded: now,
     updatedAt: now
@@ -208,6 +214,8 @@ export function updateItem(id: string, patch: MediaItemScanPatch): void {
   if (patch.path !== undefined) set.path = patch.path
   if (patch.name !== undefined) set.name = patch.name
   if (patch.num !== undefined) set.num = patch.num
+  if (patch.seasonNumber !== undefined) set.seasonNumber = patch.seasonNumber
+  if (patch.episodeNumber !== undefined) set.episodeNumber = patch.episodeNumber
   if (patch.type !== undefined) set.type = patch.type
   if (patch.hasNfo !== undefined) set.hasNfo = patch.hasNfo
   db().update(mediaItemTable).set(set).where(eq(mediaItemTable.id, id)).run()

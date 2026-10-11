@@ -29,7 +29,46 @@ export function escapeXml(value: string): string {
     .replace(APOSTROPHE_PATTERN, '&apos;')
 }
 
-const NFO_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+export const NFO_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+
+/** 追加一个非空标签；值为空白时整行省略（绝不写空标签） */
+export function pushNfoTag(rows: string[], name: string, value?: string): void {
+  const text = (value ?? '').trim()
+  if (text.length === 0) return
+  rows.push(`  <${name}>${escapeXml(text)}</${name}>`)
+}
+
+/** 追加一个非空资源标签，可带 `aspect` 属性（`<thumb aspect="poster">`） */
+export function pushNfoArtTag(
+  rows: string[],
+  name: string,
+  value: string | undefined,
+  aspect?: string
+): void {
+  const text = (value ?? '').trim()
+  if (text.length === 0) return
+  const attribute = aspect === undefined ? '' : ` aspect="${aspect}"`
+  rows.push(`  <${name}${attribute}>${escapeXml(text)}</${name}>`)
+}
+
+/** 追加 `<fanart>` 块（背景图 + 额外剧照），全部为空时整块不写 */
+export function pushNfoFanart(rows: string[], items: readonly (string | undefined)[]): void {
+  const fanart = items.map((item) => (item ?? '').trim()).filter((item) => item.length > 0)
+  if (fanart.length === 0) return
+  rows.push('  <fanart>')
+  for (const item of fanart) rows.push(`    <thumb>${escapeXml(item)}</thumb>`)
+  rows.push('  </fanart>')
+}
+
+/** 追加 `<actor>` 块（只有姓名） */
+export function pushNfoActors(rows: string[], actors: readonly string[] | undefined): void {
+  const names = (actors ?? []).map((item) => item.trim()).filter((item) => item.length > 0)
+  for (const name of names) {
+    rows.push('  <actor>')
+    rows.push(`    <name>${escapeXml(name)}</name>`)
+    rows.push('  </actor>')
+  }
+}
 
 /** NFO 里要写的图片：值都是相对影片目录的路径 */
 export interface NfoArtwork {
@@ -70,7 +109,7 @@ export interface NfoRestoreInfo {
  * 记录不全（缺文件名或缺目录）时整块不写：宁可没有记录、退化成「只清数据」，
  * 也不留一份还原不回去的半截数据。
  */
-function appendRestore(rows: string[], restore: NfoRestoreInfo): void {
+export function appendRestore(rows: string[], restore: NfoRestoreInfo): void {
   const fileName = restore.fileName.trim()
   const directory = restore.directory.trim()
   if (fileName.length === 0 || directory.length === 0) return
@@ -94,61 +133,40 @@ export function buildNfoXml(
   restore: NfoRestoreInfo | null = null
 ): string {
   const rows: string[] = []
-  const push = (name: string, value?: string): void => {
-    const text = (value ?? '').trim()
-    if (text.length === 0) return
-    rows.push(`  <${name}>${escapeXml(text)}</${name}>`)
-  }
-  const pushArt = (name: string, value: string | undefined, aspect?: string): void => {
-    const text = (value ?? '').trim()
-    if (text.length === 0) return
-    const attribute = aspect === undefined ? '' : ` aspect="${aspect}"`
-    rows.push(`  <${name}${attribute}>${escapeXml(text)}</${name}>`)
-  }
+  const push = pushNfoTag
+  const pushArt = pushNfoArtTag
 
   const title = renderTemplate(naming.nfoTitleTemplate, detail, naming) || (detail.title ?? '').trim()
-  push('title', title)
-  push('originaltitle', detail.originalTitle)
-  push('num', detail.num)
-  push('plot', detail.plot)
+  push(rows, 'title', title)
+  push(rows, 'originaltitle', detail.originalTitle)
+  push(rows, 'num', detail.num)
+  push(rows, 'plot', detail.plot)
 
-  pushArt('thumb', artwork.poster, 'poster')
-  pushArt('thumb', artwork.thumb, 'landscape')
-  pushArt('banner', artwork.banner)
-  pushArt('logo', artwork.logo)
+  pushArt(rows, 'thumb', artwork.poster, 'poster')
+  pushArt(rows, 'thumb', artwork.thumb, 'landscape')
+  pushArt(rows, 'banner', artwork.banner)
+  pushArt(rows, 'logo', artwork.logo)
 
-  const fanart = [artwork.backdrop ?? '', ...(artwork.stills ?? [])]
-    .map((item) => item.trim())
-    .filter((item) => item.length > 0)
-  if (fanart.length > 0) {
-    rows.push('  <fanart>')
-    for (const item of fanart) rows.push(`    <thumb>${escapeXml(item)}</thumb>`)
-    rows.push('  </fanart>')
-  }
+  pushNfoFanart(rows, [artwork.backdrop, ...(artwork.stills ?? [])])
 
-  const actors = (detail.actors ?? []).map((item) => item.trim()).filter((item) => item.length > 0)
-  for (const actor of actors) {
-    rows.push('  <actor>')
-    rows.push(`    <name>${escapeXml(actor)}</name>`)
-    rows.push('  </actor>')
-  }
+  pushNfoActors(rows, detail.actors)
 
-  push('maker', detail.maker)
-  push('label', detail.label)
-  push('studio', detail.studio)
-  push('series', detail.series)
-  push('director', detail.director)
+  push(rows, 'maker', detail.maker)
+  push(rows, 'label', detail.label)
+  push(rows, 'studio', detail.studio)
+  push(rows, 'series', detail.series)
+  push(rows, 'director', detail.director)
 
   const date = formatReleaseDate(detail, naming)
-  push('premiered', date)
-  push('releaseDate', date)
+  push(rows, 'premiered', date)
+  push(rows, 'releaseDate', date)
 
   if (typeof detail.duration === 'number' && detail.duration > 0) {
-    push('runtime', String(detail.duration))
+    push(rows, 'runtime', String(detail.duration))
   }
-  for (const tag of detail.tags ?? []) push('tag', tag)
+  for (const tag of detail.tags ?? []) push(rows, 'tag', tag)
   if (detail.episodes && detail.episodes.length > 0) {
-    push('episodeCount', String(detail.episodes.length))
+    push(rows, 'episodeCount', String(detail.episodes.length))
   }
 
   if (restore) appendRestore(rows, restore)

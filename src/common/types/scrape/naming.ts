@@ -5,7 +5,7 @@
  * - 纯函数，主进程与渲染层预览共用；
  * - 占位符词表：{num} {title} {actor} {actorFallbackPrefix} {maker} {label} {series}
  *   {date} {year} {month} {day} {studio} {director} {duration} {resolution} {count}
- *   {providerId}；
+ *   {providerId}；集文件另有 {showTitle} {season} {episode} {episodeTitle}；
  * - 渲染结果先清洗非法字符，再删掉值为空留下的空括号片段（`()` / `[]`），
  *   长度截断由调用方按目标决定（文件夹名与文件名同源同值）。
  */
@@ -76,16 +76,25 @@ export function formatReleaseDate(detail: PluginMovieDetail, naming: SettingNami
   return rendered.trim().length > 0 ? rendered.trim() : raw
 }
 
-/** 按模板渲染名称；未命中的占位符保持原样 */
-export function renderTemplate(
-  template: string,
-  detail: PluginMovieDetail,
-  naming: SettingNaming
-): string {
+/** 两位补零的季号/集号（`1` → `01`） */
+export function padNumber(value: number): string {
+  return String(Math.max(0, Math.trunc(value))).padStart(2, '0')
+}
+
+/** 从原文件名里取分辨率标记（`1080p` / `2160p` / `4K`），取不到返回空串 */
+export function resolutionOf(fileName: string): string {
+  const matched = /(2160p|1440p|1080p|720p|480p|4k)/i.exec(fileName)
+  if (!matched) return ''
+  const token = matched[1] ?? ''
+  return token.toLowerCase() === '4k' ? '4K' : token.toLowerCase()
+}
+
+/** 模板值表：影片与剧集目录共用（两边的可用占位符完全一致） */
+function templateValues(detail: PluginMovieDetail, naming: SettingNaming): Record<string, string> {
   const date = formatReleaseDate(detail, naming)
   const matched = DATE_PATTERN.exec(detail.releaseDate ?? '')
   const actors = (detail.actors ?? []).map((item) => item.trim()).filter((item) => item.length > 0)
-  const values: Record<string, string> = {
+  return {
     num: (detail.num ?? '').trim(),
     title: (detail.title ?? '').trim(),
     actor: actorSummary(detail, naming),
@@ -104,11 +113,73 @@ export function renderTemplate(
     count: actors.length > 0 ? String(actors.length) : '',
     providerId: (detail.providerId ?? '').trim()
   }
+}
+
+/** 把值表填进模板；未命中的占位符保持原样，最后统一清洗 */
+function fillTemplate(template: string, values: Record<string, string>): string {
   const rendered = template.replace(/\{([a-zA-Z]+)\}/g, (token, key: string) => {
     const value = values[key]
     return value === undefined ? token : value
   })
   return sanitizeName(rendered.replace(EMPTY_GROUP_PATTERN, ' '))
+}
+
+/** 按模板渲染名称；未命中的占位符保持原样 */
+export function renderTemplate(
+  template: string,
+  detail: PluginMovieDetail,
+  naming: SettingNaming
+): string {
+  return fillTemplate(template, templateValues(detail, naming))
+}
+
+/** 集文件模板的额外取值 */
+export interface EpisodeTemplateScope {
+  /** 剧集名（剧集条目的展示名） */
+  showTitle: string
+  season: number
+  episode: number
+  /** 该集标题，可为空 */
+  episodeTitle: string
+  /** 原本的视频文件名，用来提取 `{resolution}` */
+  fileName: string
+}
+
+/**
+ * 按模板渲染集文件名。
+ *
+ * `{title}` 仍是剧集名（与影片模板口径一致），集名走 `{episodeTitle}`；
+ * `{season}` / `{episode}` 一律两位补零（`S01E01`）。
+ */
+export function renderEpisodeTemplate(
+  template: string,
+  detail: PluginMovieDetail,
+  naming: SettingNaming,
+  scope: EpisodeTemplateScope
+): string {
+  const values: Record<string, string> = {
+    ...templateValues(detail, naming),
+    showTitle: scope.showTitle.trim(),
+    season: padNumber(scope.season),
+    episode: padNumber(scope.episode),
+    episodeTitle: scope.episodeTitle.trim(),
+    resolution: resolutionOf(scope.fileName)
+  }
+  return fillTemplate(template, values)
+}
+
+/**
+ * 按模板渲染季目录名（默认 `Season {season}`）。
+ *
+ * 只多一个 `{season}`（两位补零），其余占位符与影片模板完全一致。
+ */
+export function renderSeasonFolderName(
+  template: string,
+  detail: PluginMovieDetail,
+  naming: SettingNaming,
+  season: number
+): string {
+  return fillTemplate(template, { ...templateValues(detail, naming), season: padNumber(season) })
 }
 
 /** 占位符词表，供渲染层提示条与文档使用 */
@@ -131,6 +202,17 @@ export const NAMING_PLACEHOLDERS: readonly string[] = [
   '{count}',
   '{providerId}'
 ]
+
+/** 集文件模板额外支持的占位符（影片占位符依然可用） */
+export const EPISODE_NAMING_PLACEHOLDERS: readonly string[] = [
+  '{showTitle}',
+  '{season}',
+  '{episode}',
+  '{episodeTitle}'
+]
+
+/** 季目录模板额外支持的占位符 */
+export const SEASON_NAMING_PLACEHOLDERS: readonly string[] = ['{season}']
 
 /**
  * 分盘后缀归一：`origin` 保持原样，其余把名字尾部的 CD/PART/DISC/D 统一成目标样式，

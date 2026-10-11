@@ -26,9 +26,13 @@ export interface PluginMovieCandidate {
 /** 一集 */
 export interface PluginEpisode {
   id?: string
-  /** 第几集，从 1 开始 */
+  /** 第几季，从 1 开始；`0` 表示特别篇，缺省按第 1 季 */
+  season?: number
+  /** 第几集（季内序号），从 1 开始 */
   index: number
   title?: string
+  /** 分集简介（剧集 NFO 的 `<plot>` 与详情页简介用它） */
+  plot?: string
   /** 时长（分钟） */
   duration?: number
   releaseDate?: string
@@ -51,7 +55,9 @@ export interface PluginMovieDetail {
   /** 时长（分钟） */
   duration?: number
   tags?: string[]
-  /** 多集作品才有 */
+  /** 题材（剧集 NFO 的 `<genre>` 用它；影片 NFO 目前只写 tags） */
+  genres?: string[]
+  /** 多集作品才有（剧集即「多季多集」） */
   episodes?: PluginEpisode[]
   /**
    * 外部 ID 片段（`r18id-abc00123` 这种）：**由宿主按插件 ID + `id` 填**，插件不需要返回。

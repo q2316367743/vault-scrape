@@ -9,7 +9,7 @@
         <span class="lib-name">{{ library.name }}</span>
         <t-tag size="small" variant="outline">{{ typeText }}</t-tag>
       </div>
-      <div class="lib-meta">影片 {{ library.videoCount }} 部</div>
+      <div class="lib-meta">{{ countText }}</div>
     </div>
   </div>
 </template>
@@ -19,6 +19,7 @@
  *
  * 契约：
  * - `coverUrls` 最多用 4 张（主进程已限量），为空时用图标占位；
+ * - 计数与网格同口径：影视库数影片、剧集库数剧集（整部剧集算一条），文案随之分说；
  * - 点击进入该库的内容页（`/media/library?libraryId=<id>`）。
  */
 import { computed } from 'vue'
@@ -32,6 +33,9 @@ const router = useRouter()
 
 const covers = computed(() => props.library.coverUrls.slice(0, 4))
 const typeText = computed(() => libraryTypeLabel(props.library.type))
+const countText = computed(
+  () => `${props.library.type === 'tv' ? '剧集' : '影片'} ${props.library.videoCount} 部`
+)
 
 function open(): void {
   void router.push({ name: '影视墙资料库', query: { libraryId: props.library.id } })

@@ -11,6 +11,7 @@ import type { FileClient } from '$/modules/file/FileClient'
  * 契约：
  * - 只读 NFO、不写 NFO；名单解释一次就落 `media_cast`，之后查询都走数据库（NFO 只是提供方）；
  * - 已经有名单或已经刮削的条目不再读文件，重扫不会覆盖刮削结果；
+ * - 影片看 `movie.nfo` / 同名 `.nfo`，剧集看 `tvshow.nfo`；
  * - 读文件失败静默跳过：条目照常入库，名单等刮削补齐。
  */
 
@@ -44,6 +45,29 @@ function nfoFileFor(video: FileEntry, files: readonly FileEntry[]): FileEntry | 
   return matched
 }
 
+/** 目录里的 `tvshow.nfo`（剧集根 NFO），没有返回 null */
+function tvShowNfoOf(files: readonly FileEntry[]): FileEntry | null {
+  return (
+    files.find(
+      (file) =>
+        file.type === 'file' &&
+        mediaSourceKindOf(file.mime, file.extname) === 'nfo' &&
+        stripExtension(file.name).toLowerCase() === 'tvshow'
+    ) ?? null
+  )
+}
+
+/** 读一个 NFO 里的参演名单；文件不存在或解析失败返回空数组（不抛错） */
+async function nfoActorsOf(client: FileClient, nfo: FileEntry | null): Promise<readonly string[]> {
+  if (!nfo) return []
+  try {
+    const meta = parseNfoXml(await client.readText(nfo.path))
+    return meta?.actors ?? []
+  } catch {
+    return []
+  }
+}
+
 /** 未刮削的影片：把同目录 NFO 里的 `<actor>` 读进 `media_cast`，并按名字建好演员档案 */
 export async function backfillCastFromNfo(
   client: FileClient,
@@ -51,16 +75,18 @@ export async function backfillCastFromNfo(
   files: readonly FileEntry[],
   video: FileEntry
 ): Promise<void> {
-  const nfo = nfoFileFor(video, files)
-  if (!nfo) return
   if (listItemCastNames(itemId).length > 0) return
-  let names: readonly string[] = []
-  try {
-    const meta = parseNfoXml(await client.readText(nfo.path))
-    names = meta?.actors ?? []
-  } catch {
-    return
-  }
-  if (names.length === 0) return
-  syncItemCast(itemId, names)
+  const names = await nfoActorsOf(client, nfoFileFor(video, files))
+  if (names.length > 0) syncItemCast(itemId, names)
+}
+
+/** 未刮削的剧集条目：把剧集目录里 `tvshow.nfo` 的 `<actor>` 读进 `media_cast` */
+export async function backfillSeriesCastFromNfo(
+  client: FileClient,
+  itemId: string,
+  files: readonly FileEntry[]
+): Promise<void> {
+  if (listItemCastNames(itemId).length > 0) return
+  const names = await nfoActorsOf(client, tvShowNfoOf(files))
+  if (names.length > 0) syncItemCast(itemId, names)
 }

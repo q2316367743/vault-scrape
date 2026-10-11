@@ -4,6 +4,7 @@
  * 契约：
  * - **全局单例**：同一时刻只允许一个资料库扫描，第二个请求直接返回 `busy`；
  * - 每个媒体目录独立 BFS（见 `mediaIndexer`），全部扫完才做一次清理；
+ * - 影视库用 `mediaIndexer`（影片 / 目录），剧集库用 `mediaSeriesIndexer`（剧集 / 季 / 集），两者共用底层工具；
  * - 哪些后缀算视频由设置里该库类型的清单决定（`libraryExtensionsOf`）；
  * - 体积小于资料库 `minFileSizeMb` 的视频不入库（门槛传给 `mediaIndexer`）；
  * - 用户取消时**不清理、不更新 `lastScanAt`**，抛 `cancelled`（渲染层显示「扫描已取消」）；
@@ -20,11 +21,12 @@ import {
 import { libraryExtensionsOf } from '@common/types/setting'
 import type { ScrapeTaskSnapshot } from '@common/types/scrape'
 import { getConnection } from '$/modules/file/fileConnectionStore'
-import { cleanupUnseen, indexLibraryPath } from '$/modules/media/mediaIndexer'
+import { cleanupUnseen, indexLibraryPath, type IndexPathOptions } from '$/modules/media/mediaIndexer'
+import { cleanupSeriesUnseen, indexSeriesLibraryPath } from '$/modules/media/mediaSeriesIndexer'
 import { getScrapeTask, isScrapeRunning } from '$/modules/scrape/scrapeRunner'
 import { loadSetting } from '$/modules/setting/settingStore'
 import { broadcastLibraryProgress } from './libraryEvents'
-import { pendingEntries, startLibraryScrape } from './libraryScrape'
+import { pendingEntries, startLibraryScrape } from './libraryScrapeDispatch'
 import { patchLibrary } from '$/db/repo/libraryRepo'
 import { requireLibrary } from './libraryStore'
 
@@ -53,7 +55,7 @@ async function autoScrape(
     return { task: null, skipped: '设置中已关闭「扫描后自动刮削」' }
   }
   if (library.scrapers.length === 0) return { task: null, skipped: '该资料库未配置刮削器，已跳过刮削' }
-  if (pending === 0) return { task: null, skipped: '没有待刮削的影片' }
+  if (pending === 0) return { task: null, skipped: '没有待刮削的条目' }
   if (isScrapeRunning()) return { task: null, skipped: '已有刮削任务在运行，可稍后手动刮削' }
   try {
     const started = await startLibraryScrape(library.id)
@@ -82,10 +84,13 @@ export async function scanLibrary(libraryId: string): Promise<LibraryScanResult>
   cancelled = false
   const scanId = randomUUID()
   const extensions = libraryExtensionsOf(loadSetting().library, library.type)
+  // 影视库走影片 / 目录模型，剧集库走剧集 / 季 / 集模型（两套索引器 + 两套清理）
+  const isTv = library.type === 'tv'
   const keepImages = new Set<string>()
   let scannedDirs = 0
   let indexedFiles = 0
   let indexedVideos = 0
+  let skippedVideos = 0
   let skippedDirs = 0
   const skippedPaths: string[] = []
   let truncated = false
@@ -103,7 +108,7 @@ export async function scanLibrary(libraryId: string): Promise<LibraryScanResult>
         finished: false,
         cancelled: false
       })
-      const result = await indexLibraryPath(library, libPath, {
+      const indexOptions: IndexPathOptions = {
         scanId,
         extensions,
         minFileSizeMb: library.minFileSizeMb,
@@ -121,17 +126,23 @@ export async function scanLibrary(libraryId: string): Promise<LibraryScanResult>
             cancelled: false
           })
         }
-      })
+      }
+      const result = isTv
+        ? await indexSeriesLibraryPath(library, libPath, indexOptions)
+        : await indexLibraryPath(library, libPath, indexOptions)
       scannedDirs = baseDirs + result.scannedDirs
       indexedFiles = baseFiles + result.indexedFiles
       indexedVideos += result.indexedVideos
+      skippedVideos += result.skippedVideos
       skippedDirs += result.skippedDirs
       skippedPaths.push(...result.skippedPaths)
       truncated = truncated || result.truncated
       for (const key of result.seenImages) keepImages.add(key)
     }
 
-    const removedItems = cleanupUnseen(id, scanId, keepImages, skippedPaths)
+    const removedItems = isTv
+      ? cleanupSeriesUnseen(id, scanId, keepImages, skippedPaths)
+      : cleanupUnseen(id, scanId, keepImages, skippedPaths)
     const updated = patchLibrary(id, { lastScanAt: Date.now() }) ?? library
     const pending = pendingEntries(id).length
     const auto = await autoScrape(updated, pending)
@@ -147,6 +158,7 @@ export async function scanLibrary(libraryId: string): Promise<LibraryScanResult>
 
     const notes: string[] = []
     if (removedItems > 0) notes.push(`清理 ${removedItems} 个失效条目`)
+    if (skippedVideos > 0) notes.push(`${skippedVideos} 个视频认不出季 / 集号，未入库`)
     if (truncated) notes.push('已达扫描上限，结果可能不完整')
     if (skippedDirs > 0) notes.push(`跳过 ${skippedDirs} 个读不到的目录`)
 

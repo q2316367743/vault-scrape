@@ -33,24 +33,42 @@ export function useDetailView(
   const stillImages = computed(() => (detail.value ? stillImagesOf(detail.value) : []))
   /** 剧情简介：只在 NFO 里写了的时候单独成块，没写就不占位 */
   const plot = computed(() => detail.value?.meta?.plot.trim() ?? '')
+  /** 这条记录是整部剧集（详情页据此换文案、显示选集） */
+  const isSeries = computed(() => detail.value?.item.type === 'series')
   /** 封面块：头部用封面兜底时是模糊的，这里给一张清晰的 */
   const posterUrl = computed(() => detail.value?.item.coverUrl ?? '')
-  const posterTitle = computed(() => detail.value?.item.title || '未命名影片')
+  const posterTitle = computed(() => {
+    const item = detail.value?.item
+    if (!item) return ''
+    return item.title || (item.type === 'series' ? '未命名剧集' : '未命名影片')
+  })
   const posterNote = computed(() => {
     const item = detail.value?.item
     if (!item) return ''
-    return [item.num, formatSize(item.size)].filter((part) => part.length > 0).join(' · ')
+    const parts =
+      item.type === 'series'
+        ? [`${item.seasonCount} 季`, `${item.episodeCount} 集`, formatSize(item.size)]
+        : [item.num, formatSize(item.size)]
+    return parts.filter((part) => part.length > 0).join(' · ')
   })
+  /** 播放器拿不到地址时的提示：剧集的空来自「一集都不可播」，说法与影片不同 */
+  const noSourceHint = computed(() =>
+    isSeries.value
+      ? '这部剧集里还没有能播放的集，请回影视墙刷新后再试'
+      : '没有找到这个影片的播放地址，请回影视墙刷新后再试'
+  )
 
   return {
     connection,
     protect,
+    isSeries,
     sourceName,
     factCells,
     stillImages,
     plot,
     posterUrl,
     posterTitle,
-    posterNote
+    posterNote,
+    noSourceHint
   }
 }

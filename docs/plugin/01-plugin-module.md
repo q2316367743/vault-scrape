@@ -60,7 +60,9 @@ interface PluginMovieCandidate {
   date?: string
   /** 可选：搜索阶段拿得到演员就填（离线内置插件会填），拿不到时由 detail 的 actors 提供 */
   actors?: string[]
+  /** 是否多集作品（剧集）；剧集库刮削时宿主用剧集目录名发一次 `search`，命中口径见下文 */
   isSeries?: boolean
+  /** 多集作品的总集数 */
   episodeCount?: number
 }
 
@@ -79,19 +81,29 @@ interface PluginMovieDetail {
   releaseDate?: string
   duration?: number
   tags?: string[]
+  /** 题材（剧集 NFO 的 `<genre>` 用它；影片 NFO 目前只写 tags） */
+  genres?: string[]
+  /** 多集作品才有（剧集即「多季多集」） */
   episodes?: PluginEpisode[]
 }
 
 interface PluginEpisode {
   id?: string
+  /** 第几季，从 1 开始；`0` 表示特别篇，缺省按第 1 季 */
+  season?: number
+  /** 第几集（季内序号），从 1 开始 */
   index: number
   title?: string
+  /** 分集简介（剧集 NFO 的 `<plot>` 与详情页简介用它） */
+  plot?: string
   duration?: number
   releaseDate?: string
 }
 ```
 
 字段口径与命名模板占位符一致（`num` / `maker` / `label` / `series` / `actors` / `duration` 等），方便后续直接拼装文件名。
+
+**剧集口径**（`isSeries` / `episodeCount` / `episodes` / `PluginEpisode`）：搜索候选只需用 `isSeries` 标出「这是剧集」、`episodeCount` 给总集数；分集清单在 `detail` 里用 `episodes[]` 给出——`season` 缺省按第 1 季、`0` 表示特别篇，`index` 是季内序号，宿主按 `<季>:<集号>` 把它与扫描出来的**集文件**对齐（对不上的集不入库，见[剧集支持](../media/02-series-support.md)），每集的 `title` 进集 NFO 的 `<title>` / 详情页选集标题、`plot` 进 `<plot>`（缺省回落剧集简介）、`duration` 进 `<runtime>`、`releaseDate` 进 `<aired>`。剧集库的搜索关键字是**剧集目录名**（宿主会去掉结尾的年份），命不中时回落**剧集名**（扫描期条目名就是目录名，两者可能同一串），**宿主只发一次 `search`**，不会拿两种关键字各搜一遍；候选命中口径（`pickSeriesCandidate`）是「年份过滤 → 池内唯一候选 → 池内标题包含关键词（≥ 3 字符）」：候选的 `date` 以剧集目录名里的四位年份开头就只在这个池子里挑，池子里只有一条就直接用，否则再按关键词包含找，**分不出高低就返回 null**（绝不猜）。
 
 ### 2.2 资源返回「下载配置」而不是裸链接
 

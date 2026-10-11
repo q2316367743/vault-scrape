@@ -1,9 +1,5 @@
 <template>
-  <sub-page-layout
-    :title="pageTitle"
-    fallback="/media"
-    description="磁盘上的视频聚成一堵墙，标题与封面来自刮削记录与同目录 NFO"
-  >
+  <sub-page-layout :title="pageTitle" fallback="/media" :description="pageDescription">
     <template #extra>
       <t-button variant="outline" :loading="loading" @click="load">
         <template #icon><refresh-icon /></template>
@@ -45,16 +41,18 @@
       <t-empty
         v-else-if="!failure"
         :title="emptyTitle"
-        description="点上方「资料库」扫描后，影片会自动出现在这里"
+        :description="`点上方「资料库」扫描后，${noun}会自动出现在这里`"
       />
     </div>
   </sub-page-layout>
 </template>
 <script setup lang="ts">
 /**
- * 影视墙内容页：一个资料库（或「全部影片」）里的影片墙。
+ * 影视墙内容页：一个资料库（或全部资料库）里的**墙面条目**——影视库放影片、剧集库放剧集。
  *
  * 契约：
+ * - 文案跟着库类型走（`影片` / `剧集`）：库类型来自 `libraryApi.list()` 的同一次查询，
+ *   拿不到时按影视库说（全部资料库混在一起时没有单一类型，用中性的「部 / 内容」）；
  * - 库由路由 query 决定：`/media/library?libraryId=<id>`，空串表示「全部影片」；
  *   首页的搜索也会把 `keyword` 带过来，作为搜索框初值；
  * - 过滤与排序都在渲染层（见 useMediaWall），资料库的增删改与扫描 / 刮削在抽屉里，
@@ -66,6 +64,7 @@ import { libraryApi } from '@/api'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import { useFileConnections } from '@/hooks/UseFileConnections'
 import type { FileConnection } from '@common/types/file'
+import type { LibraryType } from '@common/types/library'
 import MediaWallCard from '@/components/media/MediaWallCard.vue'
 import { useMediaWall } from './composables/useMediaWall'
 import { formatTime } from '@/utils/format'
@@ -89,21 +88,30 @@ function queryText(value: unknown): string {
 
 const libraryId = ref(queryText(route.query.libraryId))
 const libraryName = ref('')
+/** 库类型只影响文案（影片 / 剧集），与 `libraryApi.list()` 的同一次查询一起取回 */
+const libraryType = ref<LibraryType>('movie')
 
 const { connections, refresh: refreshConnections } = useFileConnections()
 const { loading, failure, indexedAt, keyword, sort, visible, load } = useMediaWall(libraryId)
 
 keyword.value = queryText(route.query.keyword)
 
-/** 空库时标题回落「全部影片」，有库但名字还没加载到时回落「资料库」 */
+/** `noun` 按库类型给「影片」/「剧集」，用于标题、描述与空态文案 */
+const noun = computed(() => (libraryType.value === 'tv' ? '剧集' : '影片'))
+
 const pageTitle = computed(() => {
-  if (libraryId.value.length === 0) return '全部影片'
+  if (libraryId.value.length === 0) return '影视墙'
   return libraryName.value.length > 0 ? libraryName.value : '资料库'
 })
 
-const emptyTitle = computed(() =>
-  libraryId.value.length === 0 ? '墙上还没有影片' : '这个资料库还没有影片'
+const pageDescription = computed(
+  () => `磁盘上的${noun.value}聚成一堵墙，标题与封面来自刮削记录与同目录 NFO`
 )
+
+const emptyTitle = computed(() => {
+  if (libraryId.value.length === 0) return '墙上还没有内容'
+  return `这个资料库还没有${noun.value}`
+})
 
 const summary = computed(() => {
   const indexed = indexedAt.value > 0 ? ` · 索引更新于 ${formatTime(indexedAt.value)}` : ''
@@ -128,13 +136,16 @@ async function loadLibraryName(): Promise<void> {
   }
   const result = await libraryApi.list()
   if (!result.ok) return
-  libraryName.value = result.data.find((library) => library.id === libraryId.value)?.name ?? ''
+  const found = result.data.find((library) => library.id === libraryId.value) ?? null
+  libraryName.value = found?.name ?? ''
+  libraryType.value = found?.type ?? 'movie'
 }
 
 watch(
   () => route.query.libraryId,
   (value) => {
     libraryId.value = queryText(value)
+    void loadLibraryName()
   }
 )
 

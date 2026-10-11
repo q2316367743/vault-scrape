@@ -49,11 +49,13 @@ export type PluginAssetMethod = 'GET' | 'POST'
 
 export const PLUGIN_ASSET_METHODS: readonly PluginAssetMethod[] = ['GET', 'POST']
 
-/** 资产归属的剧集（多集作品的花絮按集落盘） */
+/** 资产归属的剧集（多集作品/剧集的花絮与剧照按集落盘） */
 export interface PluginEpisodeRef {
   /** 插件内剧集 ID，可选 */
   id?: string
-  /** 第几集，从 1 开始 */
+  /** 第几季，从 1 开始；`0` 表示特别篇，缺省按第 1 季 */
+  season?: number
+  /** 第几集（季内序号），从 1 开始 */
   index: number
   title?: string
 }

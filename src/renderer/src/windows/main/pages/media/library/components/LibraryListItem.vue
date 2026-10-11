@@ -50,7 +50,9 @@
       <t-button v-else size="small" variant="outline" :disabled="scanning" @click="emit('scrape')">
         刮削
       </t-button>
-      <t-button size="small" variant="text" :disabled="scanning" @click="emit('edit')">编辑</t-button>
+      <t-button size="small" variant="text" :disabled="scanning" @click="emit('edit')"
+        >编辑</t-button
+      >
       <t-button
         size="small"
         variant="text"
@@ -65,7 +67,7 @@
 </template>
 <script setup lang="ts">
 /**
- * 资料库列表里的一行：类型、目录、刮削器、影片计数、时间，以及扫描 / 刮削 / 编辑 / 删除入口。
+ * 资料库列表里的一行：类型、目录、刮削器、计数、时间，以及扫描 / 刮削 / 编辑 / 删除入口。
  *
  * 契约：
  * - 只展示与派发事件，动作本身（含确认框）由抽屉负责；
@@ -75,7 +77,11 @@
 import { computed } from 'vue'
 import { toDisplayDir } from '@/utils/remotePath'
 import type { FileConnection } from '@common/types/file'
-import { libraryTypeLabel, type MediaLibrary, type MediaLibrarySummary } from '@common/types/library'
+import {
+  libraryTypeLabel,
+  type MediaLibrary,
+  type MediaLibrarySummary
+} from '@common/types/library'
 import { formatTime } from '@/utils/format'
 
 const props = defineProps<{
@@ -98,10 +104,12 @@ const scraperText = computed(() =>
   props.library.scrapers.length > 0 ? `${props.library.scrapers.length} 个刮削器` : '不刮削'
 )
 
+/** 计数与影视墙同口径：影视库数影片、剧集库数剧集，文案随之分说 */
 const summaryText = computed(() => {
   const summary = props.summary
-  if (!summary) return '还没有影片'
-  return `影片 ${summary.videoCount} 部`
+  const noun = props.library.type === 'tv' ? '剧集' : '影片'
+  if (!summary) return `还没有${noun}`
+  return `${noun} ${summary.videoCount} 部`
 })
 
 function pathTextOf(connectionId: string, path: string): string {

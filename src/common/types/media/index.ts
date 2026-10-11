@@ -20,10 +20,12 @@ export * from './error'
 export * from './result'
 export * from './source'
 
-/** 墙上的一张卡：一个 Movie 条目 + 它的媒体源与封面 */
+/** 墙上的一张卡：影视库是一个 Movie 条目，剧集库是一个 Series 条目（整个剧集） */
 export interface MediaWallItem {
   /** 条目 ID（`media_item.id`），详情页与手动刮削都用它定位 */
   itemId: string
+  /** 条目类型：影视库是 `movie`（一个视频文件一张卡），剧集库是 `series`（一个剧集一张卡） */
+  type: 'movie' | 'series'
   /** 所属资料库 ID；条目一定属于某个库，这里不会是空串 */
   libraryId: string
   /** 所属资料库名称，未归库（历史数据）时为空串 */
@@ -31,25 +33,31 @@ export interface MediaWallItem {
   /** 所属资料库是否按敏感内容处理；与全局开关、存储的 nsfw 标记任一命中即遮罩封面 */
   nsfwProtected: boolean
   connectionId: string
-  /** 主媒体源在连接内的绝对路径 */
+  /** 主媒体源在连接内的绝对路径；剧集条目就是剧集目录 */
   path: string
-  /** 所在目录（连接内绝对路径） */
+  /** 所在目录（连接内绝对路径）；剧集条目就是剧集目录本身 */
   dirPath: string
-  /** 文件名（含扩展名） */
+  /** 文件名（含扩展名）；剧集条目是剧集目录名 */
   name: string
-  /** 番号，识别不到时为空串 */
+  /** 番号，识别不到时为空串；剧集条目固定为空串 */
   num: string
   /** 展示标题：优先刮削命中标题，否则是去掉扩展名的文件名 */
   title: string
   /** 封面地址（`storage://`），空串表示没有封面 */
   coverUrl: string
-  /** 播放地址（`storage://`），可直接喂给 video / artplayer */
+  /** 播放地址（`storage://`），可直接喂给 video / artplayer；**剧集条目为空串**（选集后才有的地址） */
   playUrl: string
+  /** 剧集条目的季数；影片固定为 0 */
+  seasonCount: number
+  /** 剧集条目的集数；影片固定为 0 */
+  episodeCount: number
   /** 上次命中的插件 ID，未命中为空串 */
   pluginId: string
   /** 条目入库时间（首次被扫描到的时间），「最近添加」按它排序 */
   dateAdded: number
+  /** 磁盘体积（字节）；剧集条目是整部剧集的集文件体积合计 */
   size: number
+  /** 磁盘修改时间；剧集条目取集文件里最新的那个 */
   modifiedAt: number
 }
 
@@ -157,6 +165,47 @@ export interface MediaDetailResult {
    * 一张图都没有时是空数组，封面仍以 `item.coverUrl` 为准。
    */
   images: MediaDetailImage[]
+  /**
+   * 剧集的分季分集结构：按季号升序，每季里按集号升序；影片固定为空数组。
+   *
+   * 契约：这里只放「有媒体源能播」的集，播放地址就是集的 `playUrl`；
+   * 剧集条目自己的 `item.playUrl` 是空串，渲染层要播哪一集由用户选。
+   */
+  seasons: MediaSeasonRef[]
+}
+
+/** 剧集详情里的一集：只够画一个选集条目并直接播放 */
+export interface MediaEpisodeRef {
+  itemId: string
+  seasonNumber: number
+  episodeNumber: number
+  /** 展示标题：刮削命中集名时是集名，否则是「第 N 集」 */
+  title: string
+  /** 集简介；刮削结果里没有时为「」，渲染层不要回退到剧集简介 */
+  overview: string
+  /** 时长（分钟）；未知为 0 */
+  runtimeMinutes: number
+  /** 首播日期（`YYYY-MM-DD`）；未知为空串 */
+  premiereDate: string
+  /** 播放地址（`storage://`），可直接喂给播放器 */
+  playUrl: string
+  /** 剧照地址（`storage://`）：集的图 → 季海报 → 剧集封面，全没有时为空串 */
+  coverUrl: string
+  /** 集文件在连接内的绝对路径 */
+  path: string
+  /** 集文件体积（字节） */
+  size: number
+}
+
+/** 剧集详情里的一季：海报 + 该季的全部集 */
+export interface MediaSeasonRef {
+  itemId: string
+  seasonNumber: number
+  /** 季目录名（如 `Season 01`）；特别篇是「特别篇」 */
+  name: string
+  /** 季海报地址（`storage://`），没有为空串（渲染层可退回剧集封面） */
+  posterUrl: string
+  episodes: MediaEpisodeRef[]
 }
 
 export interface MediaClearNfoRequest {
@@ -166,23 +215,23 @@ export interface MediaClearNfoRequest {
 
 /**
  * 「还原刮削前」（通道 `media:clear-nfo`）的结果：库内刮削数据已清空，NFO 与刮削写下的附属文件已尽量删掉，
- * 视频按 NFO 里的「刮削前位置」记录改回名 / 移回原目录。
+ * 视频 / 集文件按 NFO 里的「刮削前位置」记录改回名 / 移回原目录。
  *
  * 契约：`removedNfo` / `removedAssets` / `restoredAssets` 都是**真的改动过**的磁盘路径，
  * 磁盘上本来就没有对应文件时是空数组（不算失败）；演员档案（`actor`）一律不动。
  */
 export interface MediaClearNfoResult {
   itemId: string
-  /** 被删掉的 NFO 文件在连接内的绝对路径（`movie.nfo` 与 `<视频基础名>.nfo`） */
+  /** 被删掉的 NFO 文件在连接内的绝对路径（影片：`movie.nfo` 与 `<视频基础名>.nfo`；剧集：`tvshow.nfo`、`season.nfo`、每集 NFO） */
   removedNfo: string[]
   /** 被删掉的刮削产物（图片 / 预告片）在连接内的绝对路径 */
   removedAssets: string[]
   /** 被搬回刮削前位置的本地图片在连接内的绝对路径（目标已存在时不动它） */
   restoredAssets: string[]
-  /** 视频是否回到了刮削前的记录位置；NFO 里没有可用记录（或没处可放）时为 false */
+  /** 文件是否回到了刮削前的记录位置；NFO 里没有可用记录（或没处可放）时为 false */
   restored: boolean
-  /** 还原后的视频路径；没还原时就是清除前的路径 */
+  /** 还原后的路径：影片是视频路径，剧集是剧集目录；没还原时就是清除前的路径 */
   path: string
-  /** 删掉的空影片目录在连接内的绝对路径；没删时为空串 */
-  removedDir: string
+  /** 删掉的搬空目录在连接内的绝对路径（影片目录，或剧集的季目录 / 集目录）；没删时为空数组 */
+  removedDirs: string[]
 }

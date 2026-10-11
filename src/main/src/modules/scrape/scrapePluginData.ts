@@ -62,6 +62,8 @@ function toEpisodeRef(source: Source): PluginEpisodeRef | undefined {
   const index = readNumber(source, 'index', 0)
   if (index <= 0) return undefined
   const ref: PluginEpisodeRef = { index }
+  const season = readNumber(source, 'season', 1)
+  if (season >= 0 && season !== 1) ref.season = season
   const id = optionalText(source, 'id')
   if (id) ref.id = id
   const title = optionalText(source, 'title')
@@ -137,6 +139,8 @@ export function readDetail(data: PluginInvokeData): PluginMovieDetail | null {
   if (actors.length > 0) detail.actors = actors
   const tags = readStringArray(source, 'tags', [])
   if (tags.length > 0) detail.tags = tags
+  const genres = readStringArray(source, 'genres', [])
+  if (genres.length > 0) detail.genres = genres
   const duration = readNumber(source, 'duration', 0)
   if (duration > 0) detail.duration = duration
 
@@ -145,10 +149,14 @@ export function readDetail(data: PluginInvokeData): PluginMovieDetail | null {
     const index = readNumber(item, 'index', 0)
     if (index <= 0) continue
     const episode: NonNullable<PluginMovieDetail['episodes']>[number] = { index }
+    const season = readNumber(item, 'season', 1)
+    if (season >= 0 && season !== 1) episode.season = season
     const episodeId = optionalText(item, 'id')
     if (episodeId) episode.id = episodeId
     const episodeTitle = optionalText(item, 'title')
     if (episodeTitle) episode.title = episodeTitle
+    const episodePlot = optionalText(item, 'plot')
+    if (episodePlot) episode.plot = episodePlot
     const episodeDuration = readNumber(item, 'duration', 0)
     if (episodeDuration > 0) episode.duration = episodeDuration
     const releaseDate = optionalText(item, 'releaseDate')

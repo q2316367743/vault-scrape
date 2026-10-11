@@ -1,19 +1,33 @@
 /**
- * 资料库刮削：候选条目来自 `media_item`（`scrapedAt === 0` 的影片）。
+ * 资料库刮削：候选条目来自 `media_item` 里还没有元数据的条目。
+ *
+ * 两条候选口径（其余流程完全共用）：
+ * - **影片库**：候选是视频文件（`scrapedAt === 0` 的 `movie` 条目），关键词按文件名解析番号；
+ * - **剧集库**：候选是**剧集目录**（`scrapedAt === 0` 的 `series` 条目），
+ *   关键词取剧集目录名（见 `seriesKeywordOf`），一个条目一次处理整个剧集。
  *
  * 契约：
  * - 刮削器只取 `library.scrapers`，不再回落连接配置；**空数组 = 该库不刮削**，
  *   手动刮削时直接抛 `pluginMissing`；
- * - 同目录同番号只保留先出现的那条，重复的标记 duplicateOf；
- * - 小于 `library.minFileSizeMb` 的视频不参与刮削（与扫描的体积过滤同一口径）；
- * - 库内没有待刮削文件时抛 `notFound`（中文提示），由 IPC 边界转信封。
+ * - 影片库同目录同番号只保留先出现的那条，重复的标记 duplicateOf；
+ * - 影片小于 `library.minFileSizeMb` 的视频不参与刮削（与扫描的体积过滤同一口径）；
+ *   剧集不重复做体积过滤——集文件在扫描阶段就已经按同一门槛筛过；
+ * - 多目录资料库按归属媒体目录分组，每次只跑条目最多的那一组，其余等下次再刮；
+ * - 库内没有待刮削条目时抛 `notFound`（中文提示），由 IPC 边界转信封。
  */
 import type { LibraryTaskResult, MediaLibrary, MediaLibraryPath } from '@common/types/library'
 import { LibraryError, LIBRARY_ERROR_MESSAGES } from '@common/types/library'
 import { dirnameRemotePath } from '@common/types/file'
-import { ScrapeError, extractKeyword, normalizeNum, type ScrapeScanEntry } from '@common/types/scrape'
+import {
+  ScrapeError,
+  extractKeyword,
+  normalizeNum,
+  seriesKeywordOf,
+  type ScrapeScanEntry
+} from '@common/types/scrape'
 import { isSameOrInsidePath } from '$/db/repo/libraryRepo'
 import { listPendingMovieItems, listSourcesByItem } from '$/db/repo/mediaRepo'
+import { listPendingSeriesItems, seriesStatsOf } from '$/db/repo/mediaSeriesRepo'
 import { startScrapeTaskForEntries } from '$/modules/scrape/scrapeRunner'
 import { requireLibrary } from './libraryStore'
 
@@ -40,8 +54,8 @@ function owningPath(library: MediaLibrary, connectionId: string, path: string): 
   return best
 }
 
-/** 组装待刮削候选：番号以磁盘文件名解析为准，识别不到时退回条目上的番号 */
-function collectCandidates(library: MediaLibrary): LibraryScrapeCandidate[] {
+/** 影片候选：番号以磁盘文件名解析为准，识别不到时退回条目上的番号 */
+function collectMovieCandidates(library: MediaLibrary): LibraryScrapeCandidate[] {
   const minBytes = Math.max(0, library.minFileSizeMb) * 1024 * 1024
   const firstByKey = new Map<string, string>()
   const candidates: LibraryScrapeCandidate[] = []
@@ -72,22 +86,53 @@ function collectCandidates(library: MediaLibrary): LibraryScrapeCandidate[] {
   return candidates
 }
 
-/** 待刮削条目（自动刮削判断与扫描进度里的 pending 都用它） */
-export function pendingEntries(libraryId: string): ScrapeScanEntry[] {
-  return collectCandidates(requireLibrary(libraryId))
+/**
+ * 剧集候选：`path` 是剧集目录，`keyword` 是目录名清洗后的剧集名。
+ *
+ * 剧集之间不做去重：一个剧集目录就是一条候选，不存在「同目录同番号」这回事。
+ */
+function collectSeriesCandidates(library: MediaLibrary): LibraryScrapeCandidate[] {
+  const stats = seriesStatsOf(library.id)
+  const candidates: LibraryScrapeCandidate[] = []
+  for (const item of listPendingSeriesItems(library.id)) {
+    if (item.path.length === 0) continue
+    const own = stats.get(item.id)
+    candidates.push({
+      itemId: item.id,
+      connectionId: item.connectionId,
+      path: item.path,
+      name: item.name,
+      size: own?.sizeBytes ?? 0,
+      modifiedAt: own?.modifiedAt ?? 0,
+      keyword: seriesKeywordOf(item.name),
+      num: ''
+    })
+  }
+  return candidates
+}
+
+/** 影片库待刮削条目 */
+export function pendingMovieEntries(libraryId: string): ScrapeScanEntry[] {
+  return collectMovieCandidates(requireLibrary(libraryId))
+}
+
+/** 剧集库待刮削条目 */
+export function pendingSeriesEntries(libraryId: string): ScrapeScanEntry[] {
+  return collectSeriesCandidates(requireLibrary(libraryId))
 }
 
 /**
- * 规划一次刮削任务。
+ * 多目录资料库按归属媒体目录分组，取条目最多的那一组。
  *
- * 任务表只支持一个「连接 + 目录」，所以多目录资料库按所属媒体目录分组，
- * 每次只跑条目最多的那一组，其余条目保持 `scrapedAt = 0` 等下次再刮。
+ * 任务表只支持一个「连接 + 目录」，所以一次只跑一组，其余条目保持 `scrapedAt = 0` 等下次。
  */
-export function planLibraryScrape(libraryId: string, itemIds?: readonly string[]): LibraryScrapePlan | null {
-  const library = requireLibrary(libraryId)
-  const wanted = itemIds === undefined ? null : new Set(itemIds)
+function pickBestGroup(
+  library: MediaLibrary,
+  candidates: readonly LibraryScrapeCandidate[],
+  wanted: ReadonlySet<string> | null
+): { connectionId: string; dirPath: string; entries: ScrapeScanEntry[] } | null {
   const groups = new Map<string, { connectionId: string; dirPath: string; entries: ScrapeScanEntry[] }>()
-  for (const candidate of collectCandidates(library)) {
+  for (const candidate of candidates) {
     if (wanted && !wanted.has(candidate.itemId)) continue
     const owner = owningPath(library, candidate.connectionId, candidate.path)
     if (!owner) continue
@@ -109,8 +154,32 @@ export function planLibraryScrape(libraryId: string, itemIds?: readonly string[]
   for (const group of groups.values()) {
     if (!best || group.entries.length > best.entries.length) best = group
   }
-  if (!best) return null
-  return { library, connectionId: best.connectionId, dirPath: best.dirPath, entries: best.entries }
+  return best
+}
+
+/** 规划一次影片刮削任务 */
+export function planLibraryScrape(libraryId: string, itemIds?: readonly string[]): LibraryScrapePlan | null {
+  const library = requireLibrary(libraryId)
+  const best = pickBestGroup(
+    library,
+    collectMovieCandidates(library),
+    itemIds === undefined ? null : new Set(itemIds)
+  )
+  return best ? { library, ...best } : null
+}
+
+/** 规划一次剧集刮削任务 */
+export function planSeriesLibraryScrape(
+  libraryId: string,
+  itemIds?: readonly string[]
+): LibraryScrapePlan | null {
+  const library = requireLibrary(libraryId)
+  const best = pickBestGroup(
+    library,
+    collectSeriesCandidates(library),
+    itemIds === undefined ? null : new Set(itemIds)
+  )
+  return best ? { library, ...best } : null
 }
 
 function toLibraryError(error: unknown): LibraryError {
@@ -150,7 +219,7 @@ function runPlan(plan: LibraryScrapePlan): LibraryTaskResult {
   }
 }
 
-/** 刮削整个资料库里还没有元数据的影片 */
+/** 刮削整个影片库里还没有元数据的影片 */
 export async function startLibraryScrape(libraryId: string): Promise<LibraryTaskResult> {
   const plan = planLibraryScrape(libraryId)
   if (!plan) throw new LibraryError('notFound', '资料库里没有待刮削的影片')
@@ -165,5 +234,23 @@ export async function startLibraryScrapeByIds(
   if (itemIds.length === 0) throw new LibraryError('invalidArgument', '请至少选择一个待刮削的影片')
   const plan = planLibraryScrape(libraryId, itemIds)
   if (!plan) throw new LibraryError('notFound', '所选影片已不在待刮削列表中')
+  return runPlan(plan)
+}
+
+/** 刮削整个剧集库里还没有元数据的剧集 */
+export async function startSeriesLibraryScrape(libraryId: string): Promise<LibraryTaskResult> {
+  const plan = planSeriesLibraryScrape(libraryId)
+  if (!plan) throw new LibraryError('notFound', '资料库里没有待刮削的剧集')
+  return runPlan(plan)
+}
+
+/** 刮削用户勾选的剧集 */
+export async function startSeriesLibraryScrapeByIds(
+  libraryId: string,
+  itemIds: readonly string[]
+): Promise<LibraryTaskResult> {
+  if (itemIds.length === 0) throw new LibraryError('invalidArgument', '请至少选择一个待刮削的剧集')
+  const plan = planSeriesLibraryScrape(libraryId, itemIds)
+  if (!plan) throw new LibraryError('notFound', '所选剧集已不在待刮削列表中')
   return runPlan(plan)
 }

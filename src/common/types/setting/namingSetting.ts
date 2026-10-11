@@ -15,10 +15,20 @@ export const PART_STYLES: readonly PartStyle[] = ['origin', 'cd', 'part', 'disc'
  *
  * 契约：影片文件夹名、视频文件名、NFO 文件名**同源同值**，都由 `fileTemplate` 渲染，
  * 因此这里没有独立的文件夹模板（见 docs/scrape/01-scrape-module.md 的目录规范）。
+ *
+ * 剧集是三层结构（剧集目录 / 季目录 / 集文件），所以另有三个模板：
+ * `seriesFolderTemplate`（剧集目录）、`seasonFolderTemplate`（季目录）、
+ * `episodeFileTemplate`（集文件名，NFO 与集文件同名）。
  */
 export interface SettingNaming {
   /** 名称模板：文件夹名 / 视频文件名 / NFO 文件名三者共用一个结果 */
   fileTemplate: string
+  /** 剧集目录名模板（占位符见 {title} {year} {showTitle} 等） */
+  seriesFolderTemplate: string
+  /** 季目录名模板，`{season}` 渲染成两位补零的季号（第 1 季 → `Season 01`） */
+  seasonFolderTemplate: string
+  /** 集文件模板，同时决定集 NFO 的文件名（两者同名） */
+  episodeFileTemplate: string
   /** 附属文件命名：固定命名 / 跟随影片文件名 */
   assetNaming: AssetNaming
   /** NFO 标题模板 */
@@ -50,6 +60,9 @@ export interface SettingNaming {
 export function buildSettingNaming(): SettingNaming {
   return {
     fileTemplate: '{num} {title} ({year}) [{providerId}]',
+    seriesFolderTemplate: '{title} ({year})',
+    seasonFolderTemplate: 'Season {season}',
+    episodeFileTemplate: '{showTitle} S{season}E{episode}',
     assetNaming: 'fixed',
     nfoTitleTemplate: '{num} {title}',
     actorMaxCount: 5,
@@ -72,6 +85,9 @@ export function normalizeSettingNaming(raw: unknown): SettingNaming {
   if (!source) return base
   return {
     fileTemplate: readString(source, 'fileTemplate', base.fileTemplate),
+    seriesFolderTemplate: readString(source, 'seriesFolderTemplate', base.seriesFolderTemplate),
+    seasonFolderTemplate: readString(source, 'seasonFolderTemplate', base.seasonFolderTemplate),
+    episodeFileTemplate: readString(source, 'episodeFileTemplate', base.episodeFileTemplate),
     assetNaming: readEnum(source, 'assetNaming', ASSET_NAMINGS, base.assetNaming),
     nfoTitleTemplate: readString(source, 'nfoTitleTemplate', base.nfoTitleTemplate),
     actorMaxCount: readNumber(source, 'actorMaxCount', base.actorMaxCount, 1),

@@ -30,7 +30,7 @@ import {
 } from '@common/types/setting/shared'
 import { LibraryChannels } from '~/modules/library/libraryChannels'
 import { cancelLibraryScan, isLibraryScanRunning, scanLibrary } from './libraryScan'
-import { startLibraryScrape } from './libraryScrape'
+import { startLibraryScrape } from './libraryScrapeDispatch'
 import { listLibraries, removeLibrary, saveLibrary } from './libraryStore'
 
 function handle<T>(task: () => Promise<T> | T): Promise<LibraryResult<T>> {

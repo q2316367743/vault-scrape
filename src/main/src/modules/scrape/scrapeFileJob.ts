@@ -26,7 +26,7 @@
  */
 import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
 import { parseNfoRestore } from '@common/types/media'
-import type { MediaImageType, NfoRestoreFile, NfoRestoreInfo } from '@common/types/media'
+import type { MediaImageType, NfoRestoreInfo } from '@common/types/media'
 import type { PluginAsset, PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
 import {
   ScrapeError,
@@ -41,7 +41,7 @@ import {
 import { enqueueItemActorScrape } from '$/modules/actor/actorScrape'
 import { replaceItemImages, type MediaImageDraft } from '$/db/repo/mediaImageRepo'
 import { updateItemMetadata } from '$/db/repo/mediaRepo'
-import { metadataOf, refreshSourcePath, removeSourceFolderIfEmpty } from './scrapeJobApply'
+import { mergeRestoreFiles, metadataOf, refreshSourcePath, removeSourceFolderIfEmpty } from './scrapeJobApply'
 import {
   IMAGE_KIND_TYPE,
   SINGLE_KINDS,
@@ -58,36 +58,6 @@ import {
 import type { ScrapeJobContext, ScrapeJobOutcome } from './scrapeJobTypes'
 import { movieDirOf, movieFileName, nfoFileName, resolveOutputDir } from './scrapeLayout'
 import { mergeDetail, needsRemoteInfo, readLocalMeta } from './scrapeLocalMeta'
-
-/**
- * 对齐「上一次的还原记录」与「这一次就位的资源」。
- *
- * 只记**这次真的写下或搬过的**文件：联网下载的（`created`）没有原位置、还原时直接删；
- * 本地沿用并改了名的（`origin`）还原时搬回去；沿用磁盘上已有文件（保留设置跳过）与
- * 没挪过位置的本地图片都不记，免得清除时删掉用户自己的文件。
- * 这一次重新就位的资源一律用这一次的路径；上一次记录里本地沿用的图片如果这次没被重新
- * 就位、原文件又还在，就接着沿用，免得第二次刮削把第一次留下的还原信息弄丢。
- */
-async function mergeRestoreFiles(
-  carried: readonly NfoRestoreFile[],
-  planted: readonly PlantedAsset[],
-  context: ScrapeJobContext
-): Promise<NfoRestoreFile[]> {
-  const files: NfoRestoreFile[] = planted
-    .filter((item) => item.origin !== undefined || item.created === true)
-    .map((item) => ({ relativePath: item.relativePath, origin: item.origin ?? '' }))
-  const landed = new Set(files.map((file) => file.relativePath))
-  for (const file of carried) {
-    if (landed.has(file.relativePath) || file.origin.length === 0) continue
-    try {
-      if (await context.client.exists(file.origin)) files.push(file)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '未知错误'
-      context.log.warn(`还原记录沿用失败（${file.relativePath}）：${message}`)
-    }
-  }
-  return files
-}
 
 /** 执行单个文件的完整流水线 */
 export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOutcome> {

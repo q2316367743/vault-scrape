@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * 影视墙的一张卡片：磁盘上的一个视频 + 能补上的刮削信息。
+ * 影视墙的一张卡片：磁盘上的一条记录（影片是一个视频，剧集是整部剧）能补上的刮削信息。
  *
  * 契约：
+ * - 剧集卡多一枚「N 季 M 集」标签、不显示番号（剧集没有番号，`item.num` 恒为空串）；
  * - 封面只走 `item.coverUrl`（`storage://` 协议），没有封面时显示占位，不自己拼路径；
  * - NSFW 保护按「全局开关 + 存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
  * - 点击整张卡片跳详情页，参数只带 `itemId`（影片身份），播放与更细的信息都在那边；
@@ -27,6 +28,10 @@ const router = useRouter()
 const { active } = useNsfwProtection(computed(() => props.connection))
 /** 全局开关 + 存储标记命中，或所属资料库自己要求按敏感内容处理 */
 const protect = computed(() => active.value || props.item.nsfwProtected)
+/** 剧集卡的第二枚标签：N 季 M 集；影片返回空串，模板里不渲染 */
+const episodeSummary = computed(() =>
+  props.item.type === 'series' ? `${props.item.seasonCount} 季 ${props.item.episodeCount} 集` : ''
+)
 
 function openDetail(): void {
   void router.push({
@@ -43,7 +48,7 @@ function openDetail(): void {
         v-if="item.coverUrl"
         :src="item.coverUrl"
         :protect="protect"
-        alt="影片封面"
+        :alt="item.type === 'series' ? '剧集封面' : '影片封面'"
         fit="cover"
       />
       <div v-else class="cover-placeholder">
@@ -59,6 +64,9 @@ function openDetail(): void {
       <div class="card-meta">
         <t-tag v-if="item.num" size="small" theme="primary" variant="light-outline">
           <template #icon><tag-icon /></template>{{ item.num }}
+        </t-tag>
+        <t-tag v-if="episodeSummary" size="small" theme="success" variant="light-outline">
+          {{ episodeSummary }}
         </t-tag>
         <t-tag size="small" variant="outline">
           {{ item.libraryName }}

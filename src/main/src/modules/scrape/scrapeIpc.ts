@@ -6,8 +6,8 @@
  * 2. 入参一律按 unknown 从渲染层收窄，缺字段抛 `invalidArgument`；
  * 3. 任务在主进程运行，本文件只负责转发；进度通过 `scrape:progress` 单向推送。
  *
- * 刮削入口已经收敛到「资料库」这一侧：浏览走 `mediaWall.browseLibrary`，
- * 开始刮削走 `libraryScrape.startLibraryScrapeByIds`（刮削器与策略都来自资料库）。
+ * 刮削入口已经收敛到「资料库」这一侧：浏览走 `mediaBrowse.browseLibrary`，
+ * 开始刮削走 `libraryScrapeDispatch.startLibraryScrapeByIds`（刮削器与策略都来自资料库）。
  */
 import { ipcMain } from 'electron'
 import type { MediaBrowseEntry } from '@common/types/media'
@@ -22,8 +22,8 @@ import {
 } from '@common/types/scrape'
 import { readNumber, readString, toSource } from '@common/types/setting/shared'
 import type { TaskItem } from '@common/types/task'
-import { startLibraryScrapeByIds } from '$/modules/library/libraryScrape'
-import { browseLibrary } from '$/modules/media/mediaWall'
+import { startLibraryScrapeByIds } from '$/modules/library/libraryScrapeDispatch'
+import { browseLibrary } from '$/modules/media/mediaBrowse'
 import { ScrapeChannels } from '~/modules/scrape/scrapeChannels'
 import {
   cancelScrapeTask,

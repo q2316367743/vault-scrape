@@ -5,7 +5,7 @@
 刮削模块把「选一个资料库 → 逐级浏览勾选影片（或整库待刮削候选）→ 按**影片信息插件**顺序刮削 → 按资料库策略落盘」这条链路做成**主进程单例任务**：任务与逐文件结果先落 sqlite，再向渲染层推送进度事件，因此渲染窗口关闭、切换 tab 或重新打开后，拉一次快照就能复原进度。
 
 - 渲染层入口只剩一个：影视墙资料库抽屉里的整库「刮削」（[影视墙页面](../page/04-media-wall-page.md)），由 `startLibraryScrape` 取本库全部待刮削候选。原「工作台」（选资料库 → 逐级浏览 → 勾选影片排队）已整体下线，刮削的进度 / 取消 / 继续 / 逐文件结果改在概览页看（[刮削进度与详情页](../page/03-scrape-detail-page.md)）。调用只经 `@/api` 的 `scrapeApi` / `libraryApi`，不触碰 `window.preload`。
-- **候选与刮削器都来自资料库**：候选是本库 `scrapedAt = 0` 的影片条目，刮削器是 `library.scrapers`（见 [资料库](../media/01-media-library.md)）。这里存的 id 是**影片信息插件**（`kind: 'movie'`）的 id，运行时从影片类别注册表 `moviePlugins` 取用，演员信息插件不参与影片刮削。**刮削阶段不扫盘、也不自己建索引**，`FileConnection` 上已经没有 `scrapers` 字段。
+- **候选与刮削器都来自资料库**：候选是本库 `scrapedAt = 0` 的**影片**条目（剧集库则是 `scrapedAt = 0` 的**剧集**条目，见 §3 与 §5.3），刮削器是 `library.scrapers`（见 [资料库](../media/01-media-library.md)）。这里存的 id 是**影片信息插件**（`kind: 'movie'`）的 id，运行时从影片类别注册表 `moviePlugins` 取用，演员信息插件不参与影片刮削。**刮削阶段不扫盘、也不自己建索引**，`FileConnection` 上已经没有 `scrapers` 字段。按库类型分派（影片版 / 剧集版）收口在 `libraryScrapeDispatch.ts` 的 `isTvLibrary()`。
 - preload 桥：`src/preload/src/modules/scrape/scrape.ts`（`scrapeApi`）与 `scrapeChannels.ts`（通道常量，主进程通过别名 `~` 引用同一份定义）。
 - 主进程实现：`src/main/src/modules/scrape/`。
 - 公共类型：`src/common/types/scrape/`（`keyword` / `media` / `asset` / `naming` / `nfo` / `error` / `result` / `task`）。
@@ -33,13 +33,15 @@
 src/main/src/modules/scrape/
 ├── scrapeRunner.ts       # 任务编排：单任务互斥、并发调度、取消 / 继续、启动时中断标记、按条目启动（startScrapeTaskForEntries）
 ├── scrapeFileJob.ts      # 单文件流水线**编排**：本地优先、跨影片信息插件补全、命名、下载、NFO、移动、条目回写，最后挂参演演员并排队补全
+├── scrapeSeriesJob.ts    # 剧集流水线**编排**（`runSeriesJob`）：一次处理**整部剧**——剧集目录改名、季目录对齐、tvshow.nfo / season.nfo / 每集 NFO 与集文件命名移动（见 §5.3）
 ├── scrapeJobTypes.ts     # 流水线的上下文与结果类型（ScrapeJobContext / ScrapeJobOutcome / ScrapeSettingsSnapshot / ScrapeLibraryPolicy / ScrapePluginRef，后者指向影片信息插件）
 ├── scrapeJobPlan.ts      # 计算与下载：基名、资源计划、跨影片信息插件收集（collectFromPlugins）、本地图片就位、向连接上传（downloadAsset）
-├── scrapeJobApply.ts     # 写回与收尾：元数据映射（metadataOf）、媒体源路径刷新（refreshSourcePath，影视墙还原流程也复用）、搬空后删原目录
-├── scrapeLayout.ts       # 目录规范：文件夹名 / 影片文件名 / NFO 文件名（三者同名）与工作目录解析
-├── scrapeLocalMeta.ts    # 本地优先：读同目录本地 NFO（parseNfoXml）与本地图片并归类
-├── scrapePluginData.ts   # vm 沙箱返回值按结构收窄（候选 / 详情 / 资源）
-├── scrapeMatcher.ts      # 候选选择
+├── scrapeJobApply.ts     # 写回与收尾：元数据映射（metadataOf，`genres` 供剧集 NFO 的 `<genre>`）、媒体源路径刷新（refreshSourcePath，影视墙还原与剧集流水线也复用）、还原记录合并（mergeRestoreFiles / carryRestore，剧集与影片共用）、搬空后删原目录
+├── scrapeSeriesAssets.ts # 剧集资源落盘：远端集索引（indexRemoteEpisodes，键 `<季>:<集号>`）、单张 kind 取舍、剧照命名、搬空目录清理（pruneEmptyDirs）
+├── scrapeLayout.ts       # 目录规范：文件夹名 / 影片文件名 / NFO 文件名（三者同名）与工作目录解析（剧集流水线复用它的 movieFileName / nfoFileName）
+├── scrapeLocalMeta.ts    # 本地优先：读同目录本地 NFO（parseNfoXml）与本地图片并归类（**剧集流水线暂不支持本地优先**）
+├── scrapePluginData.ts   # vm 沙箱返回值按结构收窄（候选 / 详情 / 资源；含分集 `episode.plot`）
+├── scrapeMatcher.ts      # 候选选择：影片 pickCandidate（按番号 / 关键词）、剧集 pickSeriesCandidate（年份池 + 关键词包含，剧集没有番号）
 ├── scrapeAssets.ts       # 资源下载到临时目录 + 清理
 ├── scrapeLogFile.ts      # 「保存日志到文件」的落盘日志
 ├── scrapeEvents.ts       # 进度广播给所有窗口
@@ -47,10 +49,12 @@ src/main/src/modules/scrape/
 
 src/common/types/scrape/
 ├── keyword.ts   # 视频扩展名、关键词与番号解析、分盘标记
+├── episode.ts   # 剧集解析：季号（目录名优先，特别篇 → 0）、集号 parseEpisodeName、花絮目录词表 isExtraVideoDir、剧集关键词 seriesKeywordOf / seriesYearOf
 ├── media.ts     # 分盘标记归一化、partTokenOf
 ├── asset.ts     # 资源 kind → 文件名 / 相对路径的落盘计划
-├── naming.ts    # 命名模板渲染、清洗、截断
-├── nfo.ts       # NFO XML 生成（含供影视墙「还原刮削前」使用的还原记录）
+├── naming.ts    # 命名模板渲染、清洗、截断；剧集多的 renderSeasonFolderName / renderEpisodeTemplate
+├── nfo.ts       # NFO XML 生成（含供影视墙「还原刮削前」使用的还原记录，剧集共用这套 appendRestore / parseNfoRestore）
+├── tvNfo.ts     # 剧集 NFO 三件套：buildTvShowNfoXml / buildSeasonNfoXml / buildEpisodeNfoXml（第 4 参都是还原记录）
 ├── error.ts     # ScrapeErrorCode / ScrapeError / describeScrapeError
 ├── result.ts    # IPC 信封（ScrapeResult）
 └── task.ts      # 任务快照、逐文件记录、扫描条目、进度事件
@@ -63,12 +67,13 @@ src/common/types/scrape/
 - `libraryScrape.pendingEntries(libraryId)` 取本库 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）；主源取 `path` 与条目 `path` 相同的那条，没有就用第一条；`keyword` 由 `extractKeyword(item.name)` 解析，识别不到时退回条目上的 `num`。**注意**：扫描后条目即使已有 NFO / 图片（影视墙显示「已刮削」），只要没真跑过刮削，`scrapedAt` 仍是 0，依旧会出现在候选里——展示口径与刮削队列口径是两件事。
 - **体积过滤**：库级 `minFileSizeMb`（0 = 不过滤）在 `collectCandidates` 里直接排除小于该体积的媒体源（`source.size > 0 && size < minBytes`；读不到体积时放行），与扫描的过滤是同一口径（见 [资料库](../media/01-media-library.md)）。
 - **同目录 + 同番号只留第一条**：以「目录 + 番号（或清洗后的关键词）」为键，后出现的候选带 `duplicateOf = 先出现者的名称`，任务里会被置为 `skipped`（`与 … 同番号，已跳过`），避免重复下载资源。判定完全在主进程完成，渲染层只负责展示与禁止勾选。
+- **剧集库的候选是「整部剧」**：`libraryScrapeDispatch.pendingEntries` 在 `type === 'tv'` 时走 `pendingSeriesEntries` → `collectSeriesCandidates`，取本库 `scrapedAt === 0` 的 **series 条目**（`listPendingSeriesItems` + `seriesStatsOf`）；**不做体积过滤、剧集之间不去重**，`keyword = seriesKeywordOf(item.name)`（**剧集目录名**，清洗后去掉结尾年份，见 §5.3）、`num` 恒为空串。分组仍按 `(connectionId, owningPath)` 分组、一次只跑一组，任务行的 `path` 就是**剧集目录**（`scrapeRunner.runFiles` 里 `dirPath = isSeries ? item.path : dirnameRemotePath(item.path)`），一次任务处理整个剧集。
 - **一次只跑一组**：`planLibraryScrape(libraryId, itemIds?)` 按 `(connectionId, 所属根目录)` 分组（同一个任务只能有一个 `dirPath` 基准，`owningPath` 取最长命中的库内根目录），只启动条目最多的那一组，其余保持 `scrapedAt = 0` 留待下次。
 - 目录浏览也归资料库：`scrape:browse { libraryId, dirPath }` 直接读 `mediaWall.browseLibrary`（条目在上次扫描时已经建好）；渲染层当前没有调用方，**通道保留**（后续做「按条目挑片」入口时直接复用）。**刮削阶段不再扫盘、也没有 `indexDirectory` 建索引这一步**。
 - **视频扩展名判定改由「设置 → 资料库」的后缀清单决定**：扫描建条目时 `libraryScan` 用 `libraryExtensionsOf(loadSetting().library, library.type)` 取该库类型的清单，作为 `extensions` 传给 `indexLibraryPath`，`mediaIndexer.ts` 的私有 `isVideoExtension(extensions, extname)` 逐文件判定（**扫描器不再有硬编码后缀**）。`src/common/types/scrape/keyword.ts:11` 的 `SCRAPE_VIDEO_EXTENSIONS` 与 `keyword.ts:132` 的 `isVideoExt()` 保留，但**扫描链路已不再用它们**；`isVideoExt()` 仍被 `src/common/types/media/source.ts:121` 用来判断媒体源类型（`if (isVideoExt(ext) || type.startsWith('video/')) return 'video'`），所以它们不是死代码，不要删除。
-- **两个入口，最终都进同一个任务**：`library:scrape { libraryId }`（资料库抽屉的整库「刮削」→ `startLibraryScrape`，候选 = 全库 `scrapedAt = 0` 的影片）与 `scrape:start { libraryId, itemIds }`（按条目挑片 → `startLibraryScrapeByIds`，`itemIds` 是 **`media_item.id`** 列表，不是路径或文件名；渲染层当前没有调用方，通道保留）。`library:scrape` 在 `planLibraryScrape` 返回空时报 `notFound`「资料库里没有待刮削的影片」；按 id 刮削时空列表报 `invalidArgument`「请至少选择一个待刮削的影片」、所选都已不在待刮削列表时同样报 `notFound`。
+- **两个入口，最终都进同一个任务**：`library:scrape { libraryId }`（资料库抽屉的整库「刮削」→ `startLibraryScrape`，候选 = 全库 `scrapedAt = 0` 的影片）与 `scrape:start { libraryId, itemIds }`（按条目挑片 → `startLibraryScrapeByIds`，`itemIds` 是 **`media_item.id`** 列表，不是路径或文件名；渲染层当前没有调用方，通道保留）。`library:scrape` 在 `planLibraryScrape` 返回空时报 `notFound`「资料库里没有待刮削的影片」；按 id 刮削时空列表报 `invalidArgument`「请至少选择一个待刮削的影片」、所选都已不在待刮削列表时同样报 `notFound`。**剧集库同一入口换文案**：「资料库里没有待刮削的剧集」/「请至少选择一个待刮削的剧集」/「所选剧集已不在待刮削列表中」。
 - **空刮削器 = 不刮削**：两条入口最终都由 `libraryScrape.runPlan()` 在启动任务前检查 `library.scrapers.length === 0` 并抛 `pluginMissing`，**不再回落到存储（连接）的刮削器**（连接上已没有 `scrapers` 字段）。资料库表单允许一个刮削器都不勾选，此时该库照常扫描，只是没有自动 / 手动刮削入口。
-- **自动刮削的四种跳过原因**：扫描完成后 `libraryScan.autoScrape(library, pending)` 按固定顺序判断——① 设置 `scrape.autoScrapeAfterScan` 关闭 →「设置中已关闭「扫描后自动刮削」」；② 该库 `scrapers` 为空 →「该资料库未配置刮削器，已跳过刮削」；③ `pending === 0` →「没有待刮削的影片」；④ 已有刮削任务在跑 →「已有刮削任务在运行，可稍后手动刮削」。四种情况都只影响自动刮削，**扫描结果本身照常返回**（见 [资料库](../media/01-media-library.md)）。
+- **自动刮削的四种跳过原因**：扫描完成后 `libraryScan.autoScrape(library, pending)` 按固定顺序判断——① 设置 `scrape.autoScrapeAfterScan` 关闭 →「设置中已关闭「扫描后自动刮削」」；② 该库 `scrapers` 为空 →「该资料库未配置刮削器，已跳过刮削」；③ `pending === 0` →「没有待刮削的条目」（影片库数影片、剧集库数剧集）；④ 已有刮削任务在跑 →「已有刮削任务在运行，可稍后手动刮削」。四种情况都只影响自动刮削，**扫描结果本身照常返回**（见 [资料库](../media/01-media-library.md)）。
 
 ## 4. 任务与调度（`scrapeRunner.ts`）
 
@@ -134,6 +139,32 @@ src/common/types/scrape/
 
 结果行消息形如 `插件 r18-offline，6 个资源，NFO {base}.nfo，→ /电影/{base}/{base}.mkv`（没有命中插件时插件列写「本地 NFO」，没有产出资源时也会照实写 `0 个资源`）。
 
+### 5.3 剧集库：一次处理整部剧（`scrapeSeriesJob.ts`）
+
+剧集库的一个任务行就是一个**剧集目录**，由 `runSeriesJob(context)` 一次性完成「剧集 → 季 → 集」三层产物；纯 IO 辅助拆在同目录的 `scrapeSeriesAssets.ts`（远端集索引、资源落盘、搬空目录清理）。完整口径（扫描层级、读模型、还原）见 [剧集支持](../media/02-series-support.md)。
+
+**搜索关键字（这是剧集与影片最大的差别）**：剧集用**剧集目录名**当关键词——`entry.keyword = seriesKeywordOf(item.name)`（`extractKeyword` 清洗后**去掉结尾年份**，`Show 2019` → `Show`；年份另有用途），命不中再回落剧集名；`pickSeriesCandidate(candidates, keyword, year)` 先按详情年份（`candidate.date` 前缀）筛出一个池子（池空则退回全部候选），**池里只有一条就直接用**，否则再按「标题 / 番号包含关键词」判断（`normalizeNum` 后至少 3 个字符才参与，分不出高低就返回 `null` 换下一个插件），**剧集没有番号**。剧集只发一次 `search`，没有「搜不到再搜一次」的二次查询。
+
+**命名与产物三件套**：模板默认 `seriesFolderTemplate = '{title} ({year})'`、`seasonFolderTemplate = 'Season {season}'`、`episodeFileTemplate = '{showTitle} S{season}E{episode}'`（渲染函数 `renderSeasonFolderName` / `renderEpisodeTemplate`）。剧集目录 = 剧集文件夹，季目录渲染为空时回落 `'Season ' + padNumber(season)`，**集 NFO 与集文件同名**（`nfoFileName(集基名)`），每集剧照是 `<集基名>-thumb.<ext>`（`EPISODE_THUMB_SUFFIX = '-thumb'`），集文件扩展名沿用源文件：
+
+```text
+<剧集目录>/                    # seriesFolderTemplate；资料库根自己就是剧集目录时不改名
+├── tvshow.nfo                 # buildTvShowNfoXml(…, seriesRestore)
+├── poster.jpg / backdrop.jpg / thumb.jpg / banner.jpg / logo.png
+└── Season 01/                 # renderSeasonFolderName
+    ├── season.nfo             # buildSeasonNfoXml(…, seasonRestore)
+    ├── poster.jpg
+    ├── Show S01E01.mkv        # renderEpisodeTemplate，扩展名沿用源文件
+    ├── Show S01E01.nfo        # buildEpisodeNfoXml（含还原记录）
+    └── Show S01E01-thumb.jpg
+```
+
+**流程**：① `pickSeriesCandidate` 取详情（拿不到 → 结果行 `failed`「未找到匹配的刮削结果」，目录不动）；② 算剧集目录名后整树 `client.move` + `replacePathPrefix(libraryId, 旧前缀, 新前缀)`——**一次改写 `media_item` / `media_source` / `media_image` 三类路径，条目 id 与父子关系不动**，移动失败降级为逐集移动并 warn；③ 剧集级资源 + `tvshow.nfo`（`landAssets` + `carryRestore` + `mergeRestoreFiles`）；④ 逐季建季目录 + 季海报 + `season.nfo`；⑤ 逐集改名 / 移动 + 剧照 + 集 NFO + 回写元数据（`updateItemMetadata` + `updateItem` + `replaceItemImages`）；⑥ 剧集条目回写 + `enqueueItemActorScrape` + `pruneEmptyDirs`（只删空目录，跳过 `/`、库根及其祖先）。
+
+**剧集还原记录**：三件套都带还原记录，与影片共用 `nfo.ts` 的 `appendRestore` / `parseNfoRestore`。剧集根记「原剧集目录名 + 原目录」，季记季目录，**集记「原集文件名 + 原目录」**（这是「还原刮削前」逐集搬回的唯一依据）；旧 NFO 里的记录由 `mergeRestoreFiles` 合并、位置沿用最外层那一份，所以反复刮削仍回到最初位置；`carryRestore(context, nfoPath, fallback)` 负责在移动前后把记录带到新路径。
+
+**注意**：剧集库**暂不支持**「优先读取本地 NFO 和图片」（`localFirst`，本地 kind 传空集合）、不做体积过滤、剧集之间不去重；资料库根自己就是剧集目录时只建季目录、不改剧集目录名，并 warn「剧集目录就是资料库目录，只在它下面按规范建季目录：…」。
+
 ## 6. 资源下载与日志落文件
 
 - `scrapeAssets.ts`：`downloadAssetToTemp(asset, signal)` 把资源下载到 `tmpdir()/vault-scrape-scrape` 下的随机文件名，重试次数沿用 `network.retryCount`（间隔 500ms），取消时抛 `ScrapeError('cancelled')`，最终失败抛 `downloadFailed`；返回的 `cleanup()` 负责删除临时文件（调用方在 `finally` 里执行）。资源请求方法只认 `asset.method === 'POST'`，缺省为 GET。
@@ -180,3 +211,6 @@ src/common/types/scrape/
 14. 把资料库的「文件过滤」设为 100（MB）：小于 100MB 的视频既不进扫描结果，也不进待刮削候选；填 0 时全部放行。
 15. `itemId` 口径：`scrape:start` 的 `itemIds` 必须是 `media_item.id`（不是路径、也不是文件名），落库后对应的 `scrape_file.item_id` 应等于这些 id；传一个不存在的 id 应报「所选影片已不在待刮削列表中」。
 16. 刮一个带参演演员的文件（已启用**演员信息插件**即 `actor` 类插件）：影片详情页的「参演演员」条应出现头像 + 姓名，点击能跳到演员详情；开着「自动抓取演员资料」时日志里应出现「自动补全演员资料（…，N 张图片）」，关掉后只挂关联、不抓资料；把已挂好演员的影片重刮一次（详情里没有演员名单）时关联不应被清空。
+17. **剧集任务 = 整部剧一次**：新建一个「剧集」库（`Season 01/S01E01.mkv`、`Season 01/S01E02.mkv`）扫出剧集条目后点「刮削」→ 任务名仍是 `资料库 · 名称`，**一条任务行对应整部剧**（任务行的 `path` 就是剧集目录），结果消息形如 `插件 X，2 集，1 季，2 个剧集资源，…`；刮完影视墙上该剧的标题与封面**直接更新**（同样不需要「刮削完再扫一遍」）。
+18. **剧集产物与关键字口径**：刮一部目录名带年份的剧（如 `Some Show 2019/`）→ 搜索关键词应是**去掉年份的剧集目录名** `Some Show`（可在插件日志里核对），产物为 `tvshow.nfo` + `Season 01/season.nfo` + `Show S01E01.mkv` / `Show S01E01.nfo` + `Show S01E01-thumb.jpg`（季目录与集文件名都按命名模板，集 NFO 与集文件同名），剧集目录按 `{title} ({year})` 改名；`tvshow.nfo` 末尾能看到还原记录（剧集根记原剧集目录名与原目录、集 NFO 记原集文件名与原目录）。
+19. **剧集刮削与还原闭环**：把剧集（连同季目录）刮一遍再走「还原刮削前」→ 剧集目录改回原名、集文件改回原名并搬回旧季目录；**季目录名不回改**（旧季目录由集文件搬回时重建），刮削时新建的季目录搬空后会被当空目录删掉。剧集在资料库扫描侧的用例见 [资料库 §10](../media/01-media-library.md)、界面侧见 [影视墙页面 §8](../page/04-media-wall-page.md)。

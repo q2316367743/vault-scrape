@@ -19,7 +19,61 @@ import {
   updateSourcePath,
   type MediaItemMetadataInput
 } from '$/db/repo/mediaRepo'
+import { parseNfoRestore } from '@common/types/media'
+import type { NfoRestoreFile, NfoRestoreInfo } from '@common/types/media'
+import type { PlantedAsset } from './scrapeJobPlan'
 import type { ScrapeJobContext } from './scrapeJobTypes'
+
+/**
+ * 对齐「上一次的还原记录」与「这一次就位的资源」。
+ *
+ * 只记**这次真的写下或搬过的**文件：联网下载的（`created`）没有原位置、还原时直接删；
+ * 本地沿用并改了名的（`origin`）还原时搬回去；沿用磁盘上已有文件（保留设置跳过）与
+ * 没挪过位置的本地图片都不记，免得清除时删掉用户自己的文件。
+ * 这一次重新就位的资源一律用这一次的路径；上一次记录里本地沿用的图片如果这次没被重新
+ * 就位、原文件又还在，就接着沿用，免得第二次刮削把第一次留下的还原信息弄丢。
+ */
+export async function mergeRestoreFiles(
+  carried: readonly NfoRestoreFile[],
+  planted: readonly PlantedAsset[],
+  context: ScrapeJobContext
+): Promise<NfoRestoreFile[]> {
+  const files: NfoRestoreFile[] = planted
+    .filter((item) => item.origin !== undefined || item.created === true)
+    .map((item) => ({ relativePath: item.relativePath, origin: item.origin ?? '' }))
+  const landed = new Set(files.map((file) => file.relativePath))
+  for (const file of carried) {
+    if (landed.has(file.relativePath) || file.origin.length === 0) continue
+    try {
+      if (await context.client.exists(file.origin)) files.push(file)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      context.log.warn(`还原记录沿用失败（${file.relativePath}）：${message}`)
+    }
+  }
+  return files
+}
+
+/**
+ * 读磁盘上已有的 NFO，沿用它的还原记录。
+ *
+ * 第二次刮削时若把「当前路径」当成原始位置，清除 NFO 就再也搬不回用户原来的文件名与目录，
+ * 所以只要旧 NFO 还在，就继续用它的记录；读不到就用 `fallback`。
+ */
+export async function carryRestore(
+  context: ScrapeJobContext,
+  nfoPath: string,
+  fallback: NfoRestoreInfo
+): Promise<NfoRestoreInfo> {
+  try {
+    if (!(await context.client.exists(nfoPath))) return fallback
+    return parseNfoRestore(await context.client.readText(nfoPath)) ?? fallback
+  } catch (error) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    context.log.warn(`旧 NFO 读取失败（${nfoPath}）：${message}`)
+    return fallback
+  }
+}
 
 /** 上次刮削写下的 ID 信息：本地优先跳过联网时要沿用，不能清空 */
 function previousMetadataOf(
@@ -52,7 +106,7 @@ export function metadataOf(
     runtimeMinutes: detail.duration ?? 0,
     officialRating: '',
     communityRating: 0,
-    genres: [],
+    genres: detail.genres ?? [],
     studios: detail.studio ? [detail.studio] : detail.maker ? [detail.maker] : [],
     tags: detail.tags ?? [],
     providerIds: pluginId.length > 0 ? { [pluginId]: detail.id } : (previous?.providerIds ?? {}),

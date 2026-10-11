@@ -28,7 +28,10 @@ import { moviePlugins } from '$/modules/plugin/pluginRegistries'
 import { loadSetting } from '$/modules/setting/settingStore'
 import { broadcastScrapeProgress } from './scrapeEvents'
 import { keywordOf, runFileJob } from './scrapeFileJob'
+import { runSeriesJob } from './scrapeSeriesJob'
 import type {
+  ScrapeJobContext,
+  ScrapeJobOutcome,
   ScrapeLibraryPolicy,
   ScrapePluginRef,
   ScrapeSettingsSnapshot
@@ -203,6 +206,9 @@ function setTaskStatus(taskId: string, status: TaskStatus, patch: Partial<TaskIt
  *
  * 每个文件都按**它自己所在的目录**处理：产出、改名、失败箱都落在文件旁边，
  * 所以同一个任务可以覆盖所选根目录下的整棵多层子树。
+ *
+ * 剧集库走另一条流水线：任务行的 `path` 就是**剧集目录**，一次处理整个剧集
+ * （季目录、每集改名、剧集 / 季 / 集三类 NFO），见 `runSeriesJob`。
  */
 async function runFiles(
   taskId: string,
@@ -213,7 +219,8 @@ async function runFiles(
   settings: ScrapeSettingsSnapshot,
   client: Awaited<ReturnType<typeof getFileClient>>,
   signal: AbortSignal,
-  log: ReturnType<typeof createScrapeRunLog>
+  log: ReturnType<typeof createScrapeRunLog>,
+  isSeries: boolean
 ): Promise<void> {
   const total = files.length
   let cursor = 0
@@ -231,26 +238,29 @@ async function runFiles(
       const running: ScrapeFileItem = { ...item, status: 'running', updatedAt: Date.now() }
       pushFile(taskId, running)
 
-      let outcome: Awaited<ReturnType<typeof runFileJob>>
+      const jobContext: ScrapeJobContext = {
+        taskId,
+        connectionId,
+        policy,
+        // 剧集库的任务行就是剧集目录本身；影片库取视频所在目录
+        dirPath: isSeries ? item.path : dirnameRemotePath(item.path),
+        entry: {
+          itemId: item.itemId,
+          path: item.path,
+          name: item.name,
+          keyword: item.keyword,
+          num: keywordOf(item.name).num
+        },
+        plugins,
+        settings,
+        client,
+        signal,
+        log
+      }
+
+      let outcome: ScrapeJobOutcome
       try {
-        outcome = await runFileJob({
-          taskId,
-          connectionId,
-          policy,
-          dirPath: dirnameRemotePath(item.path),
-          entry: {
-            itemId: item.itemId,
-            path: item.path,
-            name: item.name,
-            keyword: item.keyword,
-            num: keywordOf(item.name).num
-          },
-          plugins,
-          settings,
-          client,
-          signal,
-          log
-        })
+        outcome = isSeries ? await runSeriesJob(jobContext) : await runFileJob(jobContext)
       } catch (error) {
         if (signal.aborted) {
           // 取消：把这一行退回待刮削，任务可以继续
@@ -320,7 +330,8 @@ async function execute(
       settings,
       client,
       controller.signal,
-      log
+      log,
+      library.type === 'tv'
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误'

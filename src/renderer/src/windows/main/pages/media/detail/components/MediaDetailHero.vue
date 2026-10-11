@@ -1,8 +1,7 @@
 <template>
   <section :class="['detail-hero', { 'is-plain': media.length === 0 }]">
-    <div class="hero-media">
+    <div v-if="media.length > 0" class="hero-media">
       <t-image
-        v-if="media.length > 0"
         class="hero-image"
         :class="{ 'is-blurred': blurred }"
         :src="media"
@@ -11,7 +10,7 @@
       />
       <div class="hero-scrim"></div>
 
-      <div v-if="masked && media.length > 0" class="hero-mask" @click="revealed = true">
+      <div v-if="masked" class="hero-mask" @click="revealed = true">
         <t-button class="hero-mask-button" variant="outline" shape="round" size="small">
           <template #icon><browse-icon /></template>
           点击查看原图
@@ -23,25 +22,11 @@
       <h1 class="hero-title">{{ title }}</h1>
       <p v-if="subtitle.length > 0" class="hero-subtitle">{{ subtitle }}</p>
 
-      <div class="hero-bar">
-        <t-button
-          v-if="detail.item.playUrl"
-          class="hero-play"
-          theme="primary"
-          size="large"
-          shape="round"
-          @click="emit('play')"
-        >
-          <template #icon><play-circle-icon /></template>
-          播放
-        </t-button>
-
-        <div v-if="facts.length > 0" class="hero-facts">
-          <span v-for="fact in facts" :key="fact.label" class="hero-fact">
-            <span class="hero-fact-label">{{ fact.label }}</span>
-            <span class="hero-fact-value">{{ fact.value }}</span>
-          </span>
-        </div>
+      <div v-if="facts.length > 0" class="hero-facts">
+        <span v-for="fact in facts" :key="fact.label" class="hero-fact">
+          <span class="hero-fact-label">{{ fact.label }}</span>
+          <span class="hero-fact-value">{{ fact.value }}</span>
+        </span>
       </div>
 
       <div v-if="tags.length > 0" class="hero-tags">
@@ -54,12 +39,13 @@
 </template>
 <script setup lang="ts">
 /**
- * 详情页的沉浸头部：整幅背景图 + 压在图片下缘渐隐区上的标题 / 原名 + 播放按钮 + 要点行 + 标签。
+ * 详情页的沉浸头部：整幅背景图 + 压在图片下缘渐隐区上的标题 / 原名 + 要点行 + 标签。
  *
  * 契约：
- * - 只读详情结果，不取数、不改数据；「播放」只 `emit('play')`，由页面决定滚到播放器还是别处（不自动播放）；
- * - 背景图优先缩略图 / 横幅 / 背景图 / 剧照，都没有才退回封面；退回封面时说明只有一张竖版封面，
- *   此时把封面**模糊放大**当底图，避免 2:3 的图被裁成一条（清晰的那张由页面单独成块展示）；
+ * - 只读详情结果，不取数、不改数据；
+ * - 背景图只认宽图（缩略图 / 横幅 / 背景图 / 剧照，见 `../mediaDetailCells` 的 `heroBackdropOf`）：
+ *   **没有宽图时整条图片带都不渲染**（`v-if`），头部退成纯文字的紧凑头部，靠上内边距让开吸顶悬浮条。
+ *   不要拿竖版封面模糊放大来充数——那不是横幅，纯属糊一块在那儿；
  * - `protect` 为真时先给**模糊底图**，点一下（`.hero-mask`）才换成清晰原图：既不第一眼就露出敏感画面，
  *   头部又不会只剩一块纯色底；
  * - 选中的图加载完会量一次实际宽高，竖图同样走模糊底图：`backdrop` 里混着 `extrafanart` 的竖版剧照，
@@ -73,17 +59,15 @@
  * - 左右出血由页面负责（本组件只管铺满自己的容器）。
  */
 import { computed, ref, watch } from 'vue'
-import { BrowseIcon, PlayCircleIcon } from 'tdesign-icons-vue-next'
+import { BrowseIcon } from 'tdesign-icons-vue-next'
 import type { MediaDetailResult } from '@common/types/media'
-import { backdropUrlOf, heroBackdropOf, heroFacts, heroTags } from '../mediaDetailCells'
+import { heroBackdropOf, heroFacts, heroTags } from '../mediaDetailCells'
 
 const props = defineProps<{
   detail: MediaDetailResult
   /** 是否按敏感内容处理：为真时背景图先模糊，点一下才看清 */
   protect: boolean
 }>()
-
-const emit = defineEmits<{ play: [] }>()
 
 /** 保护命中时是否还没点开 */
 const revealed = ref(false)
@@ -99,20 +83,19 @@ watch(
   }
 )
 
-const media = computed(() => backdropUrlOf(props.detail))
+/** 头部背景图：只认宽图，没有就整条图片带都不渲染 */
+const media = computed(() => heroBackdropOf(props.detail))
 const masked = computed(() => props.protect && !revealed.value)
 /**
- * 三种情况走模糊，只有第一种能点开看原图：
+ * 两种情况走模糊底图：
  * - 保护命中还没点开；
- * - 手上只有竖版封面（没有现成横图，放大模糊当氛围底图）；
  * - 选中的图实际是竖版。
  */
-const blurred = computed(
+const blurred = computed(() => masked.value || !landscape.value)
+const title = computed(
   () =>
-    media.value.length > 0 &&
-    (masked.value || !landscape.value || heroBackdropOf(props.detail).length === 0)
+    props.detail.item.title || (props.detail.item.type === 'series' ? '未命名剧集' : '未命名影片')
 )
-const title = computed(() => props.detail.item.title || '未命名影片')
 const facts = computed(() => heroFacts(props.detail))
 const tags = computed(() => heroTags(props.detail))
 /** 副标题：NFO 原名有值且与展示标题不同时才显示 */
@@ -153,12 +136,13 @@ function onMediaLoad(context: { e: Event }): void {
   background-color: var(--td-bg-color-container-hover);
 }
 
-.detail-hero.is-plain .hero-media {
-  background-image: linear-gradient(
-    135deg,
-    var(--td-bg-color-container-hover),
-    var(--td-bg-color-container)
-  );
+/*
+ * 没有宽图时整条图片带都不渲染：头部退成纯文字的紧凑头部。
+ * 上内边距 = 悬浮条高度 56px + 8px 呼吸，免得标题被吸顶悬浮条压住。
+ */
+.detail-hero.is-plain .hero-body {
+  margin-top: 0;
+  padding-top: 64px;
 }
 
 .hero-image {
@@ -241,21 +225,12 @@ function onMediaLoad(context: { e: Event }): void {
   word-break: break-word;
 }
 
-.hero-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 24px;
-  margin-top: 14px;
-}
-
 .hero-facts {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
   gap: 2px 14px;
-  margin-left: auto;
+  margin-top: 8px;
   font-size: 13px;
 }
 

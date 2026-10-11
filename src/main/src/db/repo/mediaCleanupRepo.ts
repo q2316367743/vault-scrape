@@ -13,6 +13,7 @@ import { isRemotePathInside } from '@common/types/file'
 import { db } from '../client'
 import { mediaItemTable, mediaSourceTable } from '../schema'
 import { deleteCastByItems } from './actorRepo'
+import type { MediaItemType } from './mediaRepo'
 
 /** 按主键批量删除的分块大小 */
 const DELETE_CHUNK = 500
@@ -52,14 +53,18 @@ export function deleteSourcesNotInScan(
 }
 
 /**
- * 删掉「所有媒体源都不属于本次扫描」的影片条目，返回被删掉的条目 ID。
+ * 删掉「所有媒体源都不属于本次扫描」的条目，返回被删掉的条目 ID。
  *
  * 必须在删除旧媒体源**之前**调用：先把整组源都过期的条目挑出来，再交给清理逻辑连带删图片。
+ *
+ * `types` 是本次要清理的条目类型：影片库传 `['movie']`，剧集库传 `['episode']`。
+ * 剧集 / 季条目本身不挂媒体源，走 `deleteChildlessItems`。
  */
 export function deleteItemsWithoutSource(
   libraryId: string,
   scanId: string,
-  skippedDirs: readonly string[] = []
+  skippedDirs: readonly string[],
+  types: readonly MediaItemType[]
 ): string[] {
   const sources = db()
     .select({
@@ -85,11 +90,40 @@ export function deleteItemsWithoutSource(
     .where(
       and(
         eq(mediaItemTable.libraryId, libraryId),
-        eq(mediaItemTable.type, 'movie'),
+        inArray(mediaItemTable.type, types),
         inArray(mediaItemTable.id, orphanIds)
       )
     )
     .all()
+  const ids = rows.map((row) => row.id)
+  if (ids.length > 0) {
+    db().delete(mediaItemTable).where(inArray(mediaItemTable.id, ids)).run()
+    deleteCastByItems(ids)
+  }
+  return ids
+}
+
+/**
+ * 删掉已经没有任何子条目的空壳条目（剧集库收尾用），返回被删掉的条目 ID。
+ *
+ * 剧集库的季 / 剧集条目本身不挂媒体源，判断「该不该留」只能看它下面还有没有东西：
+ * 调用方要**自底向上**传类型（先 `['season']` 再 `['series']`），这样整条链空了会被逐层收掉。
+ * `skippedDirs`（本次列目录失败的目录）下的条目一律保留，避免一次读目录失败就删数据。
+ */
+export function deleteChildlessItems(
+  libraryId: string,
+  types: readonly MediaItemType[],
+  skippedDirs: readonly string[] = []
+): string[] {
+  const missingChildren = sql`not exists (select 1 from media_item as child where child.parent_id = ${mediaItemTable.id})`
+  const rows = db()
+    .select({ id: mediaItemTable.id, path: mediaItemTable.path })
+    .from(mediaItemTable)
+    .where(
+      and(eq(mediaItemTable.libraryId, libraryId), inArray(mediaItemTable.type, types), missingChildren)
+    )
+    .all()
+    .filter((row) => !isUnderSkippedDir(row.path, skippedDirs))
   const ids = rows.map((row) => row.id)
   if (ids.length > 0) {
     db().delete(mediaItemTable).where(inArray(mediaItemTable.id, ids)).run()

@@ -13,9 +13,21 @@ export interface DetailCell {
   value: string
 }
 
-/** 磁盘上的事实：这条记录是什么、在哪、多大 */
+/** 磁盘上的事实：这条记录是什么、在哪、多大（剧集按整部剧统计） */
 export function fileCells(detail: MediaDetailResult, sourceName: string): DetailCell[] {
   const { item } = detail
+  if (item.type === 'series') {
+    return [
+      { label: '标题', value: item.title || '—' },
+      { label: '剧集目录', value: item.name },
+      { label: '季数', value: `${item.seasonCount} 季` },
+      { label: '集数', value: `${item.episodeCount} 集` },
+      { label: '数据源', value: sourceName || '未知数据源' },
+      { label: '所在目录', value: item.dirPath || '—' },
+      { label: '体积', value: formatSize(item.size) },
+      { label: '磁盘修改时间', value: formatTime(item.modifiedAt) }
+    ]
+  }
   return [
     { label: '标题', value: item.title || '—' },
     { label: '番号', value: item.num || '未识别' },
@@ -53,7 +65,8 @@ export interface HeroFact {
 }
 
 /**
- * 头部要点：番号 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 体积。
+ * 头部要点：番号 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 体积；
+ * 剧集换一套口径：季数 / 集数 / 首播日期 / 片商 / 厂牌 / 体积（NFO 是 `tvshow.nfo`）。
  *
  * 契约：没有值的项直接不出现（不显示「—」），所以头部在未刮削时不会变成一排占位符。
  */
@@ -62,6 +75,15 @@ export function heroFacts(detail: MediaDetailResult): HeroFact[] {
   const facts: HeroFact[] = []
   const push = (label: string, value: string): void => {
     if (value.length > 0) facts.push({ label, value })
+  }
+  if (detail.item.type === 'series') {
+    push('季数', detail.item.seasonCount > 0 ? `${detail.item.seasonCount} 季` : '')
+    push('集数', detail.item.episodeCount > 0 ? `${detail.item.episodeCount} 集` : '')
+    push('首播日期', meta?.releaseDate ?? '')
+    push('片商', meta?.maker ?? '')
+    push('厂牌', meta?.label ?? '')
+    push('体积', formatSize(detail.item.size))
+    return facts
   }
   push('番号', detail.item.num || meta?.num || '')
   push('发行日期', meta?.releaseDate ?? '')
@@ -90,8 +112,8 @@ export function heroTags(detail: MediaDetailResult): string[] {
 const HERO_BACKDROP_TYPES: MediaImageType[] = ['thumb', 'banner', 'backdrop', 'still']
 
 /**
- * 头部的现成横图（不含封面兜底）：一张都没有时返回空串，
- * 调用方据此把竖版封面模糊放大当底图（见 `MediaDetailHero.vue`）。
+ * 头部的现成横图：一张都没有时返回空串，头部据此**整条图片带都不渲染**、退成纯文字头部
+ * （见 `MediaDetailHero.vue`）。这里不回退封面——竖版封面撑不成横幅。
  */
 export function heroBackdropOf(detail: MediaDetailResult): string {
   for (const type of HERO_BACKDROP_TYPES) {
@@ -102,19 +124,11 @@ export function heroBackdropOf(detail: MediaDetailResult): string {
 }
 
 /**
- * 沉浸头部的背景图：宽图优先，都没有才退回封面；
- * 连封面也没有时返回空串，由调用方只留渐变底色。
- */
-export function backdropUrlOf(detail: MediaDetailResult): string {
-  return heroBackdropOf(detail) || detail.item.coverUrl
-}
-
-/**
  * 剧照墙：主图 / 缩略图（封面与头部已经用过）与头部那张背景图本身都不再上墙，
  * 其余按主进程给的原顺序排列。
  */
 export function stillImagesOf(detail: MediaDetailResult): MediaDetailImage[] {
-  const backdrop = backdropUrlOf(detail)
+  const backdrop = heroBackdropOf(detail)
   return detail.images.filter(
     (image) => image.type !== 'primary' && image.type !== 'thumb' && image.url !== backdrop
   )

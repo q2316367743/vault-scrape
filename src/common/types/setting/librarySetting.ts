@@ -10,11 +10,29 @@
  * - 设置文件可能被手工改坏，读取永不抛错。
  */
 import type { LibraryType } from '../library'
+import { LIBRARY_TYPES } from '../library'
 import { readStringArray, toSource } from './shared'
+
+/** 影视与剧集的默认后缀一样（剧集集文件也是视频文件） */
+const DEFAULT_VIDEO_EXTENSIONS: readonly string[] = [
+  'mp4',
+  'mkv',
+  'avi',
+  'mov',
+  'wmv',
+  'flv',
+  'webm',
+  'ts',
+  'm2ts',
+  'mpg',
+  'mpeg',
+  'rmvb'
+]
 
 /** 每种资料库类型的默认后缀 */
 export const DEFAULT_LIBRARY_EXTENSIONS: Readonly<Record<LibraryType, readonly string[]>> = {
-  movie: ['mp4', 'mkv', 'avi', 'mov', 'wmv', 'flv', 'webm', 'ts', 'm2ts', 'mpg', 'mpeg', 'rmvb']
+  movie: DEFAULT_VIDEO_EXTENSIONS,
+  tv: DEFAULT_VIDEO_EXTENSIONS
 }
 
 /** 单个后缀的合法形态：小写字母或数字，1~12 位 */
@@ -44,20 +62,20 @@ export function normalizeExtensionList(
 }
 
 export function buildSettingLibrary(): SettingLibrary {
-  return {
-    extensions: {
-      movie: [...DEFAULT_LIBRARY_EXTENSIONS.movie]
-    }
-  }
+  const extensions = {} as Record<LibraryType, string[]>
+  for (const type of LIBRARY_TYPES) extensions[type] = [...DEFAULT_LIBRARY_EXTENSIONS[type]]
+  return { extensions }
 }
 
 export function normalizeSettingLibrary(raw: unknown): SettingLibrary {
   const source = toSource(raw) ?? {}
   const extensionSource = toSource(source.extensions) ?? {}
-  const extensions: Record<LibraryType, string[]> = {
-    movie: normalizeExtensionList(
-      readStringArray(extensionSource, 'movie', [...DEFAULT_LIBRARY_EXTENSIONS.movie]),
-      DEFAULT_LIBRARY_EXTENSIONS.movie
+  const extensions = {} as Record<LibraryType, string[]>
+  for (const type of LIBRARY_TYPES) {
+    const fallback = DEFAULT_LIBRARY_EXTENSIONS[type]
+    extensions[type] = normalizeExtensionList(
+      readStringArray(extensionSource, type, [...fallback]),
+      fallback
     )
   }
   return { extensions }

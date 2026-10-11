@@ -2,8 +2,11 @@
  * 影视墙读模型：把「磁盘上的视频」与「刮削成果」拼成一面墙。
  *
  * 契约：
- * - 列表真相是媒体条目（`media_item.type = 'movie'`）与其媒体源：没刮削过的视频也上墙，
+ * - 列表真相是媒体条目：影片库认 `media_item.type = 'movie'`，剧集库认 `type = 'series'`
+ *   （整部剧集一张卡，季 / 集是它的下行层级）：没刮削过的也上墙，
  *   磁盘上删掉的影片会随扫描清理一起消失；
+ * - 剧集卡上的季数 / 集数 / 体积 / 磁盘时间来自聚合查询（`mediaSeriesRepo.seriesStatsOf`），
+ *   播放地址固定为空串（真正能播的是集，用户在详情页里选）；
  * - 封面先看条目自己、再退回**父目录条目**，按「主图 → 缩略图 → 背景图 → 剧照 → 其他」
  *   找第一张（扫描期把目录级图片挂在目录条目上、`extrafanart/still*.jpg` 挂在影片上，见 `mediaIndexer`）；
  * - 影视墙**不按刮削与否分类**（Jellyfin 也没有这种分类）：展示标题只看条目是否
@@ -12,9 +15,10 @@
  * - 播放地址与封面地址都走 `storage://{连接}/{媒体ID}/{文件名}`，只认 ID 不认路径；
  * - 墙面可以按资料库过滤（`MediaWallRequest.libraryId`，空串 = 全部库）；
  * - 首页两排（最近添加 / 推荐）与墙面同一套条目口径，只做排序与截断；
- * - 详情另外读同目录 NFO 作为元信息；读失败不抛错，只当没有。
+ * - 详情另外读 NFO 作为元信息（影片读同目录 NFO，剧集读剧集目录下的 `tvshow.nfo`）；
+ *   读失败不抛错，只当没有。
  */
-import { FILE_ROOT, basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
+import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
 import type { MediaLibrary } from '@common/types/library'
 import {
   MEDIA_COVER_IMAGE_TYPE_ORDER,
@@ -23,36 +27,45 @@ import {
   MediaError,
   buildMediaUrl,
   parseNfoXml,
-  type MediaBrowseEntry,
   type MediaDetailImage,
   type MediaDetailRequest,
   type MediaDetailResult,
+  type MediaEpisodeRef,
   type MediaHomeResult,
   type MediaHomeRow,
   type MediaNfoMeta,
+  type MediaSeasonRef,
   type MediaWallItem,
   type MediaWallRequest,
   type MediaWallResult
 } from '@common/types/media'
-import type { ScrapeBrowseRequest } from '@common/types/scrape'
 import { stripExtension } from '@common/types/scrape'
 import type { MediaImageRow } from '$/db/schema/mediaImage'
 import type { MediaItemRow } from '$/db/schema/mediaItem'
 import type { MediaSourceRow } from '$/db/schema/mediaSource'
-import { isSameOrInsidePath } from '$/db/repo/libraryRepo'
 import { getImage, listImagesByItem, listImagesByLibrary } from '$/db/repo/mediaImageRepo'
 import {
   getItem,
-  listChildItems,
-  listItems,
   listMovieItems,
   listSourcesByItem,
+  listSourcesByLibrary,
   maxSourceIndexedAt
 } from '$/db/repo/mediaRepo'
+import {
+  EMPTY_SERIES_STATS,
+  listEpisodeItems,
+  listSeasonItems,
+  listSeriesItems,
+  seriesStatsOf,
+  seriesStatsOfOne,
+  type SeriesItemStats
+} from '$/db/repo/mediaSeriesRepo'
 import { actorRefsOfItem } from '$/modules/actor/actorLink'
 import { getFileClient } from '$/modules/file/fileClientManager'
-import { folderItemId } from '$/modules/media/mediaIndexer'
 import { getLibrary, listLibraries, listSummaries } from '$/modules/library/libraryStore'
+
+/** 剧集元信息文件名（写入侧 `scrapeSeriesJob` 固定用这个名字） */
+const SERIES_NFO_NAME = 'tvshow.nfo'
 
 /** 主媒体源：路径与条目一致的优先，否则取第一条 */
 export function primarySourceOf(
@@ -126,6 +139,7 @@ function toWallItem(
 ): MediaWallItem {
   return {
     itemId: item.id,
+    type: 'movie',
     libraryId: item.libraryId,
     libraryName: library?.name ?? '',
     nsfwProtected: library?.nsfwProtection === true,
@@ -137,6 +151,8 @@ function toWallItem(
     title: item.scrapedAt > 0 ? item.name : stripExtension(item.name),
     coverUrl: coverUrlOf(item, images),
     playUrl: buildMediaUrl(source.connectionId, source.id, source.name),
+    seasonCount: 0,
+    episodeCount: 0,
     dateAdded: item.dateAdded,
     pluginId: item.scraperId,
     size: source.size,
@@ -145,8 +161,46 @@ function toWallItem(
 }
 
 /**
- * 拉取影视墙：默认所有资料库的影片混在一起，筛选与排序都在渲染层做；
- * 给了 `libraryId` 就只返回该库的影片，库不存在直接抛 `notFound`。
+ * 剧集卡：没有媒体源，季 / 集数与体积 / 时间都来自聚合统计。
+ *
+ * 与影片卡同一套展示口径：`scrapedAt > 0` 时 `name` 已被刮削标题覆盖，
+ * 封面按「剧集条目自己 → 其父目录条目」找（父目录通常是「科幻」这类分类目录，
+ * 有目录级海报时能给同目录多部剧集共用）。
+ */
+function toSeriesWallItem(
+  item: MediaItemRow,
+  images: Map<string, MediaImageRow[]>,
+  library: MediaLibrary | null,
+  stats: SeriesItemStats
+): MediaWallItem {
+  return {
+    itemId: item.id,
+    type: 'series',
+    libraryId: item.libraryId,
+    libraryName: library?.name ?? '',
+    nsfwProtected: library?.nsfwProtection === true,
+    connectionId: item.connectionId,
+    path: item.path,
+    dirPath: item.path,
+    name: item.name,
+    num: '',
+    title: item.name,
+    coverUrl: coverUrlOf(item, images),
+    playUrl: '',
+    seasonCount: stats.seasonCount,
+    episodeCount: stats.episodeCount,
+    dateAdded: item.dateAdded,
+    pluginId: item.scraperId,
+    size: stats.sizeBytes,
+    modifiedAt: stats.modifiedAt
+  }
+}
+
+/**
+ * 拉取影视墙：默认所有资料库的条目混在一起，筛选与排序都在渲染层做；
+ * 给了 `libraryId` 就只返回该库的条目，库不存在直接抛 `notFound`。
+ *
+ * 影片库一次取「条目 + 主源」，剧集库一次取「剧集条目 + 全库聚合统计」。
  */
 export function loadMediaWall(request: MediaWallRequest = { libraryId: '' }): MediaWallResult {
   const libraryId = request.libraryId.trim()
@@ -161,6 +215,13 @@ export function loadMediaWall(request: MediaWallRequest = { libraryId: '' }): Me
   const items: MediaWallItem[] = []
   for (const library of libraries) {
     const images = imagesByItem(listImagesByLibrary(library.id))
+    if (library.type === 'tv') {
+      const stats = seriesStatsOf(library.id)
+      for (const item of listSeriesItems(library.id)) {
+        items.push(toSeriesWallItem(item, images, library, stats.get(item.id) ?? EMPTY_SERIES_STATS))
+      }
+      continue
+    }
     for (const item of listMovieItems(library.id)) {
       const source = primarySourceOf(item, listSourcesByItem(item.id))
       if (!source) continue
@@ -183,10 +244,10 @@ export function loadLibraryVideos(libraryId: string): MediaWallItem[] {
 }
 
 /**
- * 按条目 ID 批量取墙面形状（演员详情页的「出演作品」用）。
+ * 按条目 ID 批量取墙面形状（演员详情页的「出演作品」、手动刮削前的回显用）。
  *
- * 与墙面同一套判定与封面规则：只认 `movie` 条目、必须有主媒体源、封面按父目录兜底；
- * 查不到的 ID 直接跳过，返回顺序与传入顺序无关（调用方自己按入库时间排序）。
+ * 与墙面同一套判定与封面规则：认 `movie` 与 `series` 条目，影片必须有主媒体源，
+ * 封面按父目录兜底；查不到的 ID 直接跳过，返回顺序与传入顺序无关。
  */
 export function loadWallItems(itemIds: readonly string[]): MediaWallItem[] {
   if (itemIds.length === 0) return []
@@ -194,14 +255,20 @@ export function loadWallItems(itemIds: readonly string[]): MediaWallItem[] {
   const items: MediaWallItem[] = []
   for (const itemId of itemIds) {
     const item = getItem(itemId)
-    if (!item || item.type !== 'movie') continue
-    const source = primarySourceOf(item, listSourcesByItem(item.id))
-    if (!source) continue
+    if (!item) continue
     const images = imagesByItem([
       ...listImagesByItem(item.id),
       ...(item.parentId.length > 0 ? listImagesByItem(item.parentId) : [])
     ])
-    items.push(toWallItem(item, source, images, libraries.get(item.libraryId) ?? null))
+    const library = libraries.get(item.libraryId) ?? null
+    if (item.type === 'series') {
+      items.push(toSeriesWallItem(item, images, library, seriesStatsOfOne(item.libraryId, item.id)))
+      continue
+    }
+    if (item.type !== 'movie') continue
+    const source = primarySourceOf(item, listSourcesByItem(item.id))
+    if (!source) continue
+    items.push(toWallItem(item, source, images, library))
   }
   return items
 }
@@ -251,132 +318,21 @@ export function loadMediaHome(): MediaHomeResult {
   }
 }
 
-/** 目标目录属于哪个媒体目录（同一库内取最长命中） */
-function owningPath(library: MediaLibrary, dirPath: string): { connectionId: string; path: string } | null {
-  let best: { connectionId: string; path: string } | null = null
-  for (const item of library.paths) {
-    if (!isSameOrInsidePath(item.path, dirPath)) continue
-    if (!best || item.path.length > best.path.length) best = { connectionId: item.connectionId, path: item.path }
-  }
-  return best
-}
-
-/** 目录（含子孙）里有没有影片：一次遍历整库算完，供浏览列表标记空目录 */
-function movieSubtree(libraryId: string): Map<string, boolean> {
-  const childrenByParent = new Map<string, MediaItemRow[]>()
-  for (const row of listItems(libraryId)) {
-    const list = childrenByParent.get(row.parentId) ?? []
-    list.push(row)
-    childrenByParent.set(row.parentId, list)
-  }
-  const memo = new Map<string, boolean>()
-  const walk = (parentId: string): boolean => {
-    const cached = memo.get(parentId)
-    if (cached !== undefined) return cached
-    // 先占位，避免异常数据里的父子环把递归打爆
-    memo.set(parentId, false)
-    let found = false
-    for (const child of childrenByParent.get(parentId) ?? []) {
-      if (child.type === 'movie' || walk(child.id)) {
-        found = true
-        break
-      }
-    }
-    memo.set(parentId, found)
-    return found
-  }
-  for (const row of listItems(libraryId)) {
-    if (row.type === 'folder') walk(row.id)
-  }
-  return memo
-}
-
-function toBrowseEntry(row: MediaItemRow, withMovies: Map<string, boolean>): MediaBrowseEntry {
-  if (row.type === 'folder') {
-    return {
-      itemId: row.id,
-      type: 'folder',
-      connectionId: row.connectionId,
-      path: row.path,
-      name: row.name,
-      num: '',
-      title: row.name,
-      hasSource: withMovies.get(row.id) === true,
-      size: 0,
-      modifiedAt: 0
-    }
-  }
-  const sources = listSourcesByItem(row.id)
-  const source = primarySourceOf(row, sources)
-  return {
-    itemId: row.id,
-    type: 'movie',
-    connectionId: row.connectionId,
-    path: row.path,
-    name: row.name,
-    num: row.num,
-    title: row.scrapedAt > 0 ? row.name : stripExtension(row.name),
-    hasSource: sources.length > 0,
-    size: source?.size ?? 0,
-    modifiedAt: source?.modifiedAt ?? 0
-  }
-}
-
-/** 目录在上、影片在下；同类按名称做自然序排序 */
-function compareBrowse(left: MediaBrowseEntry, right: MediaBrowseEntry): number {
-  if (left.type !== right.type) return left.type === 'folder' ? -1 : 1
-  return left.name.localeCompare(right.name, 'zh-CN', { numeric: true })
-}
-
-/**
- * 浏览资料库：`dirPath` 为空表示「资料库各根目录的下一层」。
- *
- * 目录条目由扫描按需创建（连接根 `/` 没有目录条目，直接用 `parentId = ''`）。
- */
-export function browseLibrary(request: ScrapeBrowseRequest): MediaBrowseEntry[] {
-  const libraryId = request.libraryId.trim()
-  if (libraryId.length === 0) throw new MediaError('invalidArgument', '缺少资料库 ID')
-  const library = getLibrary(libraryId)
-  if (!library) throw new MediaError('notFound')
-
-  const dirPath = request.dirPath.trim()
-  const parents: string[] = []
-  if (dirPath.length === 0 || dirPath === FILE_ROOT) {
-    for (const item of library.paths) {
-      parents.push(item.path === FILE_ROOT ? '' : folderItemId(library.id, item.connectionId, item.path))
-    }
-  } else {
-    const owner = owningPath(library, dirPath)
-    if (!owner) throw new MediaError('invalidArgument', '目录不在该资料库内')
-    parents.push(folderItemId(library.id, owner.connectionId, dirPath))
-  }
-
-  const withMovies = movieSubtree(library.id)
-  const seen = new Set<string>()
-  const entries: MediaBrowseEntry[] = []
-  for (const parentId of parents) {
-    for (const row of listChildItems(library.id, parentId)) {
-      if (seen.has(row.id)) continue
-      seen.add(row.id)
-      entries.push(toBrowseEntry(row, withMovies))
-    }
-  }
-  return entries.sort(compareBrowse)
-}
-
-/** 同目录 NFO 候选：`movie.nfo` 优先，其次与视频同名的 `.nfo`（与写入侧的命名规则对应） */
 /** 同目录 NFO 的候选名（`movie.nfo` 优先，其次与视频同名的 `.nfo`）；「清除 NFO」共用这套命名 */
 export function nfoCandidates(source: MediaSourceRow): string[] {
   return ['movie.nfo', `${stripExtension(source.name)}.nfo`]
 }
 
-/** 读同目录 NFO；连接不可用、文件不存在、解析失败都只当作「没有 NFO」 */
-async function readNfoMeta(source: MediaSourceRow): Promise<{ meta: MediaNfoMeta | null; path: string }> {
-  const dirPath = dirnameRemotePath(source.path)
-  for (const name of nfoCandidates(source)) {
+/** 在指定目录里按候选名读 NFO；连接不可用、文件不存在、解析失败都只当作「没有 NFO」 */
+async function readNfoInDir(
+  connectionId: string,
+  dirPath: string,
+  names: readonly string[]
+): Promise<{ meta: MediaNfoMeta | null; path: string }> {
+  for (const name of names) {
     const target = joinRemotePath(dirPath, name)
     try {
-      const client = await getFileClient(source.connectionId)
+      const client = await getFileClient(connectionId)
       if (!(await client.exists(target))) continue
       const text = await client.readText(target)
       return { meta: parseNfoXml(text), path: target }
@@ -387,12 +343,77 @@ async function readNfoMeta(source: MediaSourceRow): Promise<{ meta: MediaNfoMeta
   return { meta: null, path: '' }
 }
 
-/** 单个影片的详情：与墙上同一套规则 + 同目录 NFO */
+/** 影片：读视频所在目录的 NFO */
+function readNfoMeta(source: MediaSourceRow): Promise<{ meta: MediaNfoMeta | null; path: string }> {
+  return readNfoInDir(source.connectionId, dirnameRemotePath(source.path), nfoCandidates(source))
+}
+
+/**
+ * 剧集详情：分季分集 + 剧集级元信息。
+ *
+ * 契约：
+ * - 只有带媒体源的集会进 `seasons`（没有源的残留条目不上详情）；
+ * - 图片一次取整库（剧集 / 季 / 集的图都在这份表里），封面按「自己 → 直接父条目」兜底，
+ *   所以集没剧照时会退回季海报、季没海报时会退回剧集封面；
+ * - 元信息读剧集目录下的 `tvshow.nfo`（写入侧固定用这个名字）。
+ */
+async function loadSeriesDetail(item: MediaItemRow, library: MediaLibrary | null): Promise<MediaDetailResult> {
+  const images = imagesByItem(listImagesByLibrary(item.libraryId))
+  const sourceByItem = new Map<string, MediaSourceRow[]>()
+  for (const source of listSourcesByLibrary(item.libraryId)) {
+    const list = sourceByItem.get(source.itemId)
+    if (list) list.push(source)
+    else sourceByItem.set(source.itemId, [source])
+  }
+  const seasons: MediaSeasonRef[] = []
+  for (const season of listSeasonItems(item.libraryId, item.id)) {
+    const episodes: MediaEpisodeRef[] = []
+    for (const episode of listEpisodeItems(item.libraryId, season.id)) {
+      const source = primarySourceOf(episode, sourceByItem.get(episode.id) ?? [])
+      if (!source) continue
+      episodes.push({
+        itemId: episode.id,
+        seasonNumber: episode.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+        // 刮削标题就写在 `name` 上（与影片同一套口径，见 `updateItemMetadata`）
+        title: episode.scrapedAt > 0 && episode.name.length > 0 ? episode.name : `第 ${episode.episodeNumber} 集`,
+        overview: episode.overview,
+        runtimeMinutes: episode.runtimeMinutes,
+        premiereDate: episode.premiereDate,
+        playUrl: buildMediaUrl(source.connectionId, source.id, source.name),
+        coverUrl: coverUrlOf(episode, images),
+        path: source.path,
+        size: source.size
+      })
+    }
+    seasons.push({
+      itemId: season.id,
+      seasonNumber: season.seasonNumber,
+      name: season.name,
+      posterUrl: coverUrlOf(season, images),
+      episodes
+    })
+  }
+  const nfo = await readNfoInDir(item.connectionId, item.path, [SERIES_NFO_NAME])
+  return {
+    item: toSeriesWallItem(item, images, library, seriesStatsOfOne(item.libraryId, item.id)),
+    meta: nfo.meta,
+    nfoPath: nfo.path,
+    actors: actorRefsOfItem(item.id),
+    images: detailImagesOf(item, images),
+    seasons
+  }
+}
+
+/** 单个条目（影片 / 剧集）的详情：与墙上同一套规则 + 磁盘上的 NFO */
 export async function loadMediaDetail(request: MediaDetailRequest): Promise<MediaDetailResult> {
   const itemId = request.itemId.trim()
-  if (itemId.length === 0) throw new MediaError('invalidArgument', '缺少影片 ID')
+  if (itemId.length === 0) throw new MediaError('invalidArgument', '缺少条目 ID')
   const item = getItem(itemId)
-  if (!item || item.type !== 'movie') throw new MediaError('notFound')
+  if (!item) throw new MediaError('notFound')
+  const library = getLibrary(item.libraryId) ?? null
+  if (item.type === 'series') return loadSeriesDetail(item, library)
+  if (item.type !== 'movie') throw new MediaError('notFound')
   const source = primarySourceOf(item, listSourcesByItem(item.id))
   if (!source) throw new MediaError('notFound')
 
@@ -400,14 +421,14 @@ export async function loadMediaDetail(request: MediaDetailRequest): Promise<Medi
     ...listImagesByItem(item.id),
     ...(item.parentId.length > 0 ? listImagesByItem(item.parentId) : [])
   ])
-  const library = getLibrary(item.libraryId)
   const nfo = await readNfoMeta(source)
   return {
-    item: toWallItem(item, source, images, library ?? null),
+    item: toWallItem(item, source, images, library),
     meta: nfo.meta,
     nfoPath: nfo.path,
     actors: actorRefsOfItem(item.id),
-    images: detailImagesOf(item, images)
+    images: detailImagesOf(item, images),
+    seasons: []
   }
 }
 

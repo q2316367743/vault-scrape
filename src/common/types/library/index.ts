@@ -6,25 +6,30 @@
  *   存储（连接）只负责怎么连，**不再配置刮削器**；
  * - 一个存储连接可以出现在多个资料库里，也可以在一个资料库里出现多次；
  * - `path` 一律是**连接内绝对路径**（`/` 表示连接根），不是本机路径；
- * - `type` 是资料库类型：目前只落地「影视」（`movie`），书籍等类型只在类型层预留；
+ * - `type` 是资料库类型：目前落地「影视」（`movie`）与「剧集」（`tv`，扫描出剧集 / 季 / 集三层），
+ *   书籍等类型只在类型层预留；类型决定扫描按 `setting.library.extensions` 的哪份后缀清单识别，
+ *   以及扫描/刮削走电影链路还是剧集链路；建库后不可修改；
  * - `scrapers` **可以为空**：空数组表示这个库不刮削，扫描只负责索引；
  *   非空时全部必须是「插件 ID + 已启用」的刮削器，运行时不可用会单独报错；
  * - 扫描是「递归遍历每个目录 + 按路径 upsert 条目 + 清理磁盘上已消失的条目」，
  *   `minFileSizeMb` 以下的视频直接不入库；
  * - 刮削只针对库内**尚未刮削**的条目，产出固定写成 Jellyfin 目录规范
  *   （文件夹 / 视频 / NFO 同名，图片与影片同目录），这两件事没有开关；
+ *   `tv` 库的刮削单位是**剧集**（一行 = 一个剧集），产物固定为
+ *   `<剧集名>/Season NN/<剧集名> S01E01.ext` + `tvshow.nfo` / `season.nfo` / 每集 NFO + 图片；
  * - `localFirst` 为真时先读本地 NFO 与本地图片，只从互联网补缺失项；
  * - 删除库只删配置与库内条目：磁盘文件不动。
  */
 import type { ScrapeTaskSnapshot } from '../scrape'
 
 /** 资料库类型：新类型要同时补 `LIBRARY_TYPE_LABELS` 与 `DEFAULT_LIBRARY_EXTENSIONS` */
-export type LibraryType = 'movie'
+export type LibraryType = 'movie' | 'tv'
 
-export const LIBRARY_TYPES: readonly LibraryType[] = ['movie']
+export const LIBRARY_TYPES: readonly LibraryType[] = ['movie', 'tv']
 
 export const LIBRARY_TYPE_LABELS: Readonly<Record<LibraryType, string>> = {
-  movie: '影视'
+  movie: '影视',
+  tv: '剧集'
 }
 
 /** 资料库类型的中文名；脏数据回落类型本身 */
@@ -50,7 +55,7 @@ export interface MediaLibraryPathDraft {
 export interface MediaLibrary {
   id: string
   name: string
-  /** 库类型；目前只有「影视」 */
+  /** 库类型；`movie` = 一个视频文件一条条目，`tv` = 剧集 / 季 / 集三层 */
   type: LibraryType
   /** 该库使用的刮削器插件 ID；**空数组表示不刮削** */
   scrapers: string[]
@@ -90,7 +95,7 @@ export interface MediaLibraryDraft {
 
 /** 墙面筛选与列表展示用的库摘要（计数与封面由影视墙读模型给出） */
 export interface MediaLibrarySummary extends MediaLibrary {
-  /** 该库在墙上的影片数 */
+  /** 该库在墙上的条目数：影视库数影片，剧集库数剧集（整部剧集算一条） */
   videoCount: number
   /**
    * 库卡片封面拼贴用的海报地址（`storage://`），最多 4 张、按最近添加排序。

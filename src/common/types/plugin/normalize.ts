@@ -101,7 +101,12 @@ function normalizeEpisodeRef(raw: unknown): PluginEpisodeRef | undefined {
   if (!source) return undefined
   const index = optionalCount(source, 'index')
   if (index === undefined) return undefined
-  return { id: optional(source, 'id'), index, title: optional(source, 'title') }
+  return {
+    id: optional(source, 'id'),
+    season: optionalCount(source, 'season'),
+    index,
+    title: optional(source, 'title')
+  }
 }
 
 function normalizeEpisode(raw: unknown): PluginEpisode | null {
@@ -111,8 +116,10 @@ function normalizeEpisode(raw: unknown): PluginEpisode | null {
   if (index === undefined) return null
   return {
     id: optional(source, 'id'),
+    season: optionalCount(source, 'season'),
     index,
     title: optional(source, 'title'),
+    plot: optional(source, 'plot'),
     duration: optionalCount(source, 'duration'),
     releaseDate: optional(source, 'releaseDate')
   }
@@ -187,6 +194,7 @@ export function normalizeDetail(raw: unknown, fallbackId: string): PluginMovieDe
     releaseDate: optional(source, 'releaseDate'),
     duration: optionalCount(source, 'duration'),
     tags: optionalStringArray(source, 'tags'),
+    genres: optionalStringArray(source, 'genres'),
     episodes: episodes.length > 0 ? episodes : undefined
   }
 }

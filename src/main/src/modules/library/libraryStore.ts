@@ -15,6 +15,7 @@ import {
   deleteSourcesByLibrary
 } from '$/db/repo/mediaCleanupRepo'
 import { countMovieItems, listItems, listMovieItems } from '$/db/repo/mediaRepo'
+import { countSeriesItems, listSeriesItems } from '$/db/repo/mediaSeriesRepo'
 import {
   deleteImagesByConnection,
   deleteImagesByLibrary,
@@ -164,13 +165,15 @@ function primaryImageOf(images: readonly MediaImageRow[]): Map<string, MediaImag
  *
  * 只用仓储函数（不能 import `mediaWall`，否则循环依赖）；封面规则与墙面一致：
  * 条目自己的 primary 图优先，没有就退回父目录条目的 primary 图。
+ * 影视库拼影片的海报，剧集库拼剧集自己的海报（剧集目录级海报挂在剧集条目上）。
  */
-function coverUrlsOf(libraryId: string): string[] {
-  const images = primaryImageOf(listImagesByLibrary(libraryId))
-  const movies = [...listMovieItems(libraryId)].sort((left, right) => right.dateAdded - left.dateAdded)
+function coverUrlsOf(library: MediaLibrary): string[] {
+  const images = primaryImageOf(listImagesByLibrary(library.id))
+  const entries = library.type === 'tv' ? listSeriesItems(library.id) : listMovieItems(library.id)
+  const items = [...entries].sort((left, right) => right.dateAdded - left.dateAdded)
   const urls: string[] = []
   const seen = new Set<string>()
-  for (const item of movies) {
+  for (const item of items) {
     const image = images.get(item.id) ?? (item.parentId.length > 0 ? images.get(item.parentId) : undefined)
     if (!image || seen.has(image.id)) continue
     seen.add(image.id)
@@ -180,12 +183,16 @@ function coverUrlsOf(libraryId: string): string[] {
   return urls
 }
 
-/** 带影片计数与封面拼贴的库摘要（影视墙筛选器、库列表与首页共用） */
+/**
+ * 带条目计数与封面拼贴的库摘要（影视墙筛选器、库列表与首页共用）。
+ *
+ * `videoCount` 是「这个库在墙上有多少张卡」：影视库数影片，剧集库数剧集。
+ */
 export function listSummaries(): MediaLibrarySummary[] {
   return readLibraries().map((library) => ({
     ...library,
-    videoCount: countMovieItems(library.id),
-    coverUrls: coverUrlsOf(library.id)
+    videoCount: library.type === 'tv' ? countSeriesItems(library.id) : countMovieItems(library.id),
+    coverUrls: coverUrlsOf(library)
   }))
 }
 

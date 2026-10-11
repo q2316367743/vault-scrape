@@ -10,30 +10,24 @@
     />
 
     <template v-if="detail">
-      <media-detail-hero :detail="detail" :protect="protect" @play="play" />
+      <media-detail-hero :detail="detail" :protect="protect" />
       <div ref="heroEnd" class="hero-end" aria-hidden="true"></div>
 
       <div class="detail-body">
         <t-alert v-if="failure" theme="error" :message="failure" />
 
-        <section
-          ref="playerBlock"
-          class="detail-section player-block"
-          :class="{ 'is-fullscreen': playerFullscreen }"
-        >
+        <section class="detail-section player-block" :class="{ 'is-fullscreen': playerFullscreen }">
           <media-player
-            v-if="detail.item.playUrl"
-            :url="detail.item.playUrl"
-            :poster="detail.item.coverUrl"
+            v-if="playUrl"
+            :url="playUrl"
+            :poster="poster"
             :protect="protect"
             @web-fullscreen="playerFullscreen = $event"
           />
-          <t-alert
-            v-else
-            theme="warning"
-            message="没有找到这个影片的播放地址，请回影视墙刷新后再试"
-          />
+          <t-alert v-else theme="warning" :message="noSourceHint" />
         </section>
+
+        <media-episode-list :seasons="seasons" :active-id="activeId" @select="select" />
 
         <section v-if="plot.length > 0" class="detail-section">
           <h4 class="section-title">剧情简介</h4>
@@ -47,7 +41,7 @@
             :protect="protect"
             :width="168"
             :height="238"
-            alt="影片封面"
+            :alt="isSeries ? '剧集封面' : '影片封面'"
             fit="cover"
           />
           <span class="poster-title" :title="detail.item.title">{{ posterTitle }}</span>
@@ -95,12 +89,11 @@
  *   区块底色一律不要铺：页面容器（`windows/main/App.vue` 的 `.main-container`）已经是 `--td-bg-color-container`，
  *   只有头部渐隐需要显式取这个 token 才与面板同色（取 `--td-bg-color-page` 会压出色带）；
  * - 「还原刮削前」用于一键还原成刮削前的样子：二次确认后由主进程删掉刮削数据与磁盘 NFO，
- *   按 NFO 里记的「刮削前位置」把视频改回原名、移回原目录，本地图片搬回原处，刮削下载的
- *   图片 / 预告片删掉；目标已存在时保持现状、不覆盖，演员档案不受影响；清完重新读取详情，不自动重刮；
- * - NSFW 保护按「全局开关 + 该存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
- *   头部在保护命中时给**模糊底图**、点一下看原图，封面与剧照逐张遮罩，播放器仍由 `MediaPlayer` 自己挡一层；
- * - 播放地址只用主进程给的 `playUrl`（`storage://`），渲染层不拼磁盘路径；
- *   头部的「播放」只把播放器滚进视野，不自动播放。
+ *   按 NFO 记的「刮削前位置」把视频改回原名、移回原目录（剧集连剧集目录一起搬回、逐集还原），
+ *   本地图片搬回原处、删掉刮削下载的图片 / 预告片；目标已存在时保持现状、不覆盖；清完重读详情，不自动重刮；
+ * - NSFW 保护按「全局开关 + 该存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；头部给**模糊底图**、点一下看原图，封面与剧照逐张遮罩，播放器仍由 `MediaPlayer` 自己挡一层；
+ * - 播放地址只用主进程给的 `playUrl`（`storage://`），渲染层不拼磁盘路径；剧集播的是「选中的那一集」，
+ *   选集区在播放器下方（默认第一集、重读后回落第一集）。
  */
 import { onMounted, ref, useTemplateRef } from 'vue'
 import { mediaApi } from '@/api/media'
@@ -111,20 +104,32 @@ import { MessageBoxUtil, MessageUtil } from '@/utils/modal'
 import MediaActorStrip from './components/MediaActorStrip.vue'
 import MediaDetailHero from './components/MediaDetailHero.vue'
 import MediaDetailToolbar from './components/MediaDetailToolbar.vue'
+import MediaEpisodeList from './components/MediaEpisodeList.vue'
 import MediaFactGrid from './components/MediaFactGrid.vue'
 import MediaNfoBlock from './components/MediaNfoBlock.vue'
 import MediaStillWall from './components/MediaStillWall.vue'
 import { useDetailScroll } from './composables/useDetailScroll'
 import { useDetailView } from './composables/useDetailView'
+import { useEpisodeSelection } from './composables/useEpisodeSelection'
 import { useMediaDetail } from './composables/useMediaDetail'
 
 const { detail, loading, failure, load } = useMediaDetail()
 const { connections, refresh } = useFileConnections()
 /** 展示口径（连接反查 / 保护判定 / 封面块 / 剧照墙 / 信息格）都在这里 */
-const { protect, factCells, stillImages, plot, posterUrl, posterTitle, posterNote } =
-  useDetailView(detail, connections)
+const {
+  protect,
+  isSeries,
+  factCells,
+  stillImages,
+  plot,
+  posterUrl,
+  posterTitle,
+  posterNote,
+  noSourceHint
+} = useDetailView(detail, connections)
+/** 剧集：播哪一集、播放地址与海报都由选集状态折算（影片没有集时回落条目自己） */
+const { seasons, activeId, playUrl, poster, select } = useEpisodeSelection(detail)
 
-const playerBlock = ref<HTMLElement | null>(null)
 /** 播放器处于网页全屏：它要反过来盖住悬浮条 */
 const playerFullscreen = ref(false)
 const clearing = ref(false)
@@ -134,17 +139,17 @@ const scrollBox = useTemplateRef<HTMLElement>('scrollBox')
 const heroEnd = useTemplateRef<HTMLElement>('heroEnd')
 const collapsed = useDetailScroll(scrollBox, heroEnd)
 
-/** 头部的「播放」：把播放器滚到视野里，播放与否交给用户 */
-function play(): void {
-  playerBlock.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-}
-
-/** 还原这部影片的刮削成果：先二次确认，清完重新读取详情 */
+/** 还原这部影片 / 剧集的刮削成果：先二次确认，清完重新读取详情 */
 async function onClearNfo(): Promise<void> {
   if (!detail.value) return
+  const isSeries = detail.value.item.type === 'series'
+  const subject = isSeries ? '这部剧集' : '这部影片'
+  const moved = isSeries
+    ? '每一集的视频改回原来的文件名，剧集目录与集文件搬回原来的位置'
+    : '视频改回原来的文件名，刮削时挪动过文件的话再搬回原来的位置'
   try {
     await MessageBoxUtil.confirm(
-      '这部影片会还原成刮削前的样子：刮削数据（标题、简介、分类、封面与参演名单）清空，磁盘上的 NFO 与刮削下载的图片、预告片一并删掉，视频改回原来的文件名；刮削时挪动过文件的话，还会搬回原来的位置。原来的位置已经有同名文件时保持现状、不覆盖。演员档案不受影响，之后不会自动重新刮削。确定还原？',
+      `${subject}会还原成刮削前的样子：刮削数据（标题、简介、分类、封面与参演名单）清空，磁盘上的 NFO 与刮削下载的图片、预告片一并删掉，${moved}。原来的位置已经有同名文件时保持现状、不覆盖。演员档案不受影响，之后不会自动重新刮削。确定还原？`,
       '还原刮削前',
       { confirmButtonText: '还原' }
     )
@@ -158,17 +163,19 @@ async function onClearNfo(): Promise<void> {
     MessageUtil.error(result.message)
     return
   }
-  const { removedNfo, removedAssets, restoredAssets, restored, removedDir } = result.data
+  const { removedNfo, removedAssets, restoredAssets, restored, removedDirs } = result.data
   const parts = ['已清除刮削数据']
   parts.push(
     restored
-      ? '视频已改回原文件名并移回原位置'
-      : '视频保持当前位置（NFO 里没有可用的还原记录，或原位置已被占用）'
+      ? isSeries
+        ? '剧集目录与集文件已改回原来的名字与位置'
+        : '视频已改回原文件名并移回原位置'
+      : '文件保持当前位置（NFO 里没有可用的还原记录，或原位置已被占用）'
   )
   if (removedNfo.length > 0) parts.push(`删掉 ${removedNfo.length} 个 NFO 文件`)
   if (removedAssets.length > 0) parts.push(`删掉 ${removedAssets.length} 个刮削下载的图片 / 预告片`)
   if (restoredAssets.length > 0) parts.push(`${restoredAssets.length} 张本地图片已搬回原位置`)
-  if (removedDir.length > 0) parts.push('已删掉搬空的影片目录')
+  if (removedDirs.length > 0) parts.push(`已删掉 ${removedDirs.length} 个搬空的目录`)
   MessageUtil.success(parts.join('，'))
   await load()
 }
@@ -240,7 +247,6 @@ onMounted(() => {
    */
   position: relative;
   z-index: 0;
-  scroll-margin-top: 12px;
 }
 
 /* 网页全屏：播放器占满窗口，反过来要盖住标题栏（3）与页面里的图片层（1 / 2） */

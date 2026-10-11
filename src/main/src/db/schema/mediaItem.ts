@@ -3,7 +3,9 @@ import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 /**
  * 媒体条目表（Jellyfin 的 BaseItem）。
  *
- * 一个视频文件 = 一个 `movie` 条目；目录按需生成 `folder` 条目做父子层级。
+ * 影视库：一个视频文件 = 一个 `movie` 条目；目录按需生成 `folder` 条目做父子层级。
+ * 剧集库：`series`（剧集）→ `season`（季）→ `episode`（集）三层，
+ * **只有 `episode` 挂媒体源**；剧集与季条目靠 `parent_id` 串层级、没有媒体源。
  * 刮削元数据写在条目上，所以重扫只会更新媒体源、不会丢元数据。
  */
 export const mediaItemTable = sqliteTable(
@@ -12,17 +14,24 @@ export const mediaItemTable = sqliteTable(
     id: text('id').primaryKey(),
     libraryId: text('library_id').notNull(),
     connectionId: text('connection_id').notNull(),
-    /** 条目类型；本次只落地 movie / folder，series 等后续再接 */
-    type: text('type').$type<'movie' | 'folder'>().notNull().default('movie'),
+    /** 条目类型；影视库用 movie / folder，剧集库用 series / season / episode（+ 组织层 folder） */
+    type: text('type')
+      .$type<'movie' | 'folder' | 'series' | 'season' | 'episode'>()
+      .notNull()
+      .default('movie'),
     /** 父条目 ID（目录层级），根下为连接内目录路径对应的 folder 或空串 */
     parentId: text('parent_id').notNull().default(''),
-    /** 连接内绝对路径：movie 是主媒体源路径，folder 是目录路径 */
+    /** 连接内绝对路径：movie / episode 是主媒体源路径，folder / series / season 是目录路径 */
     path: text('path').notNull().default(''),
     name: text('name').notNull(),
     sortName: text('sort_name').notNull().default(''),
     originalTitle: text('original_title').notNull().default(''),
     /** 番号（刮削或文件名解析得到），识别不到为空串 */
     num: text('num').notNull().default(''),
+    /** 季号（剧集链路）：series 为 0，season / episode 是实际季号，`0` 表示特别篇 */
+    seasonNumber: integer('season_number').notNull().default(0),
+    /** 集号（剧集链路）：仅 episode 有值，从 1 开始；其他类型为 0 */
+    episodeNumber: integer('episode_number').notNull().default(0),
     overview: text('overview').notNull().default(''),
     tagline: text('tagline').notNull().default(''),
     premiereDate: text('premiere_date').notNull().default(''),
@@ -40,10 +49,11 @@ export const mediaItemTable = sqliteTable(
     /** 上次刮削完成时间；0 表示尚未刮削 */
     scrapedAt: integer('scraped_at').notNull().default(0),
     /**
-     * 上次扫描时同目录有没有 NFO（`movie.nfo` 或与视频同名的 `.nfo`）；1 = 有。
+     * 上次扫描时同目录有没有 NFO；1 = 有。
      *
-     * 这一列归**扫描**维护（刮削元数据列不归扫描管），只是「磁盘上有没有 NFO」的事实
-     * 标记——影视墙不再按刮削与否分类，所以它当前不参与任何界面判定。
+     * 影视库看 `movie.nfo` 或与视频同名的 `.nfo`，剧集库看剧集根的 `tvshow.nfo`
+     * 或与视频同名的 `.nfo`。这一列归**扫描**维护（刮削元数据列不归扫描管），
+     * 只是「磁盘上有没有 NFO」的事实标记，不参与界面判定。
      */
     hasNfo: integer('has_nfo').notNull().default(0),
     dateAdded: integer('date_added').notNull(),

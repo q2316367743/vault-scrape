@@ -1,6 +1,12 @@
 <template>
   <div class="detail-bar" :class="{ 'is-solid': collapsed }">
-    <t-button class="bar-button" shape="circle" aria-label="返回" @click="goBack">
+    <t-button
+      class="bar-button"
+      variant="text"
+      shape="circle"
+      aria-label="返回"
+      @click="goBack"
+    >
       <chevron-left-icon />
     </t-button>
 
@@ -14,6 +20,7 @@
     >
       <t-button
         class="bar-button"
+        variant="text"
         :shape="collapsed ? 'circle' : 'round'"
         :loading="busy"
         aria-label="更多"
@@ -133,12 +140,18 @@ function onAction(option: DropdownOption): void {
   opacity: 0.82;
 }
 
-/* 浮在图片上：面板底色 + 阴影，深浅两种主题、明暗两侧的图都能看清 */
+/*
+ * 两枚都是文字按钮（`variant="text"`）：不铺面板底色，压在图上更轻。
+ * 没落底（还没滚出去）时封面图就在身后，用反色字才看得清；落到横幅底色上再换回常规文字色。
+ */
 .bar-button {
   position: relative;
   flex-shrink: 0;
   pointer-events: auto;
-  box-shadow: var(--td-shadow-1);
+}
+
+.detail-bar:not(.is-solid) .bar-button {
+  color: var(--td-text-color-anti);
 }
 
 .bar-title {
