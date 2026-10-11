@@ -104,13 +104,13 @@
 
 ## 6. 内置插件与插件系统
 
-- `builtinPlugins.ts` 导出 `BUILTIN_PLUGINS`（当前仅 `r18-offline`，`meta.name = 'R18 离线数据包'`，`env: []`）与 `findBuiltinPlugin(id)`；`invoke` 把四个方法直接映射到查询层：`search → offlineSearch`、`detail → offlineDetail`、`covers → offlineCovers`、`extras → offlineExtras`。插件 id 取自 `@common/types/plugin` 的 `R18_OFFLINE_PLUGIN_ID`（见 §1），文件内再 `export` 一次供主进程其它模块引用。
+- `builtinPlugins.ts` 的 `BuiltinPlugin` 带 `kind`，导出 `listBuiltinPlugins(kind)` 与 `findBuiltinPlugin(kind, id)`（列表 / 查找都按类别过滤）；当前只有**影片信息**类别的 `r18-offline`（`meta.kind = 'movie'`、`meta.name = 'R18 离线数据包'`、`env: []`），`invoke` 把四个方法直接映射到查询层：`search → offlineSearch`、`detail → offlineDetail`、`covers → offlineCovers`、`extras → offlineExtras`。插件 id 取自 `@common/types/plugin` 的 `R18_OFFLINE_PLUGIN_ID`（见 §1），文件内再 `export` 一次供主进程其它模块引用。
 - **它只通过「资料库的刮削器」被使用**：`scrapers` 是资料库自己的字段（`library.scrapers`），**连接（`FileConnection`）上已没有该字段**——同一个存储可以挂多个资料库，各自选不同的刮削器。新建资料库时，只要候选列表里有 `R18_OFFLINE_PLUGIN_ID` 就默认勾选它（插件未启用 / 加载失败时保持不勾）；一个刮削器都不勾选 = 该库不刮削（允许，但扫描后不会自动刮削、也点不了「刮削」）。细节见[资料库](../media/01-media-library.md)。
-- `plugins.json` 的记录多了 `builtin: boolean`；主进程启动 / 列表 / 调用前会调幂等的 `ensureBuiltinPlugins()` 把内置插件补进索引（保留用户设置的 `enabled` 与环境变量值，元信息没变就不写盘）。同 ID 冲突时内置插件接管并写 `warn` 日志。
+- **影片类别**的 `plugin/movie/plugins.json` 里多了一条 `builtin: boolean` 记录；主进程启动 / 列表 / 调用前会把内置插件幂等补齐进**所在类别**的索引（保留用户设置的 `enabled` 与环境变量值，元信息没变就不写盘）。同 ID 冲突时内置插件接管并写 `warn` 日志。
 - `PluginSummary.source` 为 `'builtin' | 'file'`：内置插件的 `filePath` 是空串，界面隐藏「编辑代码」「删除」，并显示「内置」标签与「内置实现（无源码文件）」。
 - 内置插件 `env` 为空数组，`hasEnv` 恒为 `false`：详情页不渲染配置区块（`PluginDetail.vue` 上按 `v-if="plugin.hasEnv"` 门控），「R18 离线数据包」这类无需参数的内置插件不会出现空的环境变量区域。
 - 调用路径：`invokePlugin` 校验存在 → 已启用 → 参数非空，命中内置即 `invokeWithTimeout(() => builtin.invoke(...), {…})`（与 JS 插件共用超时与日志），**不做 env 校验、不编译**；JS 插件路径保持不变。
-- `readPluginCode` / `savePluginCode` / 导入覆盖 / 删除对内置插件分别抛 `notFound` / `unsupported`，`removePlugin` 与 `writePluginSource` 在 store 层再兜一层。
+- `plugin:movie:readCode` / `plugin:movie:saveCode` / 导入覆盖 / 删除对内置插件分别抛 `notFound` / `unsupported`，`removePlugin` 与 `writePluginSource` 在 store 层再兜一层。
 
 ## 7. 检查更新
 
@@ -118,7 +118,7 @@
 
 - 只发一个 `HEAD`（`maxRedirects: 0`，超时 15 s，UA `vault-scrape-offline/1.0`），从 `Location` 头解析最新数据包日期；跟随重定向的客户端抛错时从 `error.response.headers.location` 兜底；
 - **自动检查**：启动时 `runOfflineStartupCheck()`（`src/main/index.ts` 在 `createWindow()` 之后 `void` 调用）。距上次成功检查不足 7 天直接返回；发现更新广播 `offline:updateAvailable`；**只提示，绝不自动下载**；
-- **主动检查**：插件页「检查更新」按钮走 `offline:check`，立即联网并把结果写回状态；
+- **主动检查**：插件页「影片信息」tab 里选中 `r18-offline` 后的「检查更新」按钮走 `offline:check`，立即联网并把结果写回状态；
 - 只有成功才写 `lastCheckAt`，失败保留旧值（下一次启动会重试），日志 scope 为 `offline`。
 
 ## 8. IPC 通道
@@ -141,9 +141,9 @@
 
 ## 9. 界面
 
-- 插件页 `PluginDetail.vue`：选中内置插件时在详情里挂 `components/OfflinePackPanel.vue`（内置插件没有配置区块，面板直接接在概览下方）——四个按钮（检查更新 / 下载并导入 / 本地导入 / 删除）、阶段进度与取消、数据包日期 / 导入时间 / 上次检查 / 影片数量 / 库大小 / 库路径、上游发布节奏与磁盘占用提示；下载与删除走 `DialogPlugin.confirm`。
+- 插件页「影片信息」tab（`/plugin/movie`）：选中内置插件时由 `MoviePluginPage.vue` 把 `movie/components/OfflinePackPanel.vue` 注入 `PluginDetail.vue` 的 `#extra` 插槽（内置插件没有配置区块，面板直接接在概览下方）——四个按钮（检查更新 / 下载并导入 / 本地导入 / 删除）、阶段进度与取消、数据包日期 / 导入时间 / 上次检查 / 影片数量 / 库大小 / 库路径、上游发布节奏与磁盘占用提示；下载与删除走 `DialogPlugin.confirm`。面板只在「当前选中的是内置插件」时出现。
 - 应用外壳 `App.vue`：`composables/useOfflineUpdateNotice.ts` 先订阅 `offline:updateAvailable`，再在挂载时读一次状态，**每次启动最多提示一次**「离线数据包有新版本 X（当前 Y），可在插件页更新」。
-- 状态集中在 `pages/plugin/composables/useOfflineData.ts`（模块级单例），跨组件共享同一个任务状态与进度。
+- 状态集中在 `pages/plugin/movie/composables/useOfflineData.ts`（模块级单例），跨组件共享同一个任务状态与进度；它只被数据包面板使用。
 
 ## 10. 新增错误码
 
@@ -169,15 +169,15 @@
 | `src/main/src/modules/offline/offlineEvents.ts` | 进度 / 完成 / 有更新三条推送 |
 | `src/main/src/modules/offline/offlineIpc.ts` | IPC 注册（含系统文件选择框） |
 | `src/common/types/plugin/builtin.ts` | 内置插件常量 `R18_OFFLINE_PLUGIN_ID = 'r18-offline'`（唯一一份，渲染层资料库表单与主进程注册表共用；由 `src/common/types/plugin/index.ts` 导出） |
-| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义（`r18-offline`），四个方法映射到查询层；从 `@common/types/plugin` 引入 `R18_OFFLINE_PLUGIN_ID` 后再 `export` |
-| `src/renderer/src/windows/main/pages/plugin/components/OfflinePackPanel.vue` | 数据包面板 |
-| `src/renderer/src/windows/main/pages/plugin/composables/useOfflineData.ts` | 数据包状态与操作的单例 |
+| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义（影片类别的 `r18-offline`，`kind: 'movie'`），四个方法映射到查询层；按类别导出 `listBuiltinPlugins(kind)` / `findBuiltinPlugin(kind, id)`，从 `@common/types/plugin` 引入 `R18_OFFLINE_PLUGIN_ID` 后再 `export` |
+| `src/renderer/src/windows/main/pages/plugin/movie/components/OfflinePackPanel.vue` | 数据包面板（挂在「影片信息」tab 的内置插件详情里） |
+| `src/renderer/src/windows/main/pages/plugin/movie/composables/useOfflineData.ts` | 数据包状态与操作的单例 |
 | `src/renderer/src/windows/main/composables/useOfflineUpdateNotice.ts` | 启动时的更新提示 |
 
 ## 12. 本期不做（后续项）
 
 - 增量更新（只有全量包）与后台定时下载：自动检查只提示，下载始终由用户触发；
 - 数据包内的封面 / 预告片本地缓存（仍需联网取 DMM 资源）；
-- `machine_translation` 的标题翻译接入、演员头像下载；
+- `machine_translation` 的标题翻译接入（翻译插件类别已预留，见 [03-plugin-categories.md](./03-plugin-categories.md)）；离线数据包只有番号 / 标题 / 演员名单，**不提供演员资料**，`r18-offline` 不实现 `actor` 方法，也拿不到演员头像；
 - 多数据包并存 / 版本回滚（当前只保留一份可用库）；
 - 导入断点续传（下载中断即从头开始）。

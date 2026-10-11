@@ -29,7 +29,7 @@ export function useScraperOptions() {
 
   async function load(): Promise<void> {
     loading.value = true
-    const result = await pluginApi.list()
+    const result = await pluginApi.movie.list()
     loading.value = false
     if (!isPluginOk(result)) return
     options.value = result.data.filter(isUsable).map(toOption)

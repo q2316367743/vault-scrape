@@ -4,12 +4,14 @@
  * 契约：
  * 1. 内置插件没有 `.js` 源码，不落盘、不可编辑、不可删除（见 `pluginStore` 的守卫）；
  * 2. 与 JS 插件共用同一套调用入口 `pluginRegistry.invokePlugin`，因此同样支持启停与测试面板；
- * 3. 数据缺失、库损坏等一律由实现体抛 `PluginError`（如 `offlineMissing`）。
+ * 3. 类别由 `meta.kind` 决定，查找与注册都按类别过滤（目前只有「影片信息」类别有内置插件）；
+ * 4. 数据缺失、库损坏等一律由实现体抛 `PluginError`（如 `offlineMissing`）。
  */
 import { PluginError, R18_OFFLINE_PLUGIN_ID } from '@common/types/plugin'
 import type {
   PluginEnvField,
   PluginInvokeData,
+  PluginKind,
   PluginMeta,
   PluginMethod
 } from '@common/types/plugin'
@@ -46,6 +48,7 @@ export const BUILTIN_PLUGINS: BuiltinPlugin[] = [
   {
     meta: {
       id: R18_OFFLINE_PLUGIN_ID,
+      kind: 'movie',
       name: 'R18 离线数据包',
       version: '1.0.0',
       author: 'vault-scrape',
@@ -58,6 +61,11 @@ export const BUILTIN_PLUGINS: BuiltinPlugin[] = [
   }
 ]
 
-export function findBuiltinPlugin(id: string): BuiltinPlugin | null {
-  return BUILTIN_PLUGINS.find((item) => item.meta.id === id) ?? null
+/** 某个类别的内置插件 */
+export function listBuiltinPlugins(kind: PluginKind): BuiltinPlugin[] {
+  return BUILTIN_PLUGINS.filter((item) => item.meta.kind === kind)
+}
+
+export function findBuiltinPlugin(kind: PluginKind, id: string): BuiltinPlugin | null {
+  return BUILTIN_PLUGINS.find((item) => item.meta.kind === kind && item.meta.id === id) ?? null
 }

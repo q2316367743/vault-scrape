@@ -1,18 +1,40 @@
 /**
  * 插件列表的页面状态：加载、选中、启停、导入、删除与源码读写。
  *
- * 选中项持久化到 localStorage；该插件被删除后自动回落到第一个可用插件。
+ * 三类插件（影片信息 / 演员信息 / 翻译）各持一份「模块级」状态与各自的选中项
+ * localStorage key，互不影响；`usePluginManager(kind)` 首次调用时创建，之后复用同一份。
+ * 选中项被删除后自动回落到该类别第一个可用插件。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, type ComputedRef, type Ref } from 'vue'
 import { useLocalStorage } from '@vueuse/core'
 import { MessagePlugin } from 'tdesign-vue-next'
-import { pluginApi } from '@/api'
-import type { PluginImportResult, PluginSummary } from '@common/types/plugin'
+import { pluginBridge } from '@/api'
+import type { PluginImportResult, PluginKind, PluginSummary } from '@common/types/plugin'
 
-const ACTIVE_PLUGIN_KEY = 'vault-scrape:plugin-active'
+/** 选中项持久化 key 前缀，实际 key 为 `<前缀>:<类别>` */
+const ACTIVE_PLUGIN_KEY_PREFIX = 'vault-scrape:plugin-active'
 
-export function usePlugins() {
-  const storedActiveId = useLocalStorage(ACTIVE_PLUGIN_KEY, '')
+export interface PluginManager {
+  plugins: Ref<PluginSummary[]>
+  loading: Ref<boolean>
+  activeId: Ref<string>
+  active: ComputedRef<PluginSummary | null>
+  refresh: () => Promise<void>
+  select: (id: string) => void
+  setEnabled: (plugin: PluginSummary, enabled: boolean) => Promise<void>
+  reorder: (ids: string[]) => Promise<void>
+  remove: (plugin: PluginSummary) => Promise<void>
+  importPlugins: (overwrite?: boolean) => Promise<PluginImportResult | null>
+  readCode: (id: string) => Promise<string | null>
+  saveCode: (id: string, code: string) => Promise<boolean>
+  applySummary: (summary: PluginSummary) => void
+}
+
+const managers = new Map<PluginKind, PluginManager>()
+
+function createManager(kind: PluginKind): PluginManager {
+  const bridge = pluginBridge(kind)
+  const storedActiveId = useLocalStorage(`${ACTIVE_PLUGIN_KEY_PREFIX}:${kind}`, '')
   const plugins = ref<PluginSummary[]>([])
   const loading = ref(false)
   const activeId = ref(storedActiveId.value)
@@ -30,7 +52,7 @@ export function usePlugins() {
 
   async function refresh(): Promise<void> {
     loading.value = true
-    const result = await pluginApi.list()
+    const result = await bridge.list()
     loading.value = false
     if (!result.ok) {
       MessagePlugin.error(result.message)
@@ -42,7 +64,7 @@ export function usePlugins() {
   }
 
   async function setEnabled(plugin: PluginSummary, enabled: boolean): Promise<void> {
-    const result = await pluginApi.setEnabled(plugin.id, enabled)
+    const result = await bridge.setEnabled(plugin.id, enabled)
     if (!result.ok) {
       MessagePlugin.error(result.message)
       return
@@ -62,7 +84,7 @@ export function usePlugins() {
       .map((id) => byId.get(id))
       .filter((item): item is PluginSummary => item !== undefined)
     if (next.length === previous.length) plugins.value = next
-    const result = await pluginApi.reorder(ids)
+    const result = await bridge.reorder(ids)
     if (!result.ok) {
       MessagePlugin.error(result.message)
       await refresh()
@@ -72,7 +94,7 @@ export function usePlugins() {
   }
 
   async function remove(plugin: PluginSummary): Promise<void> {
-    const result = await pluginApi.remove(plugin.id)
+    const result = await bridge.remove(plugin.id)
     if (!result.ok) {
       MessagePlugin.error(result.message)
       return
@@ -83,7 +105,7 @@ export function usePlugins() {
 
   /** 导入本机插件文件；取消选择时返回 null */
   async function importPlugins(overwrite = false): Promise<PluginImportResult | null> {
-    const result = await pluginApi.import(overwrite)
+    const result = await bridge.import(overwrite)
     if (!result.ok) {
       MessagePlugin.error(result.message)
       return null
@@ -93,7 +115,7 @@ export function usePlugins() {
   }
 
   async function readCode(id: string): Promise<string | null> {
-    const result = await pluginApi.readCode(id)
+    const result = await bridge.readCode(id)
     if (!result.ok) {
       MessagePlugin.error(result.message)
       return null
@@ -102,7 +124,7 @@ export function usePlugins() {
   }
 
   async function saveCode(id: string, code: string): Promise<boolean> {
-    const result = await pluginApi.saveCode(id, code)
+    const result = await bridge.saveCode(id, code)
     if (!result.ok) {
       MessagePlugin.error(result.message)
       return false
@@ -127,4 +149,13 @@ export function usePlugins() {
     saveCode,
     applySummary
   }
+}
+
+/** 取某个类别的插件页面状态；同一个类别在多次调用间共享同一份状态 */
+export function usePluginManager(kind: PluginKind): PluginManager {
+  const cached = managers.get(kind)
+  if (cached) return cached
+  const manager = createManager(kind)
+  managers.set(kind, manager)
+  return manager
 }

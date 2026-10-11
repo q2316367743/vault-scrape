@@ -25,7 +25,7 @@ const menuItems: SideMenuItem[] = [
   { label: '工具', icon: ToolsIcon, to: '/tools', match: 'prefix' },
   { type: 'divider', label: '' },
   { label: '存储', icon: HardDiskStorageIcon, to: '/storage' },
-  { label: '插件', icon: ExtensionIcon, to: '/plugin' },
+  { label: '插件', icon: ExtensionIcon, to: '/plugin', match: 'prefix' },
   { type: 'divider', label: '' },
   { label: '设置', icon: SettingIcon, to: '/setting' },
   { label: '日志', icon: SystemLogIcon, to: '/log' },

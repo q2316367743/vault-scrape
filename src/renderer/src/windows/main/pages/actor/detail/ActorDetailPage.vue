@@ -54,11 +54,13 @@
  *
  * 契约：
  * - 参数只从路由 query 读（`actorId`），可以直接刷新、重复进入；
- * - 「抓取资料」把当前所有启用的插件交给主进程，由主进程按顺序试、命中即止；
+ * - 「抓取资料」把当前所有启用的演员插件交给主进程，由主进程按顺序试、命中即止；
+ * - 打开页面且资料不全时，按 `scrape.actorScrapeOnOpen` 自动补一次（静默，同一演员一次会话只试一次）；
  * - 出演作品用影视墙的卡片渲染，点进影片详情；连接信息从 `useFileConnections` 反查；
  * - 返回按钮由 SubPageLayout 提供，本页不在 `#extra` 里再放。
  */
 import { computed, onMounted, ref } from 'vue'
+import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { DeleteIcon, EditIcon, UserAddIcon } from 'tdesign-icons-vue-next'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
@@ -66,6 +68,8 @@ import MediaWallCard from '@/components/media/MediaWallCard.vue'
 import { useFileConnections } from '@/hooks/UseFileConnections'
 import { MessageBoxUtil, MessageUtil } from '@/utils/modal'
 import { actorApi, pluginApi } from '@/api'
+import { useSettingScrapeStore } from '@/windows/main/store'
+import type { ActorDetail } from '@common/types/actor'
 import type { FileConnection } from '@common/types/file'
 import ActorProfileBlock from './components/ActorProfileBlock.vue'
 import ActorGalleryBlock from './components/ActorGalleryBlock.vue'
@@ -79,9 +83,32 @@ const { connections, refresh } = useFileConnections()
 const actor = computed(() => detail.value?.actor ?? null)
 const description = computed(() => actor.value?.name ?? actorId)
 const scraping = ref(false)
+const { setting } = storeToRefs(useSettingScrapeStore())
+/** 本次会话已经自动抓过的演员：来回进出详情页不重复打插件 */
+const autoScraped = new Set<string>()
 
 function connectionOf(connectionId: string): FileConnection | null {
   return connections.value.find((connection) => connection.id === connectionId) ?? null
+}
+
+/** 资料不全：没抓过、没头像或没生日；锁定过的演员不抓（抓了也只填空白，没意义） */
+function needsScrape(target: ActorDetail): boolean {
+  return target.scrapedAt === 0 || target.avatarUrl === '' || target.birthday === ''
+}
+
+/** 打开详情页时的自动补全：静默执行，失败不打扰用户 */
+async function autoScrape(): Promise<void> {
+  const target = actor.value
+  if (!target || target.locked || autoScraped.has(target.actorId)) return
+  autoScraped.add(target.actorId)
+  if (!setting.value.actorScrapeOnOpen || !needsScrape(target)) return
+  const plugins = await pluginApi.actor.list()
+  if (!plugins.ok) return
+  const pluginIds = plugins.data.filter((item) => item.enabled).map((item) => item.id)
+  if (pluginIds.length === 0) return
+  const result = await actorApi.scrape({ actorId: target.actorId, pluginIds })
+  if (!result.ok) return
+  if (result.data.filled.length > 0 || result.data.images > 0) await load()
 }
 
 function onEdit(): void {
@@ -93,7 +120,7 @@ function onEdit(): void {
 async function onScrape(): Promise<void> {
   if (!actor.value) return
   scraping.value = true
-  const plugins = await pluginApi.list()
+  const plugins = await pluginApi.actor.list()
   if (!plugins.ok) {
     scraping.value = false
     MessageUtil.error(plugins.message)
@@ -129,9 +156,10 @@ async function onRemove(): Promise<void> {
   await router.replace('/actor')
 }
 
-onMounted(() => {
+onMounted(async () => {
   void refresh()
-  void load()
+  await load()
+  void autoScrape()
 })
 </script>
 

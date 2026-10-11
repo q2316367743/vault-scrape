@@ -3,7 +3,7 @@
  * 搜索工具页：顶部先用选择器挑「用哪个插件」，下面按关键字搜索候选或按影片 ID 直查详情。
  *
  * 契约：
- * - 与插件页共享同一份「当前插件」选择（`usePlugins` 持久化到 localStorage）；
+ * - 与「影片信息插件」页共享同一份「当前插件」选择（`usePluginManager('movie')` 持久化到 localStorage）；
  * - 已停用、必填变量未填的插件仍可选中，调用会被主进程以中文错误拒绝，渲染层不复制业务规则；
  * - 加载失败的插件直接在选择器里禁用，避免选了必然报错。
  */
@@ -11,7 +11,7 @@ import { computed, onMounted } from 'vue'
 import { RefreshIcon } from 'tdesign-icons-vue-next'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import type { PluginSummary } from '@common/types/plugin'
-import { usePlugins } from '@/windows/main/pages/plugin/composables/usePlugins'
+import { usePluginManager } from '@/windows/main/pages/plugin/composables/usePluginManager'
 import ToolSearchPanel from './components/ToolSearchPanel.vue'
 
 interface PluginOption {
@@ -20,7 +20,7 @@ interface PluginOption {
   disabled: boolean
 }
 
-const { plugins, loading, activeId, active, refresh, select } = usePlugins()
+const { plugins, loading, activeId, active, refresh, select } = usePluginManager('movie')
 
 function statusText(plugin: PluginSummary): string {
   if (plugin.loadError) return '加载失败'

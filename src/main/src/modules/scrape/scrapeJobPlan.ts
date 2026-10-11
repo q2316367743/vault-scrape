@@ -19,7 +19,7 @@ import {
   type NfoArtwork,
   type ScrapeAssetContext
 } from '@common/types/scrape'
-import { invokePlugin } from '$/modules/plugin/pluginRegistry'
+import { moviePlugins } from '$/modules/plugin/pluginRegistries'
 import { downloadAssetToTemp } from './scrapeAssets'
 import type { LocalImage } from './scrapeLocalMeta'
 import { pickCandidate } from './scrapeMatcher'
@@ -141,11 +141,13 @@ export async function collectFromPlugins(
     try {
       if (!detail) {
         const candidates = readCandidates(
-          await invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })
+          await moviePlugins.invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })
         )
         const picked = pickCandidate(candidates, context.entry.num, context.entry.keyword)
         if (picked) {
-          const found = readDetail(await invokePlugin(plugin.id, 'detail', { movieId: picked.id }))
+          const found = readDetail(
+            await moviePlugins.invokePlugin(plugin.id, 'detail', { movieId: picked.id })
+          )
           if (found) {
             detail = found
             pluginId = plugin.id
@@ -156,7 +158,7 @@ export async function collectFromPlugins(
         const movieId = detail.id
         if (COVER_ASSET_KINDS.some(missing)) {
           collectAssets(
-            readAssets(await invokePlugin(plugin.id, 'covers', { movieId })),
+            readAssets(await moviePlugins.invokePlugin(plugin.id, 'covers', { movieId })),
             assets,
             enabled,
             localKinds
@@ -164,7 +166,7 @@ export async function collectFromPlugins(
         }
         if (EXTRA_ASSET_KINDS.some(missing)) {
           collectAssets(
-            readAssets(await invokePlugin(plugin.id, 'extras', { movieId })),
+            readAssets(await moviePlugins.invokePlugin(plugin.id, 'extras', { movieId })),
             assets,
             enabled,
             localKinds

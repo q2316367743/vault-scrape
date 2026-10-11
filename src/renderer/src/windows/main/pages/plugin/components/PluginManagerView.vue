@@ -1,9 +1,5 @@
 <template>
-  <page-layout
-    title="插件"
-    description="导入本机 JS 刮削插件：启停、配置环境变量与源码编辑。"
-    :padded="false"
-  >
+  <page-layout :title="title" :description="description" :padded="false">
     <template #extra>
       <t-button variant="outline" :loading="loading" @click="refresh">
         <template #icon><refresh-icon /></template>
@@ -26,11 +22,15 @@
       <plugin-detail
         v-if="active"
         :plugin="active"
+        :kind="kind"
         @edit="onEdit"
         @remove="onRemove"
         @enabled="onEnabled"
         @changed="onChanged"
-      />
+      >
+        <!-- 类别专属内容（如影片类别的离线数据包面板）由所属页面提供 -->
+        <template #extra><slot name="detail-extra" /></template>
+      </plugin-detail>
       <t-empty
         v-else
         class="plugin-empty"
@@ -42,21 +42,32 @@
 
 <script setup lang="ts">
 /**
- * 插件页：左侧插件列表，右侧详情（概览 + 配置 + 内置数据源）。
+ * 插件管理视图：左列表 + 右详情（概览 + 配置），供三个类别页复用。
  *
- * 契约：页面只通过 `@/api` 间接访问主进程；导入重名走命令式确认弹窗覆盖；
- * 配置保存后由详情上抛最新摘要，这里就地更新列表状态，不整表刷新。
+ * 契约：只按 `kind` 取对应类别的状态与通道，页面本身不感知具体是哪一个类别；
+ * 导入重名走命令式确认弹窗覆盖；配置保存后由详情上抛最新摘要，这里就地更新列表状态，不整表刷新。
  */
-import { onMounted } from 'vue'
+import { computed, onMounted } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
 import { AddIcon, RefreshIcon } from 'tdesign-icons-vue-next'
 import PageLayout from '@/components/PageLayout/PageLayout.vue'
-import type { PluginImportResult, PluginSummary } from '@common/types/plugin'
-import { usePlugins } from './composables/usePlugins'
-import { openPluginEditorDialog } from './modals/PluginEditorDialog'
-import PluginList from './components/PluginList.vue'
-import PluginDetail from './components/PluginDetail.vue'
+import {
+  PLUGIN_KIND_DESCRIPTIONS,
+  PLUGIN_KIND_LABELS,
+  type PluginImportResult,
+  type PluginKind,
+  type PluginSummary
+} from '@common/types/plugin'
 import { MessageUtil } from '@/utils/modal'
+import { usePluginManager } from '../composables/usePluginManager'
+import { openPluginEditorDialog } from '../modals/PluginEditorDialog'
+import PluginDetail from './PluginDetail.vue'
+import PluginList from './PluginList.vue'
+
+const props = defineProps<{ kind: PluginKind }>()
+
+const title = computed(() => `${PLUGIN_KIND_LABELS[props.kind]}插件`)
+const description = computed(() => PLUGIN_KIND_DESCRIPTIONS[props.kind])
 
 const {
   plugins,
@@ -72,7 +83,7 @@ const {
   readCode,
   saveCode,
   applySummary
-} = usePlugins()
+} = usePluginManager(props.kind)
 
 onMounted(() => void refresh())
 

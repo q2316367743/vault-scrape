@@ -57,24 +57,29 @@
     </dl>
 
     <!-- 只有声明了环境变量的插件才需要配置区块（内置插件、无变量的脚本插件都不显示空区域） -->
-    <plugin-config-panel v-if="plugin.hasEnv" :plugin="plugin" @saved="emit('changed', $event)" />
+    <plugin-config-panel
+      v-if="plugin.hasEnv"
+      :plugin="plugin"
+      :kind="kind"
+      @saved="emit('changed', $event)"
+    />
 
-    <offline-pack-panel v-if="isBuiltin" />
+    <!-- 类别专属内容（如影片信息插件的离线数据包面板）由所属页面通过具名插槽追加 -->
+    <slot name="extra" :plugin="plugin" />
   </div>
 </template>
 <script setup lang="ts">
 /**
- * 插件详情：概览信息 + 配置区块（环境变量）；内置插件额外挂载数据源面板。
+ * 插件详情：概览信息 + 配置区块（环境变量）；类别专属内容由外层页面的 `extra` 插槽追加。
  *
  * 契约：组件本身不直接调用 API，启停/删除/编辑都通过事件上抛给页面处理；
  * 配置保存后由 PluginConfigPanel 上抛最新摘要，页面据此刷新列表状态。
  */
 import { computed } from 'vue'
-import type { PluginSummary } from '@common/types/plugin'
-import OfflinePackPanel from './OfflinePackPanel.vue'
+import type { PluginKind, PluginSummary } from '@common/types/plugin'
 import PluginConfigPanel from './PluginConfigPanel.vue'
 
-const props = defineProps<{ plugin: PluginSummary }>()
+const props = defineProps<{ plugin: PluginSummary; kind: PluginKind }>()
 const emit = defineEmits<{
   edit: [plugin: PluginSummary]
   remove: [plugin: PluginSummary]

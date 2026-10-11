@@ -28,7 +28,7 @@ export function useMoviePreview(pluginId: Ref<string>, movieId: Ref<string>) {
 
   async function runDetail(): Promise<void> {
     busy.value = 'detail'
-    const result = await pluginApi.detail(pluginId.value, movieId.value)
+    const result = await pluginApi.movie.detail(pluginId.value, movieId.value)
     busy.value = ''
     if (!result.ok) {
       MessagePlugin.error(result.message)
@@ -41,8 +41,8 @@ export function useMoviePreview(pluginId: Ref<string>, movieId: Ref<string>) {
     busy.value = task
     const result =
       task === 'covers'
-        ? await pluginApi.covers(pluginId.value, movieId.value)
-        : await pluginApi.extras(pluginId.value, movieId.value)
+        ? await pluginApi.movie.covers(pluginId.value, movieId.value)
+        : await pluginApi.movie.extras(pluginId.value, movieId.value)
     busy.value = ''
     if (!result.ok) {
       MessagePlugin.error(result.message)

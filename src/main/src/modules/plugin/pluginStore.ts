@@ -1,13 +1,15 @@
 /**
- * 插件索引、源码与环境变量的落盘存储。
+ * 插件索引、源码与环境变量的落盘存储（按类别分目录）。
  *
  * 契约：
- * 1. 落盘位置 `~/.vault-scrape/plugin/`：`plugins.json` 存索引与环境变量，`<id>.js` 存源码；
+ * 1. 落盘位置 `~/.vault-scrape/plugin/<类别>/`：`plugins.json` 存索引与环境变量，`<id>.js` 存源码；
+ *    类别之间互相独立，同一个 id 可以在不同类别里各存一份；
  * 2. 环境变量一律按敏感值处理、不落明文：复用 `$/utils/secretCodec`（safeStorage 优先，不可用时回落 base64 并告警）；
  * 3. 对外只暴露 `PluginSummary` 与「是否已填写」掩码，明文永不跨 IPC；
- * 4. 读取失败一律回落空索引，绝不因为索引损坏而阻塞启动。
+ * 4. 读取失败一律回落空索引，绝不因为索引损坏而阻塞启动；
+ * 5. 旧版本平铺在插件根目录的脚本不再加载，只由 `legacyPluginFiles()` 报出来给界面提示。
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import { app } from 'electron'
 import {
@@ -20,6 +22,7 @@ import {
   type PluginEnvDraft,
   type PluginEnvField,
   type PluginEnvValue,
+  type PluginKind,
   type PluginMeta,
   type PluginSummary
 } from '@common/types/plugin'
@@ -53,20 +56,27 @@ interface StoredFile {
   plugins: StoredPlugin[]
 }
 
-let cache: StoredFile | null = null
+/** 每个类别一份索引缓存 */
+const caches = new Map<PluginKind, StoredFile>()
 
-function pluginDir(): string {
+/** 插件根目录：三个类别的共同父目录 */
+function pluginRootDir(): string {
   return join(app.getPath('home'), '.vault-scrape', 'plugin')
 }
 
-function indexPath(): string {
-  return join(pluginDir(), 'plugins.json')
+/** 某个类别的插件目录 */
+export function pluginDir(kind: PluginKind): string {
+  return join(pluginRootDir(), kind)
+}
+
+function indexPath(kind: PluginKind): string {
+  return join(pluginDir(kind), 'plugins.json')
 }
 
 /** 插件源码路径；ID 必须合法，否则可能造成路径逃逸 */
-export function pluginSourcePath(id: string): string {
+export function pluginSourcePath(kind: PluginKind, id: string): string {
   if (!PLUGIN_ID_PATTERN.test(id)) throw new PluginError('invalidArgument', `插件 ID 不合法：${id}`)
-  return join(pluginDir(), `${id}.js`)
+  return join(pluginDir(kind), `${id}.js`)
 }
 
 function emptyStore(): StoredFile {
@@ -93,8 +103,8 @@ function normalizeStored(raw: unknown): StoredPlugin | null {
   }
 }
 
-function readFromDisk(): StoredFile {
-  const filePath = indexPath()
+function readFromDisk(kind: PluginKind): StoredFile {
+  const filePath = indexPath(kind)
   if (!existsSync(filePath)) return emptyStore()
   try {
     const parsed: unknown = JSON.parse(readFileSync(filePath, 'utf-8'))
@@ -106,36 +116,56 @@ function readFromDisk(): StoredFile {
       plugins: list.map(normalizeStored).filter((item): item is StoredPlugin => item !== null)
     }
   } catch (error) {
-    console.error('[plugin] 插件索引读取失败，已回落为空列表', error)
+    console.error(`[plugin] ${kind} 插件索引读取失败，已回落为空列表`, error)
     return emptyStore()
   }
 }
 
-function readStore(): StoredFile {
-  if (cache === null) cache = readFromDisk()
-  return cache
+function readStore(kind: PluginKind): StoredFile {
+  const cached = caches.get(kind)
+  if (cached !== undefined) return cached
+  const loaded = readFromDisk(kind)
+  caches.set(kind, loaded)
+  return loaded
 }
 
-function writeStore(store: StoredFile): void {
-  const filePath = indexPath()
+function writeStore(kind: PluginKind, store: StoredFile): void {
+  const filePath = indexPath(kind)
   mkdirSync(dirname(filePath), { recursive: true })
   writeFileSync(filePath, `${JSON.stringify(store, null, 2)}\n`, 'utf-8')
-  cache = store
+  caches.set(kind, store)
+}
+
+/**
+ * 旧版插件目录的残留文件：平铺在插件根目录的 `.js` 脚本与 `plugins.json`。
+ *
+ * 契约：只读不删；新版本按类别分目录，这些文件不会被加载，界面据此提示用户重新导入。
+ */
+export function legacyPluginFiles(): { dir: string; files: string[] } {
+  const dir = pluginRootDir()
+  try {
+    if (!existsSync(dir)) return { dir, files: [] }
+    const files = readdirSync(dir).filter((name) => name.endsWith('.js') || name === 'plugins.json')
+    return { dir, files: files.sort() }
+  } catch (error) {
+    console.error('[plugin] 旧版插件目录检查失败', error)
+    return { dir, files: [] }
+  }
 }
 
 /** 索引里的全部插件记录（含敏感值密文，仅主进程内部使用） */
-export function listStoredPlugins(): StoredPlugin[] {
-  return readStore().plugins.map((item) => ({ ...item }))
+export function listStoredPlugins(kind: PluginKind): StoredPlugin[] {
+  return readStore(kind).plugins.map((item) => ({ ...item }))
 }
 
-export function getStoredPlugin(id: string): StoredPlugin | null {
-  const stored = readStore().plugins.find((item) => item.id === id)
+export function getStoredPlugin(kind: PluginKind, id: string): StoredPlugin | null {
+  const stored = readStore(kind).plugins.find((item) => item.id === id)
   return stored ? { ...stored } : null
 }
 
 /** 读取插件源码；文件缺失按 notFound 处理 */
-export function readPluginSource(id: string): string {
-  const filePath = pluginSourcePath(id)
+export function readPluginSource(kind: PluginKind, id: string): string {
+  const filePath = pluginSourcePath(kind, id)
   if (!existsSync(filePath)) {
     throw new PluginError('notFound', `插件源码不存在：${basename(filePath)}`)
   }
@@ -181,11 +211,12 @@ export interface PluginSourceRecord {
  * 并按新的声明表重新归一化。
  */
 export function writePluginSource(
+  kind: PluginKind,
   source: string,
   record: PluginSourceRecord,
   options: { overwrite: boolean }
 ): StoredPlugin {
-  const store = readStore()
+  const store = readStore(kind)
   const previous = store.plugins.find((item) => item.id === record.meta.id) ?? null
   if (previous?.builtin === true) {
     throw new PluginError('unsupported', `插件 ${record.meta.id} 是内置插件，不可覆盖`)
@@ -206,12 +237,12 @@ export function writePluginSource(
     envValues: normalizeEnvValues(envFields, previous?.envValues),
     updatedAt: Date.now()
   }
-  mkdirSync(pluginDir(), { recursive: true })
-  writeFileSync(pluginSourcePath(next.id), source, 'utf-8')
+  mkdirSync(pluginDir(kind), { recursive: true })
+  writeFileSync(pluginSourcePath(kind, next.id), source, 'utf-8')
   const plugins = previous
     ? store.plugins.map((item) => (item.id === next.id ? next : item))
     : [...store.plugins, next]
-  writeStore({ version: STORE_VERSION, plugins })
+  writeStore(kind, { version: STORE_VERSION, plugins })
   return next
 }
 
@@ -221,8 +252,8 @@ export function writePluginSource(
  * 契约：只补元信息与来源标记，保留用户已保存的启停状态；内置插件没有源码文件，
  * 因此只写索引。元信息无变化时不写盘。
  */
-export function ensureBuiltinPlugin(record: PluginSourceRecord): StoredPlugin {
-  const store = readStore()
+export function ensureBuiltinPlugin(kind: PluginKind, record: PluginSourceRecord): StoredPlugin {
+  const store = readStore(kind)
   const previous = store.plugins.find((item) => item.id === record.meta.id) ?? null
   if (previous && !previous.builtin) {
     console.warn(`[plugin] 内置插件 ${record.meta.id} 与同 ID 的已安装插件冲突，已按内置插件接管索引`)
@@ -251,13 +282,17 @@ export function ensureBuiltinPlugin(record: PluginSourceRecord): StoredPlugin {
   const plugins = previous
     ? store.plugins.map((item) => (item.id === next.id ? next : item))
     : [...store.plugins, next]
-  writeStore({ version: STORE_VERSION, plugins })
+  writeStore(kind, { version: STORE_VERSION, plugins })
   return next
 }
 
 /** 缓存编译产出的环境变量声明表（源码未变但声明变化时使用） */
-export function cachePluginEnvFields(id: string, envFields: PluginEnvField[]): StoredPlugin | null {
-  const store = readStore()
+export function cachePluginEnvFields(
+  kind: PluginKind,
+  id: string,
+  envFields: PluginEnvField[]
+): StoredPlugin | null {
+  const store = readStore(kind)
   const stored = store.plugins.find((item) => item.id === id)
   if (!stored) return null
   const next: StoredPlugin = {
@@ -265,19 +300,19 @@ export function cachePluginEnvFields(id: string, envFields: PluginEnvField[]): S
     envFields,
     envValues: normalizeEnvValues(envFields, stored.envValues)
   }
-  writeStore({
+  writeStore(kind, {
     version: STORE_VERSION,
     plugins: store.plugins.map((item) => (item.id === id ? next : item))
   })
   return next
 }
 
-export function setPluginEnabled(id: string, enabled: boolean): StoredPlugin {
-  const store = readStore()
+export function setPluginEnabled(kind: PluginKind, id: string, enabled: boolean): StoredPlugin {
+  const store = readStore(kind)
   const stored = store.plugins.find((item) => item.id === id)
   if (!stored) throw new PluginError('notFound')
   const next: StoredPlugin = { ...stored, enabled }
-  writeStore({
+  writeStore(kind, {
     version: STORE_VERSION,
     plugins: store.plugins.map((item) => (item.id === id ? next : item))
   })
@@ -289,8 +324,8 @@ export function setPluginEnabled(id: string, enabled: boolean): StoredPlugin {
  *
  * 契约：未出现在 `ids` 里的插件保持原有相对顺序、排在末尾；顺序没变化时不写盘。
  */
-export function reorderPlugins(ids: string[]): StoredPlugin[] {
-  const store = readStore()
+export function reorderStoredPlugins(kind: PluginKind, ids: string[]): StoredPlugin[] {
+  const store = readStore(kind)
   const remaining = new Map(store.plugins.map((item) => [item.id, item]))
   const ordered: StoredPlugin[] = []
   for (const id of ids) {
@@ -301,23 +336,23 @@ export function reorderPlugins(ids: string[]): StoredPlugin[] {
   }
   ordered.push(...remaining.values())
   const changed = ordered.some((item, index) => store.plugins[index]?.id !== item.id)
-  if (changed) writeStore({ version: STORE_VERSION, plugins: ordered })
+  if (changed) writeStore(kind, { version: STORE_VERSION, plugins: ordered })
   return ordered.map((item) => ({ ...item }))
 }
 
 /** 删除插件：索引与源码文件一并清理；源码已不存在时也算删除成功 */
-export function removePlugin(id: string): boolean {
-  const store = readStore()
+export function removePlugin(kind: PluginKind, id: string): boolean {
+  const store = readStore(kind)
   const stored = store.plugins.find((item) => item.id === id)
   if (!stored) return false
   if (stored.builtin) {
     throw new PluginError('unsupported', `插件 ${stored.name} 是内置插件，不可删除`)
   }
-  writeStore({
+  writeStore(kind, {
     version: STORE_VERSION,
     plugins: store.plugins.filter((item) => item.id !== id)
   })
-  const filePath = pluginSourcePath(id)
+  const filePath = pluginSourcePath(kind, id)
   if (existsSync(filePath)) rmSync(filePath, { force: true })
   return true
 }
@@ -326,8 +361,8 @@ export function removePlugin(id: string): boolean {
  * 读取插件环境变量的完整取值（解密后的明文）。
  * 仅供主进程内部构造插件方法收到的 `env`，绝不跨 IPC 返回。
  */
-export function readPluginEnvValues(id: string): PluginEnvValue {
-  const stored = getStoredPlugin(id)
+export function readPluginEnvValues(kind: PluginKind, id: string): PluginEnvValue {
+  const stored = getStoredPlugin(kind, id)
   if (!stored) throw new PluginError('notFound')
   const values: PluginEnvValue = {}
   for (const [key, encoded] of Object.entries(stored.envValues)) {
@@ -344,22 +379,26 @@ export function readPluginEnvValues(id: string): PluginEnvValue {
 }
 
 /** 保存环境变量：只覆盖草稿里非空且在声明表内的项，其余保持原值 */
-export function savePluginEnv(id: string, draft: PluginEnvDraft): StoredPlugin {
-  const store = readStore()
+export function savePluginEnv(
+  kind: PluginKind,
+  id: string,
+  draft: PluginEnvDraft
+): StoredPlugin {
+  const store = readStore(kind)
   const stored = store.plugins.find((item) => item.id === id)
   if (!stored) throw new PluginError('notFound')
   const values: PluginEnvValue = { ...stored.envValues }
   for (const field of stored.envFields) {
     const value = draft.values[field.key]
     if (typeof value !== 'string' || value.length === 0) continue
-    values[field.key] = encodeSecret(value, `plugin:${id}`)
+    values[field.key] = encodeSecret(value, `plugin:${kind}:${id}`)
   }
   const next: StoredPlugin = {
     ...stored,
     envValues: normalizeEnvValues(stored.envFields, values),
     updatedAt: Date.now()
   }
-  writeStore({
+  writeStore(kind, {
     version: STORE_VERSION,
     plugins: store.plugins.map((item) => (item.id === id ? next : item))
   })
@@ -367,7 +406,11 @@ export function savePluginEnv(id: string, draft: PluginEnvDraft): StoredPlugin {
 }
 
 /** 渲染层可见的插件摘要：不含源码、不含环境变量明文 */
-export function toPluginSummary(stored: StoredPlugin, loadError: string): PluginSummary {
+export function toPluginSummary(
+  kind: PluginKind,
+  stored: StoredPlugin,
+  loadError: string
+): PluginSummary {
   const filled = readEnvFilledMask(stored.envFields, stored.envValues)
   return {
     id: stored.id,
@@ -377,7 +420,7 @@ export function toPluginSummary(stored: StoredPlugin, loadError: string): Plugin
     description: stored.description,
     enabled: stored.enabled,
     source: stored.builtin ? 'builtin' : 'file',
-    filePath: stored.builtin ? '' : pluginSourcePath(stored.id),
+    filePath: stored.builtin ? '' : pluginSourcePath(kind, stored.id),
     hasEnv: stored.envFields.length > 0,
     envReady: isEnvReady(stored.envFields, filled),
     loadError
@@ -385,8 +428,8 @@ export function toPluginSummary(stored: StoredPlugin, loadError: string): Plugin
 }
 
 /** 「是否已填写」掩码，渲染层只据此渲染「已保存，留空保持不变」 */
-export function readEnvFilled(id: string): Record<string, boolean> {
-  const stored = getStoredPlugin(id)
+export function readEnvFilled(kind: PluginKind, id: string): Record<string, boolean> {
+  const stored = getStoredPlugin(kind, id)
   if (!stored) throw new PluginError('notFound')
   return readEnvFilledMask(stored.envFields, stored.envValues)
 }

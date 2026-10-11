@@ -6,4 +6,5 @@ out
 *.log*
 
 
-script/site
+# 本地参考用的站点脚本（按插件类别分目录），不进仓库
+script/

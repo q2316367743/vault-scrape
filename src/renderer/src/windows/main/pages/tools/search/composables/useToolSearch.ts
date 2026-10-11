@@ -33,7 +33,7 @@ export function useToolSearch(active: Ref<PluginSummary | null>) {
       return
     }
     searching.value = true
-    const result = await pluginApi.search(plugin.id, keyword.value.trim())
+    const result = await pluginApi.movie.search(plugin.id, keyword.value.trim())
     searching.value = false
     if (!result.ok) {
       MessagePlugin.error(result.message)

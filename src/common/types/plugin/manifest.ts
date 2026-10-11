@@ -2,13 +2,16 @@
  * 插件元信息、环境变量声明与摘要。
  *
  * 契约：
- * - `meta.id` 唯一，同时是插件源码的文件名（`<id>.js`）；
+ * - `meta.kind` 声明插件类别（影片信息 / 演员信息 / 翻译），缺失即加载失败；
+ *   同一 `meta.id` 允许在不同类别里各存一份；
+ * - `meta.id` 同时是插件源码的文件名（`<id>.js`），一个类别一个目录；
  * - 环境变量（账号、Cookie、站点地址等）由插件声明，取值落在
- *   `~/.vault-scrape/plugin/plugins.json`，不并入 settings.json；
+ *   `~/.vault-scrape/plugin/<类别>/plugins.json`，不并入 settings.json；
  * - 环境变量一律按敏感文本处理：safeStorage 加密落盘、取值只在设置页填写
  *   且不回显、界面只回「已填写 / 未填写」、明文永不跨 IPC。
  */
 import type { PluginErrorCode } from './error'
+import type { PluginKind } from './kind'
 
 /**
  * 插件 ID 规则：kebab-case，最长 64 字符。
@@ -37,13 +40,18 @@ export function normalizePluginIds(input: readonly string[], limit = PLUGIN_ID_L
 }
 
 export interface PluginMeta {
-  /** 唯一标识，kebab-case；同时是源码文件名 */
+  /** 唯一标识，kebab-case；同时是源码文件名（同一类别内不允许重复） */
   id: string
+  /**
+   * 插件类别：决定它出现在哪个插件页、宿主用哪张方法表校验。
+   * 必填；旧插件没有这一项会直接加载失败，需要补上后重新导入。
+   */
+  kind: PluginKind
   name: string
   version: string
   author?: string
   description?: string
-  /** 优先匹配的番号前缀，供后续多插件选源 */
+  /** 优先匹配的番号前缀，供后续多插件选源（只对影片信息插件有意义） */
   prefixes?: string[]
   homepage?: string
 }
@@ -91,7 +99,7 @@ export type PluginEnvValue = Record<string, string>
 
 /**
  * 插件来源：
- * - `file`：用户导入 / 编辑的 `.js` 脚本，落盘在 `~/.vault-scrape/plugin/<id>.js`；
+ * - `file`：用户导入 / 编辑的 `.js` 脚本，落盘在 `~/.vault-scrape/plugin/<类别>/<id>.js`；
  * - `builtin`：随应用内置的原生实现（如 R18 离线数据包），索引里有记录（`builtin: true`）但没有源码文件，不可编辑、不可删除、不可被同名覆盖。
  */
 export type PluginSource = 'file' | 'builtin'
@@ -160,4 +168,17 @@ export interface PluginImportResult {
   /** 因同名已有更新版本而跳过的文件 */
   skipped: PluginImportSkipped[]
   failed: PluginImportFailure[]
+}
+
+/**
+ * 旧版平铺插件目录的残留检查结果。
+ *
+ * 契约：新版本按类别分目录（`plugin/<类别>/`），平铺在插件根目录的 `.js` 与
+ * `plugins.json` 不再被加载；这里只做**只读**上报，由插件页提示用户重新导入。
+ */
+export interface PluginLegacyNotice {
+  /** 插件根目录，如 `~/.vault-scrape/plugin` */
+  dir: string
+  /** 残留的旧版脚本与索引文件（已按名排序；为空表示没有残留） */
+  files: string[]
 }

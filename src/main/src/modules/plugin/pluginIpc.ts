@@ -1,13 +1,15 @@
 /**
- * 插件模块的 IPC 注册。
+ * 插件模块的 IPC 注册：**每个类别注册一套通道**，另加一个全局的旧目录检查。
  *
  * 契约：
  * 1. 注册表在 main 内部抛 `PluginError`，**只有 IPC 边界做信封转换**；
  * 2. 入参来自渲染层，一律按 unknown 收窄后才交给注册表；
- * 3. `import` 的系统文件选择框由主进程弹出，渲染层只负责触发与展示结果。
+ * 3. `import` 的系统文件选择框由主进程弹出，渲染层只负责触发与展示结果；
+ * 4. 导入时按 `meta.kind` 校验，文件声明的类别与当前页类别不一致会直接失败，不会串类别落盘。
  */
 import { dialog, ipcMain } from 'electron'
 import {
+  PLUGIN_KINDS,
   PLUGIN_METHOD_NAMES,
   PluginError,
   describePluginError,
@@ -17,24 +19,23 @@ import {
   type PluginImportResult,
   type PluginInvokeData,
   type PluginInvokePayload,
+  type PluginKind,
+  type PluginLegacyNotice,
   type PluginMethod,
   type PluginResult,
   type PluginSummary
 } from '@common/types/plugin'
 import { readBoolean, readString, toSource } from '@common/types/setting/shared'
-import { PluginChannels } from '~/modules/plugin/pluginChannels'
-import {
-  importPluginFiles,
-  invokePlugin,
-  listPluginSummaries,
-  readPluginCode,
-  readPluginEnv,
-  removePluginById,
-  reorderPlugins,
-  saveEnv,
-  savePluginCode,
-  setEnabled
-} from './pluginRegistry'
+import { PLUGIN_LEGACY_CHANNEL, channelsOf } from '~/modules/plugin/pluginChannels'
+import { actorPlugins, moviePlugins, translatePlugins } from './pluginRegistries'
+import { legacyPluginFiles } from './pluginStore'
+import type { PluginRegistry } from './pluginRegistry'
+
+const REGISTRIES: Readonly<Record<PluginKind, PluginRegistry>> = {
+  movie: moviePlugins,
+  actor: actorPlugins,
+  translate: translatePlugins
+}
 
 function handle<T>(task: () => Promise<T> | T): Promise<PluginResult<T>> {
   return Promise.resolve()
@@ -96,7 +97,10 @@ function readIds(payload: unknown): string[] {
 }
 
 /** 弹出系统文件选择框并批量导入（可多选）；用户取消时返回空结果 */
-async function importFromDialog(overwrite: boolean): Promise<PluginImportResult> {
+async function importFromDialog(
+  registry: PluginRegistry,
+  overwrite: boolean
+): Promise<PluginImportResult> {
   const result = await dialog.showOpenDialog({
     title: '选择插件脚本（可多选）',
     buttonLabel: '导入',
@@ -106,54 +110,71 @@ async function importFromDialog(overwrite: boolean): Promise<PluginImportResult>
   if (result.canceled || result.filePaths.length === 0) {
     return { imported: [], skipped: [], failed: [] }
   }
-  return importPluginFiles(result.filePaths, overwrite)
+  return registry.importPluginFiles(result.filePaths, overwrite)
 }
 
-export function registerPluginIpc(): void {
-  ipcMain.handle(PluginChannels.list, () => handle<PluginSummary[]>(() => listPluginSummaries()))
+/** 注册一个类别的全部通道；动作名与 preload 桥一一对应 */
+function registerKind(kind: PluginKind): void {
+  const registry = REGISTRIES[kind]
+  const channels = channelsOf(kind)
 
-  ipcMain.handle(PluginChannels.readCode, (_event, payload: unknown) =>
-    handle<string>(() => readPluginCode(readId(payload)))
+  ipcMain.handle(channels.list, () =>
+    handle<PluginSummary[]>(() => registry.listPluginSummaries())
   )
 
-  ipcMain.handle(PluginChannels.saveCode, (_event, payload: unknown) => {
+  ipcMain.handle(channels.readCode, (_event, payload: unknown) =>
+    handle<string>(() => registry.readPluginCode(readId(payload)))
+  )
+
+  ipcMain.handle(channels.saveCode, (_event, payload: unknown) => {
     const source = payloadOf(payload)
     const id = readId(payload)
-    return handle<PluginSummary>(() => savePluginCode(id, readString(source, 'code', '')))
+    return handle<PluginSummary>(() => registry.savePluginCode(id, readString(source, 'code', '')))
   })
 
-  ipcMain.handle(PluginChannels.import, (_event, payload: unknown) =>
+  ipcMain.handle(channels.import, (_event, payload: unknown) =>
     handle<PluginImportResult>(() =>
-      importFromDialog(readBoolean(payloadOf(payload), 'overwrite', false))
+      importFromDialog(registry, readBoolean(payloadOf(payload), 'overwrite', false))
     )
   )
 
-  ipcMain.handle(PluginChannels.remove, (_event, payload: unknown) =>
-    handle<boolean>(() => removePluginById(readId(payload)))
+  ipcMain.handle(channels.remove, (_event, payload: unknown) =>
+    handle<boolean>(() => registry.removePluginById(readId(payload)))
   )
 
-  ipcMain.handle(PluginChannels.setEnabled, (_event, payload: unknown) => {
+  ipcMain.handle(channels.setEnabled, (_event, payload: unknown) => {
     const source = payloadOf(payload)
     const id = readId(payload)
-    return handle<PluginSummary>(() => setEnabled(id, readBoolean(source, 'enabled', false)))
+    return handle<PluginSummary>(() =>
+      registry.setEnabled(id, readBoolean(source, 'enabled', false))
+    )
   })
 
-  ipcMain.handle(PluginChannels.reorder, (_event, payload: unknown) =>
-    handle<PluginSummary[]>(() => reorderPlugins(readIds(payload)))
+  ipcMain.handle(channels.reorder, (_event, payload: unknown) =>
+    handle<PluginSummary[]>(() => registry.reorderPlugins(readIds(payload)))
   )
 
-  ipcMain.handle(PluginChannels.getEnv, (_event, payload: unknown) =>
-    handle(() => readPluginEnv(readId(payload)))
+  ipcMain.handle(channels.getEnv, (_event, payload: unknown) =>
+    handle(() => registry.readPluginEnv(readId(payload)))
   )
 
-  ipcMain.handle(PluginChannels.saveEnv, (_event, payload: unknown) => {
+  ipcMain.handle(channels.saveEnv, (_event, payload: unknown) => {
     const id = readId(payload)
-    return handle<PluginSummary>(() => saveEnv(id, readEnvDraft(payload)))
+    return handle<PluginSummary>(() => registry.saveEnv(id, readEnvDraft(payload)))
   })
 
-  ipcMain.handle(PluginChannels.invoke, (_event, payload: unknown) => {
+  ipcMain.handle(channels.invoke, (_event, payload: unknown) => {
     const id = readId(payload)
     const method = readMethod(payload)
-    return handle<PluginInvokeData>(() => invokePlugin(id, method, readInvokePayload(payload)))
+    return handle<PluginInvokeData>(() =>
+      registry.invokePlugin(id, method, readInvokePayload(payload))
+    )
   })
+}
+
+export function registerPluginIpc(): void {
+  for (const kind of PLUGIN_KINDS) registerKind(kind)
+  ipcMain.handle(PLUGIN_LEGACY_CHANNEL, () =>
+    handle<PluginLegacyNotice>(() => legacyPluginFiles())
+  )
 }

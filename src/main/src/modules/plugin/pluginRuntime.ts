@@ -3,9 +3,11 @@
  *
  * 契约：
  * 1. 插件是纯 JavaScript 脚本：宿主先注入 `definePlugin`，再执行脚本，取其返回值作为插件定义；
- * 2. 沙箱全局为白名单：console / 定时器 / URL 编解码 / cheerio，其余（require、process、Buffer、动态 import）一概不提供；
- * 3. vm 只做稳定性隔离，**不是安全边界**：插件是用户自己引入的本机脚本；
- * 4. 顶层执行超时 5 秒、单次调用超时 30 秒；跨 realm 的异常不能 `instanceof Error`，
+ * 2. 插件按类别编译：`compilePlugin(kind, …)` 只认 `meta.kind === kind` 的插件，并按该类别的
+ *    方法表校验（缺必需方法、实现了别类方法都报 `invalidPlugin`）；
+ * 3. 沙箱全局为白名单：console / 定时器 / URL 编解码 / cheerio，其余（require、process、Buffer、动态 import）一概不提供；
+ * 4. vm 只做稳定性隔离，**不是安全边界**：插件是用户自己引入的本机脚本；
+ * 5. 顶层执行超时 5 秒、单次调用超时 30 秒；跨 realm 的异常不能 `instanceof Error`，
  *    一律按结构读 `message` / `stack`。
  */
 import vm from 'node:vm'
@@ -13,7 +15,9 @@ import * as cheerio from 'cheerio'
 import type { LogLevel } from '@common/types/log'
 import {
   PLUGIN_ACTOR_ASSET_KINDS,
-  PLUGIN_METHODS,
+  PLUGIN_KIND_LABELS,
+  PLUGIN_KIND_METHODS,
+  PLUGIN_METHOD_NAMES,
   PluginError,
   normalizeActorDetail,
   normalizeAssets,
@@ -21,13 +25,17 @@ import {
   normalizeEnvFields,
   normalizeDetail,
   normalizeMeta,
+  type ActorPlugin,
+  type MoviePlugin,
+  type PluginDefinition,
   type PluginEnvField,
   type PluginEnvValue,
   type PluginContext,
   type PluginHtmlLoader,
+  type PluginKind,
   type PluginMeta,
   type PluginMethod,
-  type ScrapePlugin
+  type TranslatePlugin
 } from '@common/types/plugin'
 import { readString, toSource } from '@common/types/setting/shared'
 
@@ -36,10 +44,10 @@ export const PLUGIN_TOP_LEVEL_TIMEOUT_MS = 5000
 /** 单次方法调用超时 */
 export const PLUGIN_CALL_TIMEOUT_MS = 30000
 
-/** 插件的日志出口：由调用方注入（主进程写入日志表，scope 固定为 `plugin:<id>`） */
+/** 插件的日志出口：由调用方注入（主进程写入日志表，scope 固定为 `plugin:<类别>:<id>`） */
 export type PluginLogSink = (level: LogLevel, message: string, detail?: string) => void
 
-/** 插件方法的统一签名：入参是关键字 / 影片 ID，外加环境变量与宿主上下文 */
+/** 插件方法的统一签名：入参是关键字 / 影片 ID / 演员姓名，外加环境变量与宿主上下文 */
 export type PluginHandler = (
   input: string,
   env: PluginEnvValue,
@@ -51,7 +59,7 @@ export interface CompiledPlugin {
   meta: PluginMeta
   /** 插件声明的环境变量（安装 / 保存时在沙箱执行脚本读出） */
   env: PluginEnvField[]
-  plugin: ScrapePlugin
+  plugin: PluginDefinition
 }
 
 /** 把任意异常收敛成文案 + 明细；跨 realm 的 Error 只能按结构读取 */
@@ -136,48 +144,83 @@ function readHandler(source: Record<string, unknown>, method: PluginMethod): Plu
   return typeof value === 'function' ? (value as PluginHandler) : null
 }
 
-/** 必需方法编译时就保证存在；可选钩子实现了才挂上 */
+/** 插件定义里实际实现的方法，未实现的一律不挂 */
 interface PluginHandlers {
-  search: PluginHandler
-  detail: PluginHandler
-  covers: PluginHandler
-  extras: PluginHandler
+  search?: PluginHandler
+  detail?: PluginHandler
+  covers?: PluginHandler
+  extras?: PluginHandler
   actor?: PluginHandler
   actorAssets?: PluginHandler
 }
 
-function readHandlers(source: Record<string, unknown>): PluginHandlers | null {
+function readHandlers(source: Record<string, unknown>): PluginHandlers {
+  const handlers: PluginHandlers = {}
   const search = readHandler(source, 'search')
   const detail = readHandler(source, 'detail')
   const covers = readHandler(source, 'covers')
   const extras = readHandler(source, 'extras')
-  if (!search || !detail || !covers || !extras) return null
-  const handlers: PluginHandlers = { search, detail, covers, extras }
   const actor = readHandler(source, 'actor')
   const actorAssets = readHandler(source, 'actorAssets')
+  if (search) handlers.search = search
+  if (detail) handlers.detail = detail
+  if (covers) handlers.covers = covers
+  if (extras) handlers.extras = extras
   if (actor) handlers.actor = actor
   if (actorAssets) handlers.actorAssets = actorAssets
   return handlers
 }
 
-/** 在宿主 realm 里重建插件对象：方法返回值一律归一化成宿主 realm 的纯对象 */
-function buildPlugin(meta: PluginMeta, handlers: PluginHandlers): ScrapePlugin {
-  const plugin: ScrapePlugin = {
+/** 按类别方法表校验：缺必需方法、实现别类方法都直接拒绝，避免「写了却不生效」 */
+function assertHandlers(kind: PluginKind, handlers: PluginHandlers): void {
+  const table = PLUGIN_KIND_METHODS[kind]
+  const implemented = PLUGIN_METHOD_NAMES.filter((method) => handlers[method] !== undefined)
+  const foreign = implemented.filter((method) => !table.all.includes(method))
+  if (foreign.length > 0) {
+    throw new PluginError(
+      'invalidPlugin',
+      `${PLUGIN_KIND_LABELS[kind]}插件不能实现其它类别的方法：${foreign.join(' / ')}，请拆成独立插件`
+    )
+  }
+  const missing = table.required.filter((method) => handlers[method] === undefined)
+  if (missing.length > 0) {
+    throw new PluginError(
+      'invalidPlugin',
+      `${PLUGIN_KIND_LABELS[kind]}插件必须实现方法：${missing.join(' / ')}`
+    )
+  }
+}
+
+/** 在宿主 realm 里重建影片插件：方法返回值一律归一化成宿主 realm 的纯对象 */
+function buildMoviePlugin(meta: PluginMeta, handlers: PluginHandlers): MoviePlugin {
+  const { search, detail, covers, extras } = handlers
+  if (!search || !detail || !covers || !extras) {
+    throw new PluginError('invalidPlugin', '影片信息插件缺少必需方法')
+  }
+  return {
     meta,
-    search: async (keyword, env, ctx) => normalizeCandidates(await handlers.search(keyword, env, ctx)),
+    search: async (keyword, env, ctx) => normalizeCandidates(await search(keyword, env, ctx)),
     detail: async (movieId, env, ctx) => {
-      const detail = normalizeDetail(await handlers.detail(movieId, env, ctx), movieId)
-      if (!detail) throw new PluginError('invokeFailed', '插件返回的影片详情不合法（title 必填）')
-      return detail
+      const normalized = normalizeDetail(await detail(movieId, env, ctx), movieId)
+      if (!normalized) {
+        throw new PluginError('invokeFailed', '插件返回的影片详情不合法（title 必填）')
+      }
+      return normalized
     },
     covers: async (movieId, env, ctx) =>
-      normalizeAssets(await handlers.covers(movieId, env, ctx), ['poster', 'thumb', 'fanart']),
+      normalizeAssets(await covers(movieId, env, ctx), ['poster', 'thumb', 'fanart']),
     extras: async (movieId, env, ctx) =>
-      normalizeAssets(await handlers.extras(movieId, env, ctx), ['still', 'trailer'])
+      normalizeAssets(await extras(movieId, env, ctx), ['still', 'trailer'])
   }
+}
+
+/** 在宿主 realm 里重建演员插件 */
+function buildActorPlugin(meta: PluginMeta, handlers: PluginHandlers): ActorPlugin {
   const actor = handlers.actor
-  if (actor) {
-    plugin.actor = async (name, env, ctx) => {
+  if (!actor) throw new PluginError('invalidPlugin', '演员信息插件缺少必需方法：actor')
+  const plugin: ActorPlugin = {
+    meta,
+    actor: async (name, env, ctx) => {
       const detail = normalizeActorDetail(await actor(name, env, ctx), name)
       if (!detail) throw new PluginError('invokeFailed', '插件返回的演员资料不合法（name 必填）')
       return detail
@@ -191,12 +234,25 @@ function buildPlugin(meta: PluginMeta, handlers: PluginHandlers): ScrapePlugin {
   return plugin
 }
 
+function buildPlugin(
+  kind: PluginKind,
+  meta: PluginMeta,
+  handlers: PluginHandlers
+): PluginDefinition {
+  if (kind === 'movie') return buildMoviePlugin(meta, handlers)
+  if (kind === 'actor') return buildActorPlugin(meta, handlers)
+  const translate: TranslatePlugin = { meta }
+  return translate
+}
+
 /**
  * 编译插件源码。
  *
+ * @param kind 目标类别：既决定校验用的方法表，也要求 `meta.kind` 与之完全一致
  * @param filename 仅供堆栈显示；主进程调用时传 `<id>.js`
  */
 export function compilePlugin(
+  kind: PluginKind,
   source: string,
   log: PluginLogSink,
   filename = 'plugin.js'
@@ -210,7 +266,7 @@ export function compilePlugin(
   }
 
   const { sandbox, takeDefinition } = createSandbox(log)
-  const context = vm.createContext(sandbox, { name: `plugin:${filename}` })
+  const context = vm.createContext(sandbox, { name: `plugin:${kind}:${filename}` })
   let completion: unknown
   try {
     completion = script.runInContext(context, {
@@ -236,13 +292,17 @@ export function compilePlugin(
   if (!meta) {
     throw new PluginError(
       'invalidPlugin',
-      '插件 meta 不合法：需要 id（小写 kebab-case）、name、version'
+      '插件 meta 不合法：需要 id（小写 kebab-case）、name、version、kind（movie / actor / translate）'
+    )
+  }
+  if (meta.kind !== kind) {
+    throw new PluginError(
+      'invalidPlugin',
+      `插件声明的类别是「${PLUGIN_KIND_LABELS[meta.kind]}」，不能在「${PLUGIN_KIND_LABELS[kind]}」类别里加载或导入`
     )
   }
   const handlers = readHandlers(definition)
-  if (!handlers) {
-    throw new PluginError('invalidPlugin', `插件必须实现方法：${PLUGIN_METHODS.join(' / ')}`)
-  }
+  assertHandlers(kind, handlers)
   // 兼容早期示例里的 `config` 写法：`env` 优先，其次 `config`，并在后者出现时提醒一次
   const declared = definition.env ?? definition.config
   if (definition.env === undefined && definition.config !== undefined) {
@@ -251,7 +311,7 @@ export function compilePlugin(
   return {
     meta,
     env: normalizeEnvFields(declared),
-    plugin: buildPlugin(meta, handlers)
+    plugin: buildPlugin(kind, meta, handlers)
   }
 }
 

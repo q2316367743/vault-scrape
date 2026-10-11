@@ -37,7 +37,7 @@ import {
   type ActorProfilePatch
 } from '$/db/repo/actorRepo'
 import type { ActorRow } from '$/db/schema'
-import { invokePlugin, listPluginSummaries } from '$/modules/plugin/pluginRegistry'
+import { actorPlugins } from '$/modules/plugin/pluginRegistries'
 import { downloadAssetToTemp, type AssetDownload } from '$/modules/scrape/scrapeAssets'
 import { loadSetting } from '$/modules/setting/settingStore'
 import { syncItemCast } from './actorLink'
@@ -90,9 +90,10 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误'
 }
 
-/** 已启用的插件 ID；真正能不能抓由调用结果决定（没有钩子的插件会报错跳过） */
+/** 已启用的「演员信息」插件 ID；真正能不能抓由调用结果决定（没有钩子的插件会报错跳过） */
 function enabledPluginIds(): string[] {
-  return listPluginSummaries()
+  return actorPlugins
+    .listPluginSummaries()
     .filter((summary) => summary.enabled)
     .map((summary) => summary.id)
 }
@@ -114,7 +115,7 @@ function isAssetList(value: PluginInvokeData): value is PluginAsset[] {
 
 async function readActorDetail(pluginId: string, name: string): Promise<PluginActorDetail | null> {
   try {
-    const data = await invokePlugin(pluginId, 'actor', { actorName: name })
+    const data = await actorPlugins.invokePlugin(pluginId, 'actor', { actorName: name })
     return Array.isArray(data) ? null : normalizeActorDetail(data, '')
   } catch (error) {
     appendLog({
@@ -128,7 +129,7 @@ async function readActorDetail(pluginId: string, name: string): Promise<PluginAc
 
 async function readActorAssets(pluginId: string, name: string): Promise<PluginAsset[]> {
   try {
-    const data = await invokePlugin(pluginId, 'actorAssets', { actorName: name })
+    const data = await actorPlugins.invokePlugin(pluginId, 'actorAssets', { actorName: name })
     return isAssetList(data) ? data : []
   } catch (error) {
     appendLog({

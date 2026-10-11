@@ -10,10 +10,10 @@
  */
 import { computed, ref, watch } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
-import type { PluginEnvField, PluginSummary } from '@common/types/plugin'
-import { pluginApi } from '@/api'
+import type { PluginEnvField, PluginKind, PluginSummary } from '@common/types/plugin'
+import { pluginBridge } from '@/api'
 
-const props = defineProps<{ plugin: PluginSummary }>()
+const props = defineProps<{ plugin: PluginSummary; kind: PluginKind }>()
 const emit = defineEmits<{ saved: [plugin: PluginSummary] }>()
 
 const loading = ref(false)
@@ -48,7 +48,7 @@ async function load(): Promise<void> {
     return
   }
   loading.value = true
-  const result = await pluginApi.getEnv(props.plugin.id)
+  const result = await pluginBridge(props.kind).getEnv(props.plugin.id)
   loading.value = false
   if (!result.ok) {
     fields.value = []
@@ -68,7 +68,7 @@ async function save(): Promise<void> {
     return
   }
   saving.value = true
-  const result = await pluginApi.saveEnv(props.plugin.id, { values: payload })
+  const result = await pluginBridge(props.kind).saveEnv(props.plugin.id, { values: payload })
   saving.value = false
   if (!result.ok) {
     MessagePlugin.error(`保存「${props.plugin.name}」失败：${result.message}`)
@@ -97,7 +97,7 @@ watch(() => props.plugin.id, () => void load(), { immediate: true })
       <t-button size="small" variant="text" :loading="loading" @click="load">刷新</t-button>
     </div>
     <p class="panel-tip">
-      环境变量由插件自行声明，保存在 ~/.vault-scrape/plugin/plugins.json（加密存放）
+      环境变量由插件自行声明，保存在 ~/.vault-scrape/plugin/&lt;类别&gt;/plugins.json（加密存放）
     </p>
 
     <t-loading :loading="loading" size="small">

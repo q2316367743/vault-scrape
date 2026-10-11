@@ -2,7 +2,7 @@
 
 ## 实现思路
 
-九个一级页面（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理（见[存储管理页面](./02-storage-page.md)）、影视墙详情（见[影视墙页面](./04-media-wall-page.md)）、演员详情（见[演员页面](./05-actor-pages.md)）、工具搜索（见下文「工具」）与刮削进度详情（见[刮削进度与详情页](./03-scrape-detail-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），概览接了任务与刮削模块 IPC（任务统计 / 分页记录 / 当前任务快照 / 进度推送 / 取消 / 继续），影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「还原刮削前」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料）。
+九个一级页面（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理（见[存储管理页面](./02-storage-page.md)）、影视墙详情（见[影视墙页面](./04-media-wall-page.md)）、演员详情（见[演员页面](./05-actor-pages.md)）、工具搜索（见下文「工具」）与刮削进度详情（见[刮削进度与详情页](./03-scrape-detail-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（按类别分影片信息 / 演员信息 / 翻译三个 tab；导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），概览接了任务与刮削模块 IPC（任务统计 / 分页记录 / 当前任务快照 / 进度推送 / 取消 / 继续），影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「还原刮削前」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料）。
 
 页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
@@ -19,7 +19,10 @@
 | `/media/library` | `pages/media/wall/MediaWallPage.vue` | 影视墙资料库 |
 | `/media/detail` | `pages/media/detail/MediaDetailPage.vue` | 影视墙详情 |
 | `/storage` | `pages/storage/StoragePage.vue` | 存储 |
-| `/plugin` | `pages/plugin/PluginPage.vue` | 插件 |
+| `/plugin` | `pages/plugin/PluginHomePage.vue` | 插件（tab 外壳，redirect `/plugin/movie`） |
+| `/plugin/movie` | `pages/plugin/movie/MoviePluginPage.vue` | 影片信息插件 |
+| `/plugin/actor` | `pages/plugin/actor/ActorPluginPage.vue` | 演员信息插件 |
+| `/plugin/translate` | `pages/plugin/translate/TranslatePluginPage.vue` | 翻译插件 |
 | `/tools` | `pages/tools/ToolsPage.vue` | 工具 |
 | `/tools/search` | `pages/tools/search/ToolSearchPage.vue` | 搜索 |
 | `/setting` | `pages/setting/SettingPage.vue` | 设置 |
@@ -49,19 +52,21 @@
 
 ## 插件
 
-- 页面 `PluginPage.vue`：左侧 `components/PluginList.vue`（插件列表），右侧 `components/PluginDetail.vue`（概览 + 启停 + 编辑代码 + 删除 + 配置区块）。
+- 插件页是**一个入口 + 三个 tab**（影片信息 / 演员信息 / 翻译，类别与契约见 [../plugin/03-plugin-categories.md](../plugin/03-plugin-categories.md)）：外壳 `pages/plugin/PluginHomePage.vue` 只放 `t-tabs` 条、旧版插件提示与 `<router-view>`（自身不套 `page-layout`，避免双层页头），三个 tab 分别路由到 `plugin/movie/MoviePluginPage.vue` / `plugin/actor/ActorPluginPage.vue` / `plugin/translate/TranslatePluginPage.vue`；每个类别页都复用 `components/PluginManagerView.vue`（`props: { kind }`，负责页头标题 / 说明、刷新与导入按钮、左右的 `components/PluginList.vue`（插件列表，左）与 `components/PluginDetail.vue`（概览 + 启停 + 编辑代码 + 删除 + 配置区块，右））。
 - 左栏不是卡片：`PluginList.vue` 是透明的 `<aside>`，只用一条右侧分隔线（`--fluent-sidebar-border`）与右栏分区，自身带 40px 高的「已安装插件 + 数量」头，露出主容器的亚克力材质。
 - 列表项固定单行：最左是拖拽手柄（`MoveIcon`，悬停提示「按住任意位置拖动即可调整顺序」），接着名称 +（内置插件）「内置」标签 + 单行省略的描述，描述完整内容与详情页「说明」一样通过 `t-tooltip` 悬停查看；右侧用 `size="small"` 的状态标签显示「已启用 / 已停用」与「待填写变量 / 加载失败」。
-- 拖拽排序用 sortablejs：容器取**第一个列表项的父节点**（不假设 tdesign 内部层级——`t-list` 外层若再包一层 `ul`，容器取错会让 Sortable 静默失效），**整行都可拖**（没有位移的点击不会触发原生拖拽，仍按点击处理，即选中插件；手柄只是视觉提示）。拖完先就地重排本地列表，再走 `plugin:reorder` 写回 `plugins.json`；主进程返回的完整列表作为最终顺序，失败则报错并重新拉取列表还原。
-- 状态在 `composables/usePlugins.ts`（列表、选中持久化到 localStorage、启停、排序、导入、删除、源码读写、`applySummary` 就地更新单条摘要）里。搜索与影片详情原来挂在插件页，现已整体迁到工具箱，见下文「工具」。
+- 拖拽排序用 sortablejs：容器取**第一个列表项的父节点**（不假设 tdesign 内部层级——`t-list` 外层若再包一层 `ul`，容器取错会让 Sortable 静默失效），**整行都可拖**（没有位移的点击不会触发原生拖拽，仍按点击处理，即选中插件；手柄只是视觉提示）。拖完先就地重排本地列表，再走 `plugin:<类别>:reorder`（如 `plugin:movie:reorder`）写回该类别目录下的 `plugins.json`；主进程返回的完整列表作为最终顺序，失败则报错并重新拉取列表还原。
+- 状态在 `composables/usePluginManager.ts`（`usePluginManager(kind)`，按类别各持一份模块级状态；列表、选中持久化到 localStorage、启停、排序、导入、删除、源码读写、`applySummary` 就地更新单条摘要）里；IPC 走 `api/plugin.ts` 的 `pluginBridge(kind)`（`pluginApi.movie` / `.actor` / `.translate`）。搜索与影片详情原来挂在插件页，现已整体迁到工具箱，见下文「工具」。
 - 环境变量在插件页右栏的**配置区块**（`components/PluginConfigPanel.vue`）填写：只在插件声明了环境变量（`hasEnv`）时渲染，内置插件与没写 `env` 的脚本插件都不会出现空区域；选中插件后按声明表渲染多行文本域，保存以插件为单位；环境变量一律按敏感处理，明文永不回传，文本域留空表示保持已保存的值。保存成功后用主进程返回的 `PluginSummary` 上抛（`PluginDetail` 的 `changed` → 页面的 `applySummary`），列表上的「待填写变量」标签即时更新，不整表刷新。
 - 安装（导入 / 保存源码）时会在沙箱里执行一次脚本，读取 `env` 声明并写入索引，不联网、不调用四个方法；声明表即配置区块的数据源。
 - 影片详情是命令式抽屉（现位于 `pages/tools/search/`）：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
 - 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，只有编辑器本体；底部 footer 的「取消 / 保存」由外壳渲染，保存动作与 `saving` / `canSubmit` 由内容组件 `defineExpose` 暴露，见 `src/renderer/src/utils/modal/ModalContent.ts`；保存时主进程先编译校验再落盘）。
 - 导入支持在系统文件选择框里一次多选多个 `.js`；同名（`meta.id`）只保留最新——先比 `meta.version`，版本相同再比源文件 mtime，批内与本机已安装的旧版本都不落盘，只用 `MessagePlugin.info` 提示「已跳过 N 个旧版本插件」；仅当版本相同且未覆盖时弹 `DialogPlugin.confirm`，确认后带 `overwrite: true` 重试；导入的系统文件选择框由主进程弹出。
 - 契约、沙箱白名单、超时、存储与错误码见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
-- 内置插件（当前只有 `r18-offline`「R18 离线数据包」）用 `PluginSummary.source === 'builtin'` 区分：列表与详情都带「内置」标签，没有源码文件，因此详情页隐藏「编辑代码」「删除」，源文件一行显示「内置实现（无源码文件）」。
-- 内置插件详情在概览下方挂 `components/OfflinePackPanel.vue`（内置插件 `env` 为空、`hasEnv` 为 false，没有配置区块）：四个按钮（检查更新 / 下载并导入 / 本地导入 / 删除）、阶段进度与取消、数据包日期 / 导入时间 / 上次检查 / 影片数量 / 库大小 / 库路径（下载与删除走 `DialogPlugin.confirm`）；状态集中在 `composables/useOfflineData.ts`（模块级单例，`ensureSubscribed()` 只订阅一次进度与完成事件）。
+- 内置插件（当前只有 `r18-offline`「R18 离线数据包」，属**影片信息**类别）用 `PluginSummary.source === 'builtin'` 区分：列表与详情都带「内置」标签，没有源码文件，因此详情页隐藏「编辑代码」「删除」，源文件一行显示「内置实现（无源码文件）」。
+- 内置插件详情在概览下方挂 `movie/components/OfflinePackPanel.vue`——`MoviePluginPage.vue` 通过 `PluginManagerView` 的 `#detail-extra` 插槽注入，仅当前选中项是内置插件时出现（内置插件 `env` 为空、`hasEnv` 为 false，没有配置区块）：四个按钮（检查更新 / 下载并导入 / 本地导入 / 删除）、阶段进度与取消、数据包日期 / 导入时间 / 上次检查 / 影片数量 / 库大小 / 库路径（下载与删除走 `DialogPlugin.confirm`）；状态集中在 `movie/composables/useOfflineData.ts`（模块级单例，`ensureSubscribed()` 只订阅一次进度与完成事件）。
+- 侧栏「插件」项用 `match: 'prefix'`，进入任一类别 tab 都保持高亮。
+- 旧版平铺插件（`~/.vault-scrape/plugin/*.js`，没有 `meta.kind`）不再加载，由 `PluginHomePage.vue` 顶部的 `components/PluginLegacyAlert.vue` 调 `pluginApi.legacy()` 给出提示。
 - 启动时的「离线数据包有新版本」提示在外壳 `App.vue` 里由 `composables/useOfflineUpdateNotice.ts` 完成：先订阅主进程广播、再读一次状态，**每次启动最多提示一次，且绝不自动下载**（自动检查间隔 7 天，由主进程在启动时判断）。
 - 离线数据包的数据源、存储布局、导入流水线与查询规则见 [../plugin/02-builtin-offline-plugin.md](../plugin/02-builtin-offline-plugin.md)。
 
@@ -70,7 +75,7 @@
 - 工具箱是**索引页**：`ToolsPage.vue` 按 `toolRegistry.ts` 的 `ToolEntry[]` 渲染入口卡片（图标 + 名称 + 说明），点击进入各自的工具页路由；新增工具时先在注册表登记、再在 `router.ts` 注册路由。
 - 当前唯一工具是**搜索**（`/tools/search`，`pages/tools/search/ToolSearchPage.vue`）：顶部用 `t-select` 选择「使用哪个插件」（选项带「加载失败 / 待填写变量 / 已停用」状态后缀，加载失败的选项禁用），下面 `components/ToolSearchPanel.vue` 提供两个入口——关键字搜索（结果每行 = 单行省略的标题 + `t-tooltip` 悬停看全，下面是带图标的标签行：番号 / 发行日期 / 集数 / 演员，演员超过 3 个折成 `+N` 悬停看全，点行或「详情」按钮打开抽屉）与直接填影片 ID 点「查看详情」。页面用 `SubPageLayout` 包裹：返回图标按钮在标题左侧、点它 `router.back()`，右上角 `#extra` 只放「刷新」。
 - 搜索状态在 `composables/useToolSearch.ts`（关键字、候选列表、loading），影片详情在 `composables/useMoviePreview.ts`（按影片 ID 拉详情 / 封面 / 花絮，并按当前下载设置标注资产），资源类型与下载判定在 `toolUtils.ts`（都在 `pages/tools/search/` 下）。
-- 选择器与插件页共享同一份「当前插件」（`usePlugins` 持久化到 localStorage 的 `vault-scrape:plugin-active`）：在插件页选中哪个插件，进搜索工具页就是哪个。
+- 选择器与「影片信息插件」页共享同一份「当前插件」（都用 `usePluginManager('movie')`，选中持久化到 localStorage 的 `vault-scrape:plugin-active:movie`）：在插件页影片信息 tab 选中哪个插件，进搜索工具页就是哪个。
 - 未启用、必填变量未填的插件仍可被选中，调用由主进程以中文错误拒绝（渲染层不复制这套业务规则）；插件列表为空时页面提示先去「插件」页导入。
 
 ## 设置

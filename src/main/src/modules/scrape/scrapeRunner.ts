@@ -24,7 +24,7 @@ import { findLibraryByPath, getLibrary, patchLibrary } from '$/db/repo/libraryRe
 import { listTask, getTask, insertTask, updateTask, interruptRunningTasks } from '$/db/repo/taskRepo'
 import { insertScrapeFiles, listScrapeFile, updateScrapeFile } from '$/db/repo/scrapeRepo'
 import { getFileClient } from '$/modules/file/fileClientManager'
-import { listPluginSummaries } from '$/modules/plugin/pluginRegistry'
+import { moviePlugins } from '$/modules/plugin/pluginRegistries'
 import { loadSetting } from '$/modules/setting/settingStore'
 import { broadcastScrapeProgress } from './scrapeEvents'
 import { keywordOf, runFileJob } from './scrapeFileJob'
@@ -77,14 +77,15 @@ interface LibraryPlugins {
 }
 
 /**
- * 可用插件：按插件页顺序，过滤停用与加载失败的。
+ * 可用插件：按插件页顺序，过滤停用与加载失败的（只取「影片信息」类别的插件）。
  *
  * 只认资料库绑定的刮削器（**不再回落到存储配置**）；空清单是合法状态
  * （该库不刮削），此时直接返回空数组，由调用方按「未配置刮削器」处理。
  * 无论勾选顺序如何，命中顺序只看插件页排序。
  */
 function usablePlugins(scraperIds: readonly string[]): LibraryPlugins {
-  const all = listPluginSummaries()
+  const all = moviePlugins
+    .listPluginSummaries()
     .filter((plugin: PluginSummary) => plugin.enabled && plugin.loadError.length === 0)
     .map((plugin) => ({ id: plugin.id, name: plugin.name }))
   const configured = [...new Set(scraperIds.filter((id) => id.length > 0))]

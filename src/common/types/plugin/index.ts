@@ -32,6 +32,7 @@ export {
   type PluginImportFailure,
   type PluginImportResult,
   type PluginImportSkipped,
+  type PluginLegacyNotice,
   type PluginMeta,
   type PluginSource,
   type PluginSummary
@@ -48,19 +49,30 @@ export {
 export type { PluginEpisode, PluginMovieCandidate, PluginMovieDetail } from './movie'
 
 export {
-  PLUGIN_METHODS,
   PLUGIN_METHOD_NAMES,
-  PLUGIN_OPTIONAL_METHODS,
+  type ActorPlugin,
   type DefinePlugin,
+  type MoviePlugin,
   type PluginContext,
+  type PluginDefinition,
   type PluginHtmlLoader,
   type PluginInvokeData,
   type PluginInvokePayload,
   type PluginMethod,
   type PluginRequestOptions,
   type PluginResponse,
-  type ScrapePlugin
+  type TranslatePlugin
 } from './define'
+
+export {
+  PLUGIN_KINDS,
+  PLUGIN_KIND_DESCRIPTIONS,
+  PLUGIN_KIND_LABELS,
+  PLUGIN_KIND_METHODS,
+  isPluginKind,
+  type PluginKind,
+  type PluginKindMethodTable
+} from './kind'
 
 export {
   normalizeActorDetail,

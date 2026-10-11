@@ -38,7 +38,8 @@
 | `restAfterCount` | 连续刮削多少条后休息，0 表示不休息 | `50` | 数字输入，最小 0 |
 | `restDuration` | 休息时长（秒） | `60` | 数字输入，最小 0 |
 | `fanartDirName` | 剧照目录名：既是刮削结果里存放剧照（`still`）的子目录名，也是「优先读取本地图片」时查找本地剧照的目录名 | `'extrafanart'` | 输入框 |
-| `actorScrape` | 影片刮削入库后，是否自动为参演演员抓取资料（需要刮削器实现 `actor` 钩子；只补空白字段，锁定资料只填空） | `true` | 开关 |
+| `actorScrape` | 影片刮削入库后，是否自动为参演演员抓取资料（需要启用**演员信息插件**即 `actor` 类插件；只补空白字段，锁定资料只填空） | `true` | 开关 |
+| `actorScrapeOnOpen` | 打开演员详情页且资料不全（没抓过、没头像或没生日）时，是否自动抓一次（会话内同一演员只试一次，静默失败） | `true` | 开关 |
 | `actorImageLimit` | 每位演员最多下载多少张图集图片，0 表示只抓资料、不下载图片（头像不计入这个上限） | `12` | 数字输入，最小 0 |
 
 ## 4. 网络连接（`network`）
@@ -121,7 +122,7 @@ NFO **一定会写**，因此没有「生成 NFO」/「NFO 文件命名」/「�
 
 ## 9. 站点账号参数（不在设置页）
 
-站点账号参数**不并入 `settings.json`**：刮削源由插件决定，账号类参数（站点地址、Cookie、API Key 等）由插件在自己的 `env` 表里声明，值落在 `~/.vault-scrape/plugin/plugins.json`；环境变量一律按敏感处理，由 `safeStorage` 加密保存且明文永不跨 IPC。
+站点账号参数**不并入 `settings.json`**：刮削源由插件决定，账号类参数（站点地址、Cookie、API Key 等）由插件在自己的 `env` 表里声明，值按插件类别落在 `~/.vault-scrape/plugin/<类别>/plugins.json`（如影片插件在 `plugin/movie/plugins.json`）；环境变量一律按敏感处理，由 `safeStorage` 加密保存且明文永不跨 IPC。
 
 因此类型层不包含 `account` 分组，设置页也没有「账号设置」标签：填写入口是**插件页右栏的配置区块**（`pages/plugin/components/PluginConfigPanel.vue`）——选中哪个插件就填哪个插件的变量，每个变量一行**多行文本域**（`t-textarea`），已保存的值不回显（提示「已保存，留空表示保持不变」），保存以插件为单位。插件未声明 `env`（含内置插件）时详情页根本不渲染这个区块，声明了但一项都无需填时区块内显示空态。插件的环境变量声明、加密口径与完整界面说明见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 

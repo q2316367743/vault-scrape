@@ -2,10 +2,10 @@
 
 ## 1. 定位与入口
 
-刮削模块把「选一个资料库 → 逐级浏览勾选影片（或整库待刮削候选）→ 按插件顺序刮削 → 按资料库策略落盘」这条链路做成**主进程单例任务**：任务与逐文件结果先落 sqlite，再向渲染层推送进度事件，因此渲染窗口关闭、切换 tab 或重新打开后，拉一次快照就能复原进度。
+刮削模块把「选一个资料库 → 逐级浏览勾选影片（或整库待刮削候选）→ 按**影片信息插件**顺序刮削 → 按资料库策略落盘」这条链路做成**主进程单例任务**：任务与逐文件结果先落 sqlite，再向渲染层推送进度事件，因此渲染窗口关闭、切换 tab 或重新打开后，拉一次快照就能复原进度。
 
 - 渲染层入口只剩一个：影视墙资料库抽屉里的整库「刮削」（[影视墙页面](../page/04-media-wall-page.md)），由 `startLibraryScrape` 取本库全部待刮削候选。原「工作台」（选资料库 → 逐级浏览 → 勾选影片排队）已整体下线，刮削的进度 / 取消 / 继续 / 逐文件结果改在概览页看（[刮削进度与详情页](../page/03-scrape-detail-page.md)）。调用只经 `@/api` 的 `scrapeApi` / `libraryApi`，不触碰 `window.preload`。
-- **候选与刮削器都来自资料库**：候选是本库 `scrapedAt = 0` 的影片条目，刮削器是 `library.scrapers`（见 [资料库](../media/01-media-library.md)）。**刮削阶段不扫盘、也不自己建索引**，`FileConnection` 上已经没有 `scrapers` 字段。
+- **候选与刮削器都来自资料库**：候选是本库 `scrapedAt = 0` 的影片条目，刮削器是 `library.scrapers`（见 [资料库](../media/01-media-library.md)）。这里存的 id 是**影片信息插件**（`kind: 'movie'`）的 id，运行时从影片类别注册表 `moviePlugins` 取用，演员信息插件不参与影片刮削。**刮削阶段不扫盘、也不自己建索引**，`FileConnection` 上已经没有 `scrapers` 字段。
 - preload 桥：`src/preload/src/modules/scrape/scrape.ts`（`scrapeApi`）与 `scrapeChannels.ts`（通道常量，主进程通过别名 `~` 引用同一份定义）。
 - 主进程实现：`src/main/src/modules/scrape/`。
 - 公共类型：`src/common/types/scrape/`（`keyword` / `media` / `asset` / `naming` / `nfo` / `error` / `result` / `task`）。
@@ -32,9 +32,9 @@
 ```
 src/main/src/modules/scrape/
 ├── scrapeRunner.ts       # 任务编排：单任务互斥、并发调度、取消 / 继续、启动时中断标记、按条目启动（startScrapeTaskForEntries）
-├── scrapeFileJob.ts      # 单文件流水线**编排**：本地优先、跨插件补全、命名、下载、NFO、移动、条目回写，最后挂参演演员并排队补全
-├── scrapeJobTypes.ts     # 流水线的上下文与结果类型（ScrapeJobContext / ScrapeJobOutcome / ScrapeSettingsSnapshot / ScrapeLibraryPolicy / ScrapePluginRef）
-├── scrapeJobPlan.ts      # 计算与下载：基名、资源计划、跨插件收集（collectFromPlugins）、本地图片就位、向连接上传（downloadAsset）
+├── scrapeFileJob.ts      # 单文件流水线**编排**：本地优先、跨影片信息插件补全、命名、下载、NFO、移动、条目回写，最后挂参演演员并排队补全
+├── scrapeJobTypes.ts     # 流水线的上下文与结果类型（ScrapeJobContext / ScrapeJobOutcome / ScrapeSettingsSnapshot / ScrapeLibraryPolicy / ScrapePluginRef，后者指向影片信息插件）
+├── scrapeJobPlan.ts      # 计算与下载：基名、资源计划、跨影片信息插件收集（collectFromPlugins）、本地图片就位、向连接上传（downloadAsset）
 ├── scrapeJobApply.ts     # 写回与收尾：元数据映射（metadataOf）、媒体源路径刷新（refreshSourcePath，影视墙还原流程也复用）、搬空后删原目录
 ├── scrapeLayout.ts       # 目录规范：文件夹名 / 影片文件名 / NFO 文件名（三者同名）与工作目录解析
 ├── scrapeLocalMeta.ts    # 本地优先：读同目录本地 NFO（parseNfoXml）与本地图片并归类
@@ -81,7 +81,7 @@ src/common/types/scrape/
 - 任务进入终态（含取消 / 中断）后**不再重建任何索引**（`rebuildIndexAfterTask()` 已随资源索引一起删除）：改名 / 移动由 `updateSourcePath` 就地更新 `media_source.path`（媒体源 id 不变），条目元数据与图片由流水线直接写 `media_item` / `media_image`，影视墙下次取数就是新状态。资料库因此不需要「刮削完再扫一遍」。
 - 启动前的入参校验（`assertInside`）：路径必须位于 `dirPath` 的**子树内**（等于根路径、或以 `根 + '/'` 开头；`dirPath` 为 `/` 时放行全部），否则 `invalidArgument`（文案 `文件不在所选根目录下：<路径>`）。这比早期「必须直接位于根目录之下」放宽了一层，资料库才能把整个子树的视频排进同一个任务；没有可用插件时返回 `pluginMissing`。
 - **每个文件按自己所在目录处理**：工作目录取 `dirnameRemotePath(item.path)`，命名产出与成功后移动都落在文件自己的目录，而不是整批共用一个 `dirPath`（早期「只扫一层」的入口与整库递归扫描的差别就在这里）。
-- **可用插件只认资料库绑定**：`usablePlugins(scraperIds)`——`scraperIds` 一定来自 `library.scrapers`，**不再回落到存储配置**（连接上已没有 `scrapers` 字段）：
+- **可用插件只认资料库绑定**：`usablePlugins(scraperIds)` 从**影片信息插件**注册表 `moviePlugins` 里取候选——`scraperIds` 一定来自 `library.scrapers`，**不再回落到存储配置**（连接上已没有 `scrapers` 字段）：
   - 只保留 id 在库配置里、且当前可用（已启用、编译通过）的插件，**顺序仍沿用插件页保存的顺序**，不会按配置顺序重排；
   - 库里失效的 id（插件被删 / 停用 / 编译失败）在运行时直接跳过，不在界面上自动清除（保存资料库时表单会把它们补进刮削器多选项、label 标注「（已失效）」显示，取消勾选才丢弃）。
   过滤后为空时抛 `pluginMissing`，两种文案区分原因：`该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择`（库上没配，`libraryScrape.runPlan` 在启动任务前就拦下）/ `资料库配置的刮削器均不可用，请重新选择`（配了但都失效）。
@@ -90,7 +90,7 @@ src/common/types/scrape/
 
 ## 5. 单文件流水线（`scrapeFileJob.ts`）
 
-`runFileJob(context)` 按顺序做这些事：**本地优先读取 → 跨插件补全 → 计算基名与影片文件夹 → 资源落盘 → 写 NFO → 移动视频并回写库 → 回写条目元数据与图片 → 挂参演演员并排队补全**。编排留在 `scrapeFileJob.ts`（264 行），计算与写回拆在 `scrapeJobPlan.ts` / `scrapeJobApply.ts`，上下文类型在 `scrapeJobTypes.ts`——三者都只被本流水线使用，行为与拆分前一致。
+`runFileJob(context)` 按顺序做这些事：**本地优先读取 → 跨影片信息插件补全 → 计算基名与影片文件夹 → 资源落盘 → 写 NFO → 移动视频并回写库 → 回写条目元数据与图片 → 挂参演演员并排队补全**。编排留在 `scrapeFileJob.ts`（264 行），计算与写回拆在 `scrapeJobPlan.ts` / `scrapeJobApply.ts`，上下文类型在 `scrapeJobTypes.ts`——三者都只被本流水线使用，行为与拆分前一致。
 
 ### 5.1 目录规范
 
@@ -116,7 +116,7 @@ src/common/types/scrape/
 ### 5.2 流水线顺序
 
 1. **本地优先**（库级 `localFirst` 为真时）：`scrapeLocalMeta.readLocalMeta(client, { dirPath, originalBase, fanartDirName })` 读同目录的本地 NFO（候选 `${原基名}.nfo` → `movie.nfo`，用 `parseNfoXml` 解析，解析不出就当作没有）与本地图片（固定名 / `{原基名}-` 前缀名 / 与影片同名的图 / `extrafanart` 下的全部图片，按 `LocalImage.kind` 归类）。`needRemote = 没有可用本地详情 || 某个启用 kind 本地没有 || 本地 NFO 缺关键信息（needsRemoteInfo：缺简介、缺演员、片商 / 厂牌 / 系列全空）`——命中才联网，且**只补缺的**：`mergeDetail(本地, 远程)` 逐字段以本地非空值优先。本地详情够用且不缺资源时，结果行插件列写「本地 NFO」，一次网络请求都不发。
-2. **跨插件补全**：按可用插件顺序，第一个插件先 `search(keyword)` → `pickCandidate(candidates, num, keyword)` 选候选 → `detail(movieId)`；拿到详情后，只对「仍缺失的、且被下载选项勾选的」封面类（`thumb` / `poster` / `fanart` / `banner` / `logo`，走 `covers`）与花絮类（`still` / `trailer`，走 `extras`）请求资源。`isSatisfied(detail, assets, enabled)` 计入本地已就位的 kind，命中即 `break`——即「A 插件只刮到 NFO、B 插件补封面」的补全语义，同时提前停止避免多余请求。单个插件抛错只 `log.warn` 后继续下一个插件，不让一个坏插件毁掉整个文件。到最后一个插件都没有可信详情时：结果行 `failed`、消息 `未找到匹配的刮削结果`，文件留在原目录不动（原 `file.moveAfterFailure` 与 `path.failedOutputDir` 已随设置瘦身删除）。
+2. **跨影片信息插件补全**：按可用插件顺序，第一个插件先 `search(keyword)` → `pickCandidate(candidates, num, keyword)` 选候选 → `detail(movieId)`；拿到详情后，只对「仍缺失的、且被下载选项勾选的」封面类（`thumb` / `poster` / `fanart` / `banner` / `logo`，走 `covers`）与花絮类（`still` / `trailer`，走 `extras`）请求资源。`isSatisfied(detail, assets, enabled)` 计入本地已就位的 kind，命中即 `break`——即「A 插件只刮到 NFO、B 插件补封面」的补全语义，同时提前停止避免多余请求。单个插件抛错只 `log.warn` 后继续下一个插件，不让一个坏插件毁掉整个文件。到最后一个插件都没有可信详情时：结果行 `failed`、消息 `未找到匹配的刮削结果`，文件留在原目录不动（原 `file.moveAfterFailure` 与 `path.failedOutputDir` 已随设置瘦身删除）。
 3. **命名（一定会重命名，没有开关）**：`base = resolveVideoBase(detail, originalBase, naming)` = `renderTemplate(naming.fileTemplate, detail, naming)` → `sanitizeName` → `truncateName(..., naming.fileNameMaxLength)`，为空时回落到原文件名；再按 `naming.partStyle` 用 `normalizePartToken(partTokenOf(原文件名), partStyle)` 把分盘标记（CD/PART/DISC）附在末尾，避免模板同名导致 CD1/CD2 互相覆盖。`base` 同时决定文件夹名、影片文件名与 NFO 文件名。
 4. **资源落盘**：
    - 本地图片先「就位」（`adoptLocalImage`）：目标规范名已存在就直接沿用；否则 `client.move` 到规范名（同一目录内改名），失败只 `log.warn` 并按原路径入库，不中断；`poster` / `thumb` / `fanart` / `banner` / `logo` 这类单张 kind 只取本地第一张，`still` 全收。
@@ -179,4 +179,4 @@ src/common/types/scrape/
 13. 开「优先读取本地 NFO 和图片」：把一个已有完整 `movie.nfo` 与 `poster.jpg` 的目录扫成条目再刮削，结果行插件列应为「本地 NFO」、不应发网络请求；随后手工删掉本地 NFO 里的简介再刮一次，应只联网补缺失的信息，本地已有的字段不被覆盖。
 14. 把资料库的「文件过滤」设为 100（MB）：小于 100MB 的视频既不进扫描结果，也不进待刮削候选；填 0 时全部放行。
 15. `itemId` 口径：`scrape:start` 的 `itemIds` 必须是 `media_item.id`（不是路径、也不是文件名），落库后对应的 `scrape_file.item_id` 应等于这些 id；传一个不存在的 id 应报「所选影片已不在待刮削列表中」。
-16. 刮一个带参演演员的文件（刮削器实现了 `actor` 钩子）：影片详情页的「参演演员」条应出现头像 + 姓名，点击能跳到演员详情；开着「自动抓取演员资料」时日志里应出现「自动补全演员资料（…，N 张图片）」，关掉后只挂关联、不抓资料；把已挂好演员的影片重刮一次（详情里没有演员名单）时关联不应被清空。
+16. 刮一个带参演演员的文件（已启用**演员信息插件**即 `actor` 类插件）：影片详情页的「参演演员」条应出现头像 + 姓名，点击能跳到演员详情；开着「自动抓取演员资料」时日志里应出现「自动补全演员资料（…，N 张图片）」，关掉后只挂关联、不抓资料；把已挂好演员的影片重刮一次（详情里没有演员名单）时关联不应被清空。

@@ -3,10 +3,13 @@
  *
  * 契约：
  * - 插件是纯 JavaScript 脚本，运行在 `node:vm` 沙箱里，只有 `env`、`ctx` 与白名单全局；
+ * - 插件按类别分开，`meta.kind` 决定它属于哪一类、宿主用哪张方法表校验（见 `./kind`）：
+ *   `movie` = 影片信息（`search` / `detail` / `covers` / `extras` 四个方法全部必填）、
+ *   `actor` = 演员信息（`actor` 必填，`actorAssets` 可选）、
+ *   `translate` = 翻译（类别预留，暂无方法）；
  * - 插件用 `env: [...]` 声明自己需要的环境变量（账号、Cookie、站点地址等），
  *   安装时宿主会在沙箱里执行一次脚本、读取这份声明并生成填写表单；
- * - 四个必需方法全部返回 Promise，签名统一为 `(入参, env, ctx)`，宿主负责归一化与超时保护；
- * - `actor` / `actorAssets` 是可选能力：实现了宿主才会在刮削时自动补全演员资料与图片；
+ * - 方法签名统一为 `(入参, env, ctx)`，返回 Promise，宿主负责归一化与超时保护；
  * - `definePlugin` 由宿主注入，插件脚本以 `definePlugin({ ... })` 结尾即可。
  */
 import type { LogLevel } from '../log'
@@ -36,7 +39,7 @@ export interface PluginResponse {
 export interface PluginContext {
   /** 统一出口的 HTTP：自带超时、重试与刮削节奏延迟 */
   request: (options: PluginRequestOptions) => Promise<PluginResponse>
-  /** 写日志：scope 固定为 plugin:<id> */
+  /** 写日志：scope 固定为 plugin:<类别>:<id> */
   log: (level: LogLevel, message: string, detail?: string) => void
 }
 
@@ -47,13 +50,18 @@ export interface PluginContext {
  */
 export type PluginHtmlLoader = (html: string) => unknown
 
-export interface ScrapePlugin {
+/** 两个类别的插件都会声明环境变量，形状一致 */
+interface PluginBase {
   meta: PluginMeta
   /**
    * 声明插件运行需要的环境变量；安装 / 保存时宿主在沙箱里执行脚本读取它。
    * 单插件上限 50 项，key 只允许字母、数字、下划线与短横线。
    */
   env?: PluginEnvField[]
+}
+
+/** 影片信息插件：只能声明影片方法，实现别类方法会被编译期拒绝 */
+export interface MoviePlugin extends PluginBase {
   /** 1. 通过名称 / 番号获取影片列表 */
   search(keyword: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginMovieCandidate[]>
   /** 2. 通过影片 ID 获取影片信息 */
@@ -62,27 +70,35 @@ export interface ScrapePlugin {
   covers(movieId: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
   /** 4. 获取花絮类资源（still / trailer）的下载配置 */
   extras(movieId: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
-  /** 5.（可选）按演员姓名获取演员资料 */
-  actor?(name: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginActorDetail>
-  /** 6.（可选）按演员姓名获取头像与图集资源（poster = 头像，thumb / still = 图集） */
+}
+
+/** 演员信息插件：只按演员姓名取资料，不碰影片 */
+export interface ActorPlugin extends PluginBase {
+  /** 1. 按演员姓名获取演员资料（必填） */
+  actor(name: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginActorDetail>
+  /** 2.（可选）按演员姓名获取头像与图集资源（poster = 头像，thumb / still = 图集） */
   actorAssets?(name: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
 }
 
+/** 翻译插件：类别预留，暂时只有 meta 与环境变量声明 */
+export type TranslatePlugin = PluginBase
+
+/** 三类插件的定义联合 */
+export type PluginDefinition = MoviePlugin | ActorPlugin | TranslatePlugin
+
 /** 宿主注入沙箱的定义函数 */
-export type DefinePlugin = (definition: ScrapePlugin) => ScrapePlugin
+export type DefinePlugin = <T extends PluginDefinition>(definition: T) => T
 
 export type PluginMethod = 'search' | 'detail' | 'covers' | 'extras' | 'actor' | 'actorAssets'
 
-/** 插件必须实现的四个方法（宿主用它做编译校验） */
-export const PLUGIN_METHODS: readonly PluginMethod[] = ['search', 'detail', 'covers', 'extras']
-
-/** 可选实现的演员钩子 */
-export const PLUGIN_OPTIONAL_METHODS: readonly PluginMethod[] = ['actor', 'actorAssets']
-
-/** 全部方法名（IPC 边界用它校验待测方法） */
+/** 全部方法名（不分类别；类别方法表见 `./kind` 的 `PLUGIN_KIND_METHODS`） */
 export const PLUGIN_METHOD_NAMES: readonly PluginMethod[] = [
-  ...PLUGIN_METHODS,
-  ...PLUGIN_OPTIONAL_METHODS
+  'search',
+  'detail',
+  'covers',
+  'extras',
+  'actor',
+  'actorAssets'
 ]
 
 export interface PluginInvokePayload {

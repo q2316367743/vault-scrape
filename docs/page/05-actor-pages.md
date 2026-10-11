@@ -33,7 +33,7 @@
 
 | 动作 | 行为 |
 | --- | --- |
-| 抓取资料 | 先 `pluginApi.list()` 取**已启用**插件的 ID，再 `actorApi.scrape({ actorId, pluginIds })`，用返回的 `message` 提示并重新取数 |
+| 抓取资料 | 先 `pluginApi.actor.list()` 取**已启用**的演员信息插件 ID，再 `actorApi.scrape({ actorId, pluginIds })`，用返回的 `message` 提示并重新取数 |
 | 编辑资料 | `openActorEditorDialog({ actor, onSaved: () => void load() })` |
 | 删除演员 | `MessageBoxUtil.confirm` 二次确认 → `actorApi.remove({ actorId })` → `router.replace('/actor')` |
 
@@ -44,6 +44,8 @@
 - 出演作品：`MediaWallCard` 网格（`connectionOf` 从 `useFileConnections()` 取连接，用于 NSFW 判定），空态 `t-empty`。
 
 取数组合式 `detail/composables/useActorDetail.ts`：从 `route.query.actorId` 取参，缺失时只写中文 `failure`「地址里缺少演员参数，请从演员列表点进来」并且**不发请求**；`load()` 调 `actorApi.detail({ actorId })`。
+
+**打开详情页自动补全**：`onMounted` 里 `load()` 之后调一次 `autoScrape()`——开启 `scrape.actorScrapeOnOpen`（默认开）且资料不全（`scrapedAt === 0`、`avatarUrl === ''` 或 `birthday === ''`）、演员未锁定、且本次会话里这个 `actorId` 还没试过（`Set` 去重）时，取 `pluginApi.actor.list()` 里已启用的演员信息插件 ID 调 `actorApi.scrape`，有产出（`filled.length > 0 || images > 0`）就静默 `load()` 刷新；失败只记日志、不打扰用户——这是四个抓取场景里的第 2 个（全表见 [../actor/01-actor-module.md](../actor/01-actor-module.md)）。
 
 ## 4. 编辑弹窗（`modals/`）
 

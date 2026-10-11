@@ -15,6 +15,7 @@ import axios from 'axios'
 import {
   PluginError,
   type PluginContext,
+  type PluginKind,
   type PluginRequestOptions,
   type PluginResponse
 } from '@common/types/plugin'
@@ -192,12 +193,12 @@ async function hostRequest(options: PluginRequestOptions): Promise<PluginRespons
   throw toRequestError(lastError, options.url)
 }
 
-/** 插件日志出口：scope 固定 `plugin:<id>`，其余交给日志表落库 */
-export function createPluginLogSink(id: string): PluginLogSink {
+/** 插件日志出口：scope 固定 `plugin:<类别>:<id>`，其余交给日志表落库 */
+export function createPluginLogSink(kind: PluginKind, id: string): PluginLogSink {
   return (level, message, detail) => {
     appendLog({
       level,
-      scope: `plugin:${id}`,
+      scope: `plugin:${kind}:${id}`,
       message,
       detail: detail && detail.length > 0 ? detail : undefined
     })
@@ -210,9 +211,9 @@ export function createPluginLogSink(id: string): PluginLogSink {
  * 注意：环境变量不走 `ctx`，而是作为第二个参数直接传给插件方法；
  * 调用方必须已完成必填校验（见 pluginRegistry 的 invokePlugin）。
  */
-export function createPluginContext(id: string): PluginContext {
+export function createPluginContext(kind: PluginKind, id: string): PluginContext {
   return {
     request: hostRequest,
-    log: createPluginLogSink(id)
+    log: createPluginLogSink(kind, id)
   }
 }

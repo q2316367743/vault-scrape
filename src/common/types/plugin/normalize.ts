@@ -17,6 +17,7 @@ import {
   type PluginAssetMethod,
   type PluginEpisodeRef
 } from './asset'
+import { isPluginKind } from './kind'
 import { PLUGIN_ID_PATTERN, type PluginMeta } from './manifest'
 import type { PluginEpisode, PluginMovieCandidate, PluginMovieDetail } from './movie'
 
@@ -122,12 +123,15 @@ export function normalizeMeta(raw: unknown): PluginMeta | null {
   const source = toSource(raw)
   if (!source) return null
   const id = required(source, 'id')
+  const kind = required(source, 'kind')
   const name = required(source, 'name')
   const version = required(source, 'version')
-  if (id === null || name === null || version === null) return null
+  if (id === null || kind === null || name === null || version === null) return null
   if (!PLUGIN_ID_PATTERN.test(id)) return null
+  if (!isPluginKind(kind)) return null
   return {
     id,
+    kind,
     name,
     version,
     author: optional(source, 'author'),

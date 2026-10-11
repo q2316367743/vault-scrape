@@ -49,9 +49,28 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/windows/main/pages/storage/StoragePage.vue')
   },
   {
+    // 插件页：三类插件各占一个 tab 子页；类别之间目录、IPC 通道与启停状态都相互独立
     path: '/plugin',
     name: '插件',
-    component: () => import('@/windows/main/pages/plugin/PluginPage.vue')
+    component: () => import('@/windows/main/pages/plugin/PluginHomePage.vue'),
+    redirect: '/plugin/movie',
+    children: [
+      {
+        path: 'movie',
+        name: '影片信息插件',
+        component: () => import('@/windows/main/pages/plugin/movie/MoviePluginPage.vue')
+      },
+      {
+        path: 'actor',
+        name: '演员信息插件',
+        component: () => import('@/windows/main/pages/plugin/actor/ActorPluginPage.vue')
+      },
+      {
+        path: 'translate',
+        name: '翻译插件',
+        component: () => import('@/windows/main/pages/plugin/translate/TranslatePluginPage.vue')
+      }
+    ]
   },
   {
     path: '/tools',

@@ -124,7 +124,7 @@
 
 ## 5. 资料库抽屉与表单
 
-资料库 = 「一个名称 + 一个类型 + 一组媒体目录（可跨存储）+ 自己的刮削器（可为空） + 库级选项」，模型与主进程契约见[资料库](../media/01-media-library.md)。影视墙页不承担资料库的配置细节，只做两件事：在首页 / 内容页用它取数，用抽屉维护它。
+资料库 = 「一个名称 + 一个类型 + 一组媒体目录（可跨存储）+ 自己的刮削器（可为空） + 库级选项」——**刮削器只能选影片信息插件（`kind: 'movie'`）**，模型与主进程契约见[资料库](../media/01-media-library.md)、插件类别见[插件类别](../plugin/03-plugin-categories.md)。影视墙页不承担资料库的配置细节，只做两件事：在首页 / 内容页用它取数，用抽屉维护它。
 
 **抽屉**（`openLibraryDrawer({ onChanged })`；外壳 `library/components/LibraryDrawer.tsx` → `DrawerPlugin`，宽 720px，无 footer）——内容 `LibraryDrawerContent.vue`：
 
@@ -143,7 +143,7 @@
 | 类型 | `t-select`，选项来自 `LIBRARY_TYPES` / `LIBRARY_TYPE_LABELS`；**新建可选，编辑态 disabled**（说明文案「类型创建后不可修改」），理由：条目已按原类型后缀索引，中途换类型会留下孤儿条目 |
 | 媒体目录 | 多行编辑器 `LibraryDirectoryEditor.vue`：每行「存储下拉 + 选择目录 + 路径回显」，未选存储时选择按钮禁用并 `t-tooltip` 提示「请先选择存储」；换存储会清空该行路径；只剩一行时删除按钮禁用；底部「添加媒体目录」+ 说明「一个资料库可以包含多个存储上的多个目录，扫描时会全部递归遍历」 |
 | 选择目录 | 走资料库自己的 `RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`（`fileApi.list({ connectionId, path })`，**只列目录**，带面包屑与「上级目录」，路径全程是**连接内路径**（`/` = 连接根），点「选择当前目录」把当前路径回调回该行）；弹窗 footer 左侧跟着内容组件 `defineExpose` 出来的当前路径、右侧是「取消 / 选择当前目录」（契约见 `src/renderer/src/utils/modal/ModalContent.ts`）；**不复用本机目录选择器** |
-| 刮削器 | 通用多选控件 `CheckboxSelect`（`@/components/CheckboxSelect.vue`：外框 + 搜索框 + 可滚动 checkbox 列表，`v-model` 是 `string[]`，契约见 [ui/03](../ui/03-checkbox-select.md)），候选项来自 `useScraperOptions`（`pluginApi.list()` 过滤 `enabled && loadError === ''`）；说明「不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削」；已保存但当前不可用的 id 不进候选，会被补进选项数据、label 标注「（已失效）」显示，取消勾选才会从配置里清除（不会被静默清空）；**新建时默认勾选内置 `R18_OFFLINE_PLUGIN_ID`（`r18-offline`），插件不可用时保持不勾** |
+| 刮削器 | 通用多选控件 `CheckboxSelect`（`@/components/CheckboxSelect.vue`：外框 + 搜索框 + 可滚动 checkbox 列表，`v-model` 是 `string[]`，契约见 [ui/03](../ui/03-checkbox-select.md)），候选项来自 `useScraperOptions`（`pluginApi.movie.list()` 过滤 `enabled && loadError === ''`，只列**影片信息插件**）；说明「不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削」；已保存但当前不可用的 id 不进候选，会被补进选项数据、label 标注「（已失效）」显示，取消勾选才会从配置里清除（不会被静默清空）；**新建时默认勾选内置 `R18_OFFLINE_PLUGIN_ID`（`r18-offline`），插件不可用时保持不勾** |
 | 库级选项 | NSFW 保护 / 「文件过滤」`minFileSizeMb`（`t-input-number`，`:min="0"`、`:step="100"`，说明「小于该体积（MB）的视频不参与扫描与刮削；填 0 表示不过滤」）/ 「优先读取本地 NFO 和图片」`localFirst`（开关，文案「优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息」）/ 移动文件（**开启时才显示「目标目录」输入**，关闭时存空串）；**写 NFO、按命名规则重命名、图片与影片同目录都是固定行为，表单里没有对应开关** |
 
 - 提交前校验顺序：名称 → 至少一行媒体目录 → 每行都选了存储 → 同库内不出现重复目录 → 每行都选了目录；两条兜底文案「请先到「存储」页新建数据源」「请为每个媒体目录选择存储」，重复目录报「存在重复的根目录，请合并后再保存」。

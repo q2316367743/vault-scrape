@@ -85,11 +85,23 @@ const { setting } = storeToRefs(useSettingScrapeStore())
     <t-list-item>
       <t-list-item-meta
         title="自动抓取演员资料"
-        description="影片刮削入库后，为参演演员抓取资料与图片；需要刮削器实现演员钩子"
+        description="影片刮削入库后，为参演演员抓取资料与图片；需要启用「演员信息插件」"
       />
       <template #action>
         <div class="setting-field">
           <t-switch v-model="setting.actorScrape" />
+        </div>
+      </template>
+    </t-list-item>
+
+    <t-list-item>
+      <t-list-item-meta
+        title="打开详情页自动补全"
+        description="演员资料不全时（没抓过、没头像或没生日），打开演员详情页自动抓一次"
+      />
+      <template #action>
+        <div class="setting-field">
+          <t-switch v-model="setting.actorScrapeOnOpen" />
         </div>
       </template>
     </t-list-item>

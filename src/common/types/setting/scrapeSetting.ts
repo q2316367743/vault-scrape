@@ -18,8 +18,15 @@ export interface SettingScrape {
   autoScrapeAfterScan: boolean
   /** 剧照目录名（刮削结果内存放剧照的子目录名） */
   fanartDirName: string
-  /** 影片刮削入库后，是否自动为参演演员抓取资料（需要刮削器实现演员钩子） */
+  /** 影片刮削入库后，是否自动为参演演员抓取资料（需要「演员信息」类别的插件） */
   actorScrape: boolean
+  /**
+   * 打开演员详情页时，资料不全（从未刮削 / 没有头像 / 没有生日）是否自动抓一次。
+   *
+   * 与 `actorScrape` 互相独立：这一项管「看的时候顺手补」，那一项管「影片入库后补」；
+   * 被用户锁定资料的演员不抓（锁定后只填空白字段，抓了也不写）。
+   */
+  actorScrapeOnOpen: boolean
   /** 单个演员最多下载多少张图片；0 表示只抓资料、不下载图片 */
   actorImageLimit: number
 }
@@ -33,6 +40,7 @@ export function buildSettingScrape(): SettingScrape {
     autoScrapeAfterScan: true,
     fanartDirName: 'extrafanart',
     actorScrape: true,
+    actorScrapeOnOpen: true,
     actorImageLimit: 12
   }
 }
@@ -49,6 +57,7 @@ export function normalizeSettingScrape(raw: unknown): SettingScrape {
     autoScrapeAfterScan: readBoolean(source, 'autoScrapeAfterScan', base.autoScrapeAfterScan),
     fanartDirName: readString(source, 'fanartDirName', base.fanartDirName),
     actorScrape: readBoolean(source, 'actorScrape', base.actorScrape),
+    actorScrapeOnOpen: readBoolean(source, 'actorScrapeOnOpen', base.actorScrapeOnOpen),
     actorImageLimit: readNumber(source, 'actorImageLimit', base.actorImageLimit)
   }
 }

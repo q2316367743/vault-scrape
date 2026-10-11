@@ -4,7 +4,7 @@
 
 资料库是影视墙的**归口单位**，也是刮削的**唯一入口配置**。这一轮把媒体数据层推倒重建成了 Jellyfin 式模型，规则如下：
 
-- 一个资料库 = **名称 + 类型 + 一组媒体目录（可多根、可跨存储） + 一组刮削器（可为空） + 库级选项**。不再是「一个存储一个根目录」。
+- 一个资料库 = **名称 + 类型 + 一组媒体目录（可多根、可跨存储） + 一组刮削器（可为空，存的是**影片信息插件** id） + 库级选项**。不再是「一个存储一个根目录」。
 - 配置真相在 **SQLite**（`library` / `library_path`），**不再有 JSON 配置文件**（旧的 `~/.vault-scrape/media/libraries.json` 已废弃）。
 - **目录不许重叠**：同一条「连接 + 路径」只能属于一个库，且**不同库的目录之间不许互相嵌套或相同**（本库草稿内部同理）。保存时被拒的三种文案：
   - 同库重复：`媒体目录重复添加：X`；
@@ -15,7 +15,7 @@
 - **类型（`type`）建库后不可修改**：当前 `LibraryType` 只有 `'movie'`，类型决定扫描时按哪份后缀清单识别媒体文件（见 §4.2）。类型与后缀是「索引口径」的一部分，中途改会让已索引的条目变成孤儿，所以只允许新建时选。
 - 索引结果是**条目化**的：`media_item`（movie / folder）→ `media_source`（一个条目多源，本阶段一源）→ `media_image`（primary / backdrop / thumb / logo / banner / other）。刮削元数据写在**条目**上，重扫只更新媒体源，**元数据与图片不会丢**。
 - 删除库只删配置与库内的条目 / 媒体源 / 图片行（`removeLibrary` = `purgeLibraryMedia` + `deleteLibrary`），**磁盘文件一个都不动**；删除存储则级联删掉它名下的库与媒体行（见 [存储页](../page/02-storage-page.md)）。
-- 刮削器**只来自资料库**：连接的 `FileConnection` 上已经**没有** `scrapers` 字段（`scraperIdsOf` / `usesAllScrapers` / `describeScrapers` 一并下线），存储页只留 NSFW。**空的 `scrapers` 数组 = 该库不刮削**，不再回落到「存储（连接）的刮削器」。
+- 刮削器**只来自资料库**：连接的 `FileConnection` 上已经**没有** `scrapers` 字段（`scraperIdsOf` / `usesAllScrapers` / `describeScrapers` 一并下线），存储页只留 NSFW。**空的 `scrapers` 数组 = 该库不刮削**，不再回落到「存储（连接）的刮削器」。可选的候选只有**影片信息插件**（`kind: 'movie'`），演员信息插件与翻译插件不出现在这个列表里（见 [插件类别](../plugin/03-plugin-categories.md)）。
 
 ## 2. 关键文件
 
@@ -54,7 +54,7 @@
 | `id` | text PK | `randomUUID()` |
 | `name` | text | 名称，最长 64 字符，不能为空 |
 | `type` | text | 库类型，`$type<LibraryType>()`，默认 `'movie'`（在基线迁移 `0000_moaning_black_panther.sql` 里）；**建库后不可改** |
-| `scrapers` | text | 刮削器插件 id 数组（JSON 数组），**空数组表示该库不刮削** |
+| `scrapers` | text | **影片信息插件** id 数组（JSON 数组），**空数组表示该库不刮削** |
 | `nsfw_protection` | integer | NSFW 保护，默认 `true`（草稿未显式给 `false` 时按 `true`） |
 | `min_file_size_mb` | integer | 扫描 / 刮削时排除小于该体积（MB）的视频，默认 `0`（不过滤） |
 | `local_first` | integer | 优先读取本地 NFO 与本地图片、只补缺失信息，默认 `false` |
@@ -185,7 +185,7 @@
 - **单文件成功后**：`updateItemMetadata(itemId, …)` 写回条目元数据（标题 / 番号 / 简介 / 评分 / 类型 / 外部 ID 等），`replaceItemImages(itemId, images)` 整体替换条目图片；改名 / 移动则就地 `updateSourcePath(source.id, …)`，**媒体源 id 不变**（磁盘上 `storage://` 地址因此不会失效）。
 - **进度复用刮削模块**：库侧不新增 `scrape:*` 进度通道，任务列表、`scrape:progress`、取消 / 继续全部走[刮削模块](../scrape/01-scrape-module.md)。
 - **重启后的「继续」**：`taskScrapers` / `taskLibraries` 是内存映射，重启即丢；`resumeScrapeTask` 先用 `findLibraryByPath(task.connectionId, task.dirPath)` 按 `(connectionId, dirPath)` 找回所属库，再回落该库的 `scrapers`；找不到库时抛 `pluginMissing`「找不到任务所属的资料库，请重新选择刮削器」。
-- **新建库默认勾选内置离线包**：表单只在新库里 `scrapers` 为空、且候选项包含 `R18_OFFLINE_PLUGIN_ID`（`'r18-offline'`，定义在 `src/common/types/plugin/builtin.ts`）时默认勾上它；插件不可用（未启用 / 加载失败）时保持不勾，不替用户写一个不可用的 id。
+- **新建库默认勾选内置离线包**：表单只在新库里 `scrapers` 为空、且候选项包含 `R18_OFFLINE_PLUGIN_ID`（`'r18-offline'`，定义在 `src/common/types/plugin/builtin.ts`）时默认勾上它；该内置插件属**影片信息**类别（`kind: 'movie'`），插件不可用（未启用 / 加载失败）时保持不勾，不替用户写一个不可用的 id。
 - 资料库不重复下载：取消 / 失败的文件仍是 `pending`，`scrapedAt` 保持 0，所以下次扫描后的待刮削列表里还会出现。
 
 ## 6. IPC 契约与错误码
@@ -214,7 +214,7 @@
 | `busy` | 已有任务在运行，请稍候 | 第二个扫描请求 |
 | `scanFailed` | 扫描失败 | 根目录读不到；遍历中的其它异常（`扫描失败：<原因>`） |
 | `scrapeFailed` | 刮削启动失败 | 启动刮削时非 `ScrapeError` 的异常 |
-| `pluginMissing` | 没有可用的刮削插件，请先在插件页安装并启用插件 | 运行时该库 `scrapers` 为空（自定义文案「该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择」）；重启后找不到任务所属库 |
+| `pluginMissing` | 没有可用的刮削插件，请先在插件页『影片信息』tab 安装并启用插件 | 运行时该库 `scrapers` 为空（自定义文案「该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择」）；重启后找不到任务所属库 |
 | `cancelled` | 扫描已取消 | 用户取消扫描 |
 | `unknown` | 未知错误 | 兜底 |
 
@@ -228,7 +228,7 @@
 | `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息 |
 | `moveEnabled` | `false` | 是否把影片移到 `moveDirectory`（开不开都会先落进影片自己的同名文件夹） |
 | `moveDirectory` | `''` | 移动目标目录（连接内路径；空串 = 原地不动，影片留在所在目录下的同名文件夹里） |
-| `scrapers` | 新建时默认勾 `r18-offline` | 刮削器插件 id 列表；**空数组 = 不刮削**（扫描照常，只是不自动刮削、不能手动刮削） |
+| `scrapers` | 新建时默认勾 `r18-offline` | **影片信息插件** id 列表；**空数组 = 不刮削**（扫描照常，只是不自动刮削、不能手动刮削） |
 
 固定的刮削产物规范（没有对应开关，见 [刮削模块](../scrape/01-scrape-module.md)）：影片一定被重命名并按命名规则放进**同名文件夹**，文件夹名 / 影片文件名 / NFO 文件名三者一致；一定写 `<名字>.nfo`（带封面等图片标签）；图片一定与影片同目录（`poster` / `backdrop` / `thumb` / `banner` / `logo` + `extrafanart/`）。
 
