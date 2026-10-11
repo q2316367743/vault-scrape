@@ -43,7 +43,8 @@ const route = useRoute()
 const router = useRouter()
 
 const activeKind = computed<PluginKind>(() => {
-  const kind = route.params.kind
+  const kind = route.path.split('/').pop() as string
+  console.log(kind)
   return typeof kind === 'string' && isPluginKind(kind) ? kind : 'movie'
 })
 
