@@ -399,6 +399,19 @@ function describeMissingEnv(
     .join('、')
 }
 
+/** 方法入参：演员钩子用姓名，搜索用关键字，其余用影片 ID */
+function argumentOf(method: PluginMethod, payload: PluginInvokePayload): string {
+  if (method === 'search') return payload.keyword?.trim() ?? ''
+  if (method === 'actor' || method === 'actorAssets') return payload.actorName?.trim() ?? ''
+  return payload.movieId?.trim() ?? ''
+}
+
+function describeMissingArgument(method: PluginMethod): string {
+  if (method === 'search') return '缺少搜索关键字 keyword'
+  if (method === 'actor' || method === 'actorAssets') return '缺少演员姓名 actorName'
+  return '缺少影片 ID movieId'
+}
+
 export async function invokePlugin(
   id: string,
   method: PluginMethod,
@@ -407,12 +420,9 @@ export async function invokePlugin(
   const stored = storedPlugin(id)
   if (!stored) throw new PluginError('notFound', `插件 ${id} 不存在`)
   if (!stored.enabled) throw new PluginError('invokeFailed', `插件 ${stored.name} 已停用，请先启用`)
-  const argument = (method === 'search' ? payload.keyword : payload.movieId)?.trim() ?? ''
+  const argument = argumentOf(method, payload)
   if (argument.length === 0) {
-    throw new PluginError(
-      'invalidArgument',
-      method === 'search' ? '缺少搜索关键字 keyword' : '缺少影片 ID movieId'
-    )
+    throw new PluginError('invalidArgument', describeMissingArgument(method))
   }
   const builtin = findBuiltinPlugin(id)
   if (builtin) {
@@ -436,7 +446,15 @@ export async function invokePlugin(
     if (method === 'search') return compiled.plugin.search(argument, env, ctx)
     if (method === 'detail') return compiled.plugin.detail(argument, env, ctx)
     if (method === 'covers') return compiled.plugin.covers(argument, env, ctx)
-    return compiled.plugin.extras(argument, env, ctx)
+    if (method === 'extras') return compiled.plugin.extras(argument, env, ctx)
+    if (method === 'actor') {
+      const hook = compiled.plugin.actor
+      if (!hook) throw new PluginError('invokeFailed', `插件 ${stored.name} 未实现演员资料钩子`)
+      return hook(argument, env, ctx)
+    }
+    const hook = compiled.plugin.actorAssets
+    if (!hook) throw new PluginError('invokeFailed', `插件 ${stored.name} 未实现演员图片钩子`)
+    return hook(argument, env, ctx)
   }
   const data = await invokeWithTimeout(task, {
     id,

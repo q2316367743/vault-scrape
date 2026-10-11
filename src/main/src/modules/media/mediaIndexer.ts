@@ -13,6 +13,8 @@
  * - 资料库设了最小体积（MB）时，小于它的视频不入库（体积未知的 0 字节条目仍然入库）；
  * - 同目录有 `movie.nfo` 或与视频同名的 `.nfo` 时把 `hasNfo = 1` 记在影片条目上，
  *   仅作为「磁盘上有没有 NFO」的事实标记（影视墙不再按它分类）；
+ * - 还没刮削过（`scraped_at = 0`）的影片，扫描时顺手把 NFO 里的 `<actor>` 读进 `media_cast`
+ *   并按名字建好演员档案（NFO 只是数据提供方，数据库才是保存方）；刮削过的条目交给刮削结果；
  * - 哪些后缀算视频由调用方按资料库设置传入（`IndexPathOptions.extensions`），
  *   本文件不硬编码扩展名；
  * - `cleanupUnseen` 删除本次没扫到的媒体源、失去源的影片条目与其图片。
@@ -30,11 +32,14 @@ import {
 } from '@common/types/file'
 import { extractKeyword, normalizeNum, stripExtension } from '@common/types/scrape'
 import { mediaSourceKindOf, type MediaImageType } from '@common/types/media'
-import { getFileClient } from '$/modules/file/fileClientManager'
 import { deleteImagesByIds, listImagesByLibrary, upsertImage } from '$/db/repo/mediaImageRepo'
+import { getFileClient } from '$/modules/file/fileClientManager'
+import { backfillCastFromNfo, collectNfoBases, hasNfoEvidence } from './mediaNfoScan'
 import {
   deleteItemsWithoutSource,
-  deleteSourcesNotInScan,
+  deleteSourcesNotInScan
+} from '$/db/repo/mediaCleanupRepo'
+import {
   findItemByPath,
   getItem,
   insertItem,
@@ -217,6 +222,12 @@ function ensureFolderItem(
   return id
 }
 
+/** 一个视频入库后的回执：`castable` 表示它还没刮削过，可以从 NFO 补参演名单 */
+interface IndexedVideo {
+  itemId: string
+  castable: boolean
+}
+
 /** 写入一个视频文件对应的影片条目 + 媒体源 */
 function indexVideo(
   library: MediaLibrary,
@@ -225,7 +236,7 @@ function indexVideo(
   parentId: string,
   entry: FileEntry,
   hasNfo: number
-): void {
+): IndexedVideo {
   // 条目身份按 (connectionId, path) 认，不重算哈希：刮削把文件移进同名文件夹后
   // 会就地改写库里的路径（id 保持不变），重算哈希会造出重复条目、并丢掉已写好的元数据
   const existing = findItemByPath(connectionId, entry.path)
@@ -260,6 +271,7 @@ function indexVideo(
   }
   // 源一律走 upsertSource：它内部按 (connectionId, path) 解析身份，能自愈历史遗留的错位行
   upsertSource(source, scanId)
+  return { itemId, castable: (existing?.scrapedAt ?? 0) === 0 }
 }
 
 /** 一个目录能给图片提供的落点 */
@@ -343,22 +355,6 @@ function indexImages(
   }
 }
 
-/** 目录里所有 NFO 的基础名（小写）；`movie` 表示目录级 NFO */
-function collectNfoBases(files: readonly FileEntry[]): ReadonlySet<string> {
-  const bases = new Set<string>()
-  for (const file of files) {
-    if (mediaSourceKindOf(file.mime, file.extname) !== 'nfo') continue
-    bases.add(stripExtension(file.name).toLowerCase())
-  }
-  return bases
-}
-
-/** 同目录有 `movie.nfo`（目录级）或与视频同名的 `.nfo` 时算「磁盘上已有 NFO 产出」 */
-function hasNfoEvidence(file: FileEntry, nfoBases: ReadonlySet<string>): number {
-  if (nfoBases.has('movie')) return 1
-  return nfoBases.has(stripExtension(file.name).toLowerCase()) ? 1 : 0
-}
-
 /**
  * 剧照 / 缩略图子目录（`extrafanart`、`extrathumbs`，以及它们下面一层的 `S1` 这类目录）
  * 里的图片属于上一层目录里的影片，返回那个锚点目录；普通目录返回 null。
@@ -429,9 +425,17 @@ export async function indexLibraryPath(
     for (const file of files) {
       if (!isVideoExtension(options.extensions, file.extname)) continue
       if (!isBigEnoughVideo(file, minBytes)) continue
-      indexVideo(library, libPath.connectionId, options.scanId, parentId, file, hasNfoEvidence(file, nfoBases))
+      const indexed = indexVideo(
+        library,
+        libPath.connectionId,
+        options.scanId,
+        parentId,
+        file,
+        hasNfoEvidence(file, nfoBases)
+      )
       result.indexedVideos += 1
       result.indexedFiles += 1
+      if (indexed.castable) await backfillCastFromNfo(client, indexed.itemId, files, file)
     }
     // 剧照 / 缩略图子目录里的图片按上一层目录（锚点）归属；锚点没扫到时就不收
     const anchor = extraArtAnchor(node.path)

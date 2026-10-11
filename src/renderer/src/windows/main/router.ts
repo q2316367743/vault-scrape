@@ -1,6 +1,6 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 九个一级页面（name 同时作为侧栏菜单文案）+ 工具子页 */
+/** 十个一级页面（name 同时作为侧栏菜单文案）+ 工具子页与演员子页 */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/overview' },
   {
@@ -25,6 +25,17 @@ const routes: RouteRecordRaw[] = [
     path: '/media/detail',
     name: '影视墙详情',
     component: () => import('@/windows/main/pages/media/detail/MediaDetailPage.vue')
+  },
+  {
+    path: '/actor',
+    name: '演员',
+    component: () => import('@/windows/main/pages/actor/list/ActorListPage.vue')
+  },
+  {
+    // 演员详情：参数走 query（actorId），下方关联显示该演员的全部出演作品
+    path: '/actor/detail',
+    name: '演员详情',
+    component: () => import('@/windows/main/pages/actor/detail/ActorDetailPage.vue')
   },
   {
     path: '/workspace',

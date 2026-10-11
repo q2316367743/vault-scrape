@@ -8,7 +8,8 @@
  *   （构造与解析见 `@common/types/file` 的 buildFilePreviewUrl / parseFilePreviewUrl）：
  *   只复核「连接存在 + 路径落在连接根内 + 确实是文件」，越界或不存在一律 404；
  *   视频与音频走 Range，图片与 NFO 走 `net.fetch`（远端先落缓存）；
- * - 解析顺序：媒体源表（`media_source`）→ 图片表（`media_image`，刮削图 / 扫描封面）；
+ * - 解析顺序：演员图片（`storage://actor/...`，见 `actorProtocol`）→ 存储页预览路径形式
+ *   → 媒体源表（`media_source`）→ 图片表（`media_image`，刮削图 / 扫描封面）；
  * - 视频（`kind === 'video'`）走 Range 流式：主进程自己解析 Range 头按区间读，
  *   本机直读磁盘、WebDAV 用原生 Range、SMB 用补丁后的区间读，应答 200 / 206 / 416
  *   （`net.fetch` 不会转发 Range 头，非 faststart 的 MP4 会整段加载失败，故不能走它）；
@@ -23,6 +24,7 @@ import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, statSync, unlin
 import { join } from 'path'
 import { pathToFileURL } from 'url'
 import { app, net, protocol } from 'electron'
+import { ACTOR_MEDIA_SEGMENT } from '@common/types/actor'
 import {
   filePreviewKindOf,
   guessMimeType,
@@ -41,6 +43,7 @@ import {
 import { appendLog } from '$/db/repo/logRepo'
 import { getImage } from '$/db/repo/mediaImageRepo'
 import { getSource, updateSourcePath } from '$/db/repo/mediaRepo'
+import { serveActorImage } from '$/modules/actor/actorProtocol'
 import { getConnection } from '$/modules/file/fileConnectionStore'
 import { resolveInsideRoot } from '$/modules/file/impl/local/localPath'
 import { isNotFoundError } from '$/modules/file/fileErrorUtils'
@@ -426,6 +429,16 @@ async function handleMediaRequest(request: Request): Promise<Response> {
   const { connectionId, mediaId } = parts
   if (!CONNECTION_ID_PATTERN.test(connectionId) || !MEDIA_ID_PATTERN.test(mediaId)) {
     return notFound()
+  }
+  // 演员图片没有存储连接：`actor` 是固定段，ID 直接在演员图片表里查
+  if (connectionId === ACTOR_MEDIA_SEGMENT) {
+    try {
+      return await serveActorImage(mediaId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      warnOnce(`actor:${mediaId}`, `演员图片读取失败（${mediaId}）：${message}`)
+      return notFound()
+    }
   }
   try {
     const target = resolveTarget(connectionId, mediaId)

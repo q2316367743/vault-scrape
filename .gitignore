@@ -6,4 +6,4 @@ out
 *.log*
 
 
-script
+script/site

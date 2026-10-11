@@ -5,10 +5,12 @@
  * - 插件是纯 JavaScript 脚本，运行在 `node:vm` 沙箱里，只有 `env`、`ctx` 与白名单全局；
  * - 插件用 `env: [...]` 声明自己需要的环境变量（账号、Cookie、站点地址等），
  *   安装时宿主会在沙箱里执行一次脚本、读取这份声明并生成填写表单；
- * - 四个方法全部返回 Promise，签名统一为 `(入参, env, ctx)`，宿主负责归一化与超时保护；
+ * - 四个必需方法全部返回 Promise，签名统一为 `(入参, env, ctx)`，宿主负责归一化与超时保护；
+ * - `actor` / `actorAssets` 是可选能力：实现了宿主才会在刮削时自动补全演员资料与图片；
  * - `definePlugin` 由宿主注入，插件脚本以 `definePlugin({ ... })` 结尾即可。
  */
 import type { LogLevel } from '../log'
+import type { PluginActorDetail } from './actor'
 import type { PluginAsset } from './asset'
 import type { PluginEnvField, PluginEnvValue, PluginMeta } from './manifest'
 import type { PluginMovieCandidate, PluginMovieDetail } from './movie'
@@ -60,20 +62,40 @@ export interface ScrapePlugin {
   covers(movieId: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
   /** 4. 获取花絮类资源（still / trailer）的下载配置 */
   extras(movieId: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
+  /** 5.（可选）按演员姓名获取演员资料 */
+  actor?(name: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginActorDetail>
+  /** 6.（可选）按演员姓名获取头像与图集资源（poster = 头像，thumb / still = 图集） */
+  actorAssets?(name: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
 }
 
 /** 宿主注入沙箱的定义函数 */
 export type DefinePlugin = (definition: ScrapePlugin) => ScrapePlugin
 
-export type PluginMethod = 'search' | 'detail' | 'covers' | 'extras'
+export type PluginMethod = 'search' | 'detail' | 'covers' | 'extras' | 'actor' | 'actorAssets'
 
+/** 插件必须实现的四个方法（宿主用它做编译校验） */
 export const PLUGIN_METHODS: readonly PluginMethod[] = ['search', 'detail', 'covers', 'extras']
 
+/** 可选实现的演员钩子 */
+export const PLUGIN_OPTIONAL_METHODS: readonly PluginMethod[] = ['actor', 'actorAssets']
+
+/** 全部方法名（IPC 边界用它校验待测方法） */
+export const PLUGIN_METHOD_NAMES: readonly PluginMethod[] = [
+  ...PLUGIN_METHODS,
+  ...PLUGIN_OPTIONAL_METHODS
+]
+
 export interface PluginInvokePayload {
-  /** kind 为 search 时必填 */
+  /** method 为 search 时必填 */
   keyword?: string
-  /** kind 为 detail / covers / extras 时必填 */
+  /** method 为 detail / covers / extras 时必填 */
   movieId?: string
+  /** method 为 actor / actorAssets 时必填 */
+  actorName?: string
 }
 
-export type PluginInvokeData = PluginMovieCandidate[] | PluginMovieDetail | PluginAsset[]
+export type PluginInvokeData =
+  | PluginMovieCandidate[]
+  | PluginMovieDetail
+  | PluginAsset[]
+  | PluginActorDetail

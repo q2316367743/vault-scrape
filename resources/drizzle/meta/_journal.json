@@ -5,36 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1791599097864,
-      "tag": "0000_heavy_hardball",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1791603521419,
-      "tag": "0001_smooth_micromacro",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1791606099844,
-      "tag": "0002_damp_mandarin",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1791634396523,
-      "tag": "0003_add_library_filter_columns",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1791634405031,
-      "tag": "0004_drop_legacy_library_columns",
+      "when": 1791684547214,
+      "tag": "0000_moaning_black_panther",
       "breakpoints": true
     }
   ]

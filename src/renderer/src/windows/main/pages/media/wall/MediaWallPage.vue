@@ -66,7 +66,7 @@ import { libraryApi } from '@/api'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import { useFileConnections } from '@/hooks/UseFileConnections'
 import type { FileConnection } from '@common/types/file'
-import MediaWallCard from '../components/MediaWallCard.vue'
+import MediaWallCard from '@/components/media/MediaWallCard.vue'
 import { useMediaWall } from './composables/useMediaWall'
 import { formatTime } from '@/utils/format'
 

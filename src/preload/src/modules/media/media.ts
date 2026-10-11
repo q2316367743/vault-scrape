@@ -1,5 +1,7 @@
 import { ipcRenderer } from 'electron'
 import type {
+  MediaClearNfoRequest,
+  MediaClearNfoResult,
   MediaDetailRequest,
   MediaDetailResult,
   MediaHomeResult,
@@ -25,7 +27,11 @@ export const mediaApi = {
 
   /** 拉取单个视频的详情与 NFO 元信息 */
   detail: (request: MediaDetailRequest): Promise<MediaResult<MediaDetailResult>> =>
-    ipcRenderer.invoke(MediaChannels.detail, request)
+    ipcRenderer.invoke(MediaChannels.detail, request),
+
+  /** 清除单个视频的刮削数据与磁盘 NFO；视频、图片文件与演员档案不受影响 */
+  clearNfo: (request: MediaClearNfoRequest): Promise<MediaResult<MediaClearNfoResult>> =>
+    ipcRenderer.invoke(MediaChannels.clearNfo, request)
 }
 
 export type MediaApi = typeof mediaApi

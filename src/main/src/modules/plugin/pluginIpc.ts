@@ -8,7 +8,7 @@
  */
 import { dialog, ipcMain } from 'electron'
 import {
-  PLUGIN_METHODS,
+  PLUGIN_METHOD_NAMES,
   PluginError,
   describePluginError,
   pluginFail,
@@ -58,7 +58,7 @@ function readId(payload: unknown): string {
 
 function readMethod(payload: unknown): PluginMethod {
   const method = readString(payloadOf(payload), 'method', '')
-  const matched = PLUGIN_METHODS.find((item) => item === method)
+  const matched = PLUGIN_METHOD_NAMES.find((item) => item === method)
   if (!matched) throw new PluginError('invalidArgument', `未知的插件方法：${method || '（空）'}`)
   return matched
 }
@@ -68,8 +68,10 @@ function readInvokePayload(payload: unknown): PluginInvokePayload {
   const result: PluginInvokePayload = {}
   const keyword = readString(source, 'keyword', '')
   const movieId = readString(source, 'movieId', '')
+  const actorName = readString(source, 'actorName', '')
   if (keyword.length > 0) result.keyword = keyword
   if (movieId.length > 0) result.movieId = movieId
+  if (actorName.length > 0) result.actorName = actorName
   return result
 }
 

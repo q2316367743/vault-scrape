@@ -1,4 +1,5 @@
 import { ElectronAPI } from '@electron-toolkit/preload'
+import type { ActorApi } from './src/modules/actor/actor'
 import type { AppWindowApi } from './src/modules/appWindow/appWindow'
 import type { DbApi } from './src/modules/db/db'
 import type { DialogApi } from './src/modules/dialog/dialog'
@@ -14,6 +15,7 @@ declare global {
   interface Window {
     electron: ElectronAPI
     preload: {
+      actor: ActorApi
       appWindow: AppWindowApi
       db: DbApi
       dialog: DialogApi

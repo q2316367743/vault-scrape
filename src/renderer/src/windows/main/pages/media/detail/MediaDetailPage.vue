@@ -4,20 +4,25 @@
  *
  * 契约：
  * - 参数只从路由 query 读（`itemId`）：可以直接刷新、也可以重复进入；
- * - 只读：不下载、不写 NFO、不改索引；取数一律走 mediaApi，失败只提示并允许重试；
+ * - 除「清除 NFO」外只读：不下载、不触发刮削、不改索引；取数一律走 mediaApi，失败只提示并允许重试；
+ * - 「清除 NFO」用于清掉错误的刮削成果：二次确认后由主进程删掉这条影片的刮削数据与磁盘 NFO，
+ *   视频、图片文件与演员档案不受影响；清完重新读取详情，不自动重刮；
  * - NSFW 保护按「全局开关 + 该存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
  * - 播放地址只用主进程给的 `playUrl`（`storage://`），渲染层不拼磁盘路径；
  *   返回按钮由 SubPageLayout 提供，本页不要在 `#extra` 里再放一个。
  */
-import { computed, onMounted } from 'vue'
-import { FilmIcon, RefreshIcon } from 'tdesign-icons-vue-next'
+import { computed, onMounted, ref } from 'vue'
+import { DeleteIcon, FilmIcon, RefreshIcon } from 'tdesign-icons-vue-next'
+import { mediaApi } from '@/api/media'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import SensitiveImage from '@/components/SensitiveImage.vue'
 import MediaPlayer from '@/components/media/MediaPlayer.vue'
 import { useFileConnections } from '@/hooks/UseFileConnections'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
+import { MessageBoxUtil, MessageUtil } from '@/utils/modal'
 import MediaFactGrid from './components/MediaFactGrid.vue'
 import MediaNfoBlock from './components/MediaNfoBlock.vue'
+import MediaActorStrip from './components/MediaActorStrip.vue'
 import { useMediaDetail } from './composables/useMediaDetail'
 import { fileCells } from './mediaDetailCells'
 
@@ -38,6 +43,34 @@ const factCells = computed(() => (detail.value ? fileCells(detail.value, sourceN
 /** 页头描述：读到详情后显示标题，否则退化成影片 ID */
 const description = computed(() => detail.value?.item.title ?? itemId)
 
+const clearing = ref(false)
+
+/** 清除这部影片的刮削成果：先二次确认，清完重新读取详情 */
+async function onClearNfo(): Promise<void> {
+  if (!detail.value) return
+  try {
+    await MessageBoxUtil.confirm(
+      '这部影片的刮削数据（标题、简介、分类、封面与参演名单）会被清空，磁盘上的 NFO 文件会被删除，之后不会自动重新刮削。视频与图片文件保留，演员档案不受影响，确定清除？',
+      '清除 NFO',
+      { confirmButtonText: '清除' }
+    )
+  } catch {
+    return
+  }
+  clearing.value = true
+  const result = await mediaApi.clearNfo({ itemId: detail.value.item.itemId })
+  clearing.value = false
+  if (!result.ok) {
+    MessageUtil.error(result.message)
+    return
+  }
+  const removed = result.data.removedNfo.length
+  MessageUtil.success(
+    removed > 0 ? `已清除刮削数据，并删除 ${removed} 个 NFO 文件` : '已清除刮削数据（磁盘上没有 NFO 文件）'
+  )
+  await load()
+}
+
 onMounted(() => {
   void refresh()
   void load()
@@ -50,6 +83,16 @@ onMounted(() => {
       <t-button variant="outline" :loading="loading" @click="load">
         <template #icon><refresh-icon /></template>
         重新读取
+      </t-button>
+      <t-button
+        v-if="detail"
+        variant="outline"
+        theme="danger"
+        :loading="clearing"
+        @click="onClearNfo"
+      >
+        <template #icon><delete-icon /></template>
+        清除 NFO
       </t-button>
     </template>
 
@@ -92,6 +135,8 @@ onMounted(() => {
             <media-fact-grid :cells="factCells" />
           </div>
         </section>
+
+        <media-actor-strip v-if="detail.actors.length > 0" :actors="detail.actors" />
 
         <media-nfo-block :detail="detail" />
       </template>

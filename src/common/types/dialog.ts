@@ -20,6 +20,8 @@ export interface DialogOpenOptions {
   filters?: DialogFilter[]
   /** true = 只能选目录；缺省只能选文件 */
   directory?: boolean
+  /** true = 允许一次选多个文件；只对「选文件」生效，选目录时忽略 */
+  multiple?: boolean
 }
 
 /** 「保存」框入参：defaultPath 建议写成含文件名的完整路径 */

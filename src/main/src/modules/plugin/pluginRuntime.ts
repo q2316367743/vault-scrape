@@ -12,8 +12,10 @@ import vm from 'node:vm'
 import * as cheerio from 'cheerio'
 import type { LogLevel } from '@common/types/log'
 import {
+  PLUGIN_ACTOR_ASSET_KINDS,
   PLUGIN_METHODS,
   PluginError,
+  normalizeActorDetail,
   normalizeAssets,
   normalizeCandidates,
   normalizeEnvFields,
@@ -134,16 +136,33 @@ function readHandler(source: Record<string, unknown>, method: PluginMethod): Plu
   return typeof value === 'function' ? (value as PluginHandler) : null
 }
 
-function readHandlers(source: Record<string, unknown>): Record<PluginMethod, PluginHandler> | null {
-  const handlers = PLUGIN_METHODS.map((method) => readHandler(source, method))
-  const [search, detail, covers, extras] = handlers
+/** 必需方法编译时就保证存在；可选钩子实现了才挂上 */
+interface PluginHandlers {
+  search: PluginHandler
+  detail: PluginHandler
+  covers: PluginHandler
+  extras: PluginHandler
+  actor?: PluginHandler
+  actorAssets?: PluginHandler
+}
+
+function readHandlers(source: Record<string, unknown>): PluginHandlers | null {
+  const search = readHandler(source, 'search')
+  const detail = readHandler(source, 'detail')
+  const covers = readHandler(source, 'covers')
+  const extras = readHandler(source, 'extras')
   if (!search || !detail || !covers || !extras) return null
-  return { search, detail, covers, extras }
+  const handlers: PluginHandlers = { search, detail, covers, extras }
+  const actor = readHandler(source, 'actor')
+  const actorAssets = readHandler(source, 'actorAssets')
+  if (actor) handlers.actor = actor
+  if (actorAssets) handlers.actorAssets = actorAssets
+  return handlers
 }
 
 /** 在宿主 realm 里重建插件对象：方法返回值一律归一化成宿主 realm 的纯对象 */
-function buildPlugin(meta: PluginMeta, handlers: Record<PluginMethod, PluginHandler>): ScrapePlugin {
-  return {
+function buildPlugin(meta: PluginMeta, handlers: PluginHandlers): ScrapePlugin {
+  const plugin: ScrapePlugin = {
     meta,
     search: async (keyword, env, ctx) => normalizeCandidates(await handlers.search(keyword, env, ctx)),
     detail: async (movieId, env, ctx) => {
@@ -156,6 +175,20 @@ function buildPlugin(meta: PluginMeta, handlers: Record<PluginMethod, PluginHand
     extras: async (movieId, env, ctx) =>
       normalizeAssets(await handlers.extras(movieId, env, ctx), ['still', 'trailer'])
   }
+  const actor = handlers.actor
+  if (actor) {
+    plugin.actor = async (name, env, ctx) => {
+      const detail = normalizeActorDetail(await actor(name, env, ctx), name)
+      if (!detail) throw new PluginError('invokeFailed', '插件返回的演员资料不合法（name 必填）')
+      return detail
+    }
+  }
+  const actorAssets = handlers.actorAssets
+  if (actorAssets) {
+    plugin.actorAssets = async (name, env, ctx) =>
+      normalizeAssets(await actorAssets(name, env, ctx), PLUGIN_ACTOR_ASSET_KINDS)
+  }
+  return plugin
 }
 
 /**

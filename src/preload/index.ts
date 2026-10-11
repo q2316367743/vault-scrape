@@ -1,5 +1,6 @@
 import { contextBridge } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import { actorApi } from '~/modules/actor/actor'
 import { appWindowApi } from '~/modules/appWindow/appWindow'
 import { dbApi } from '~/modules/db/db'
 import { dialogApi } from '~/modules/dialog/dialog'
@@ -13,6 +14,7 @@ import { settingApi } from '~/modules/setting/setting'
 
 // 业务桥：渲染层只通过这些 API 访问主进程能力
 const preload = {
+  actor: actorApi,
   appWindow: appWindowApi,
   db: dbApi,
   dialog: dialogApi,

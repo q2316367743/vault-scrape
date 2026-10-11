@@ -55,9 +55,14 @@ function readCommonOptions(payload: unknown): PickedOptions {
 function buildOpenOptions(payload: unknown): OpenDialogOptions {
   const source = toSource(payload) ?? {}
   const directory = readBoolean(source, 'directory', false)
+  const multiple = readBoolean(source, 'multiple', false)
+  // 多选只对「选文件」有意义，选目录时不加，避免 Electron 抛参数错误
+  const fileProperties: OpenDialogOptions['properties'] = multiple
+    ? ['openFile', 'multiSelections']
+    : ['openFile']
   return {
     ...readCommonOptions(payload),
-    properties: directory ? ['openDirectory'] : ['openFile']
+    properties: directory ? ['openDirectory'] : fileProperties
   }
 }
 

@@ -7,14 +7,14 @@ export interface SettingApp {
    * 没有存储上下文的页面（如工具搜索）只按本开关生效
    */
   nsfwProtection: boolean
-  /** 演员头像目录，留空表示使用默认位置 */
-  actorAvatarDir: string
+  /** 演员图片根目录（头像与图集都放这里），留空表示使用默认位置 */
+  actorImageDir: string
 }
 
 export function buildSettingApp(): SettingApp {
   return {
     nsfwProtection: false,
-    actorAvatarDir: ''
+    actorImageDir: ''
   }
 }
 
@@ -24,6 +24,6 @@ export function normalizeSettingApp(raw: unknown): SettingApp {
   if (!source) return base
   return {
     nsfwProtection: readBoolean(source, 'nsfwProtection', base.nsfwProtection),
-    actorAvatarDir: readString(source, 'actorAvatarDir', base.actorAvatarDir)
+    actorImageDir: readString(source, 'actorImageDir', base.actorImageDir)
   }
 }

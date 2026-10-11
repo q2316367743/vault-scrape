@@ -1,3 +1,4 @@
+export { actorApi } from './actor'
 export { appWindowApi } from './appWindow'
 export { dbApi } from './db'
 export { dialogApi } from './dialog'

@@ -56,13 +56,13 @@ CREATE UNIQUE INDEX `idx_library_path_conn_path` ON `library_path` (`connection_
 CREATE TABLE `library` (
 	`id` text PRIMARY KEY NOT NULL,
 	`name` text NOT NULL,
+	`type` text DEFAULT 'movie' NOT NULL,
 	`scrapers` text DEFAULT '[]' NOT NULL,
 	`nsfw_protection` integer DEFAULT true NOT NULL,
-	`write_nfo` integer DEFAULT true NOT NULL,
-	`rename_enabled` integer DEFAULT false NOT NULL,
+	`min_file_size_mb` integer DEFAULT 0 NOT NULL,
+	`local_first` integer DEFAULT false NOT NULL,
 	`move_enabled` integer DEFAULT false NOT NULL,
 	`move_directory` text DEFAULT '' NOT NULL,
-	`image_save_mode` text DEFAULT 'media' NOT NULL,
 	`last_scan_at` integer DEFAULT 0 NOT NULL,
 	`last_scrape_at` integer DEFAULT 0 NOT NULL,
 	`created_at` integer NOT NULL,
@@ -93,6 +93,7 @@ CREATE TABLE `media_item` (
 	`provider_ids` text DEFAULT '{}' NOT NULL,
 	`scraper_id` text DEFAULT '' NOT NULL,
 	`scraped_at` integer DEFAULT 0 NOT NULL,
+	`has_nfo` integer DEFAULT 0 NOT NULL,
 	`date_added` integer NOT NULL,
 	`updated_at` integer NOT NULL
 );
@@ -132,4 +133,67 @@ CREATE TABLE `media_image` (
 --> statement-breakpoint
 CREATE INDEX `idx_media_image_item` ON `media_image` (`item_id`);--> statement-breakpoint
 CREATE INDEX `idx_media_image_library` ON `media_image` (`library_id`);--> statement-breakpoint
-CREATE UNIQUE INDEX `idx_media_image_conn_path` ON `media_image` (`connection_id`,`path`);
+CREATE UNIQUE INDEX `idx_media_image_conn_path` ON `media_image` (`connection_id`,`path`);--> statement-breakpoint
+CREATE TABLE `actor_alias` (
+	`id` text PRIMARY KEY NOT NULL,
+	`actor_id` text NOT NULL,
+	`alias` text NOT NULL,
+	`alias_key` text NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_actor_alias_actor_key` ON `actor_alias` (`actor_id`,`alias_key`);--> statement-breakpoint
+CREATE INDEX `idx_actor_alias_key` ON `actor_alias` (`alias_key`);--> statement-breakpoint
+CREATE TABLE `actor_image` (
+	`id` text PRIMARY KEY NOT NULL,
+	`actor_id` text NOT NULL,
+	`kind` text DEFAULT 'photo' NOT NULL,
+	`path` text NOT NULL,
+	`name` text NOT NULL,
+	`extname` text DEFAULT '' NOT NULL,
+	`mime` text DEFAULT '' NOT NULL,
+	`size` integer DEFAULT 0 NOT NULL,
+	`width` integer DEFAULT 0 NOT NULL,
+	`height` integer DEFAULT 0 NOT NULL,
+	`source` text DEFAULT 'user' NOT NULL,
+	`created_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE INDEX `idx_actor_image_actor` ON `actor_image` (`actor_id`);--> statement-breakpoint
+CREATE TABLE `actor` (
+	`id` text PRIMARY KEY NOT NULL,
+	`name` text NOT NULL,
+	`name_key` text NOT NULL,
+	`gender` text DEFAULT '' NOT NULL,
+	`birthday` text DEFAULT '' NOT NULL,
+	`birth_country` text DEFAULT '' NOT NULL,
+	`birth_province` text DEFAULT '' NOT NULL,
+	`birth_city` text DEFAULT '' NOT NULL,
+	`birth_county` text DEFAULT '' NOT NULL,
+	`height` integer DEFAULT 0 NOT NULL,
+	`bust` integer DEFAULT 0 NOT NULL,
+	`waist` integer DEFAULT 0 NOT NULL,
+	`hip` integer DEFAULT 0 NOT NULL,
+	`cup` text DEFAULT '' NOT NULL,
+	`tagline` text DEFAULT '' NOT NULL,
+	`source_url` text DEFAULT '' NOT NULL,
+	`overview` text DEFAULT '' NOT NULL,
+	`tags` text DEFAULT '[]' NOT NULL,
+	`avatar_image_id` text DEFAULT '' NOT NULL,
+	`locked` integer DEFAULT false NOT NULL,
+	`scraper_id` text DEFAULT '' NOT NULL,
+	`scraped_at` integer DEFAULT 0 NOT NULL,
+	`created_at` integer NOT NULL,
+	`updated_at` integer NOT NULL
+);
+--> statement-breakpoint
+CREATE UNIQUE INDEX `idx_actor_name_key` ON `actor` (`name_key`);--> statement-breakpoint
+CREATE INDEX `idx_actor_updated` ON `actor` (`updated_at`);--> statement-breakpoint
+CREATE TABLE `media_cast` (
+	`item_id` text NOT NULL,
+	`actor_name` text NOT NULL,
+	`name_key` text NOT NULL,
+	`ordinal` integer DEFAULT 0 NOT NULL,
+	PRIMARY KEY(`item_id`, `name_key`)
+);
+--> statement-breakpoint
+CREATE INDEX `idx_media_cast_name` ON `media_cast` (`name_key`);

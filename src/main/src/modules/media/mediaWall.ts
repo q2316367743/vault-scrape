@@ -47,12 +47,16 @@ import {
   listSourcesByItem,
   maxSourceIndexedAt
 } from '$/db/repo/mediaRepo'
+import { actorRefsOfItem } from '$/modules/actor/actorLink'
 import { getFileClient } from '$/modules/file/fileClientManager'
 import { folderItemId } from '$/modules/media/mediaIndexer'
 import { getLibrary, listLibraries, listSummaries } from '$/modules/library/libraryStore'
 
 /** 主媒体源：路径与条目一致的优先，否则取第一条 */
-function primarySourceOf(item: MediaItemRow, sources: readonly MediaSourceRow[]): MediaSourceRow | undefined {
+export function primarySourceOf(
+  item: MediaItemRow,
+  sources: readonly MediaSourceRow[]
+): MediaSourceRow | undefined {
   return sources.find((row) => row.path === item.path) ?? sources[0]
 }
 
@@ -148,6 +152,30 @@ export function loadLibraryVideos(libraryId: string): MediaWallItem[] {
   const id = libraryId.trim()
   if (id.length === 0) return []
   return loadMediaWall({ libraryId: id }).items
+}
+
+/**
+ * 按条目 ID 批量取墙面形状（演员详情页的「出演作品」用）。
+ *
+ * 与墙面同一套判定与封面规则：只认 `movie` 条目、必须有主媒体源、封面按父目录兜底；
+ * 查不到的 ID 直接跳过，返回顺序与传入顺序无关（调用方自己按入库时间排序）。
+ */
+export function loadWallItems(itemIds: readonly string[]): MediaWallItem[] {
+  if (itemIds.length === 0) return []
+  const libraries = new Map(listLibraries().map((library) => [library.id, library]))
+  const items: MediaWallItem[] = []
+  for (const itemId of itemIds) {
+    const item = getItem(itemId)
+    if (!item || item.type !== 'movie') continue
+    const source = primarySourceOf(item, listSourcesByItem(item.id))
+    if (!source) continue
+    const images = imagesByItem([
+      ...listImagesByItem(item.id),
+      ...(item.parentId.length > 0 ? listImagesByItem(item.parentId) : [])
+    ])
+    items.push(toWallItem(item, source, images, libraries.get(item.libraryId) ?? null))
+  }
+  return items
 }
 
 /** 排序用的时间：入库时间缺失（0）时退回文件修改时间 */
@@ -309,7 +337,8 @@ export function browseLibrary(request: ScrapeBrowseRequest): MediaBrowseEntry[] 
 }
 
 /** 同目录 NFO 候选：`movie.nfo` 优先，其次与视频同名的 `.nfo`（与写入侧的命名规则对应） */
-function nfoCandidates(source: MediaSourceRow): string[] {
+/** 同目录 NFO 的候选名（`movie.nfo` 优先，其次与视频同名的 `.nfo`）；「清除 NFO」共用这套命名 */
+export function nfoCandidates(source: MediaSourceRow): string[] {
   return ['movie.nfo', `${stripExtension(source.name)}.nfo`]
 }
 
@@ -348,7 +377,8 @@ export async function loadMediaDetail(request: MediaDetailRequest): Promise<Medi
   return {
     item: toWallItem(item, source, images, library ?? null),
     meta: nfo.meta,
-    nfoPath: nfo.path
+    nfoPath: nfo.path,
+    actors: actorRefsOfItem(item.id)
   }
 }
 

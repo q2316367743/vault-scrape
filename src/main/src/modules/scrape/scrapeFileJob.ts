@@ -1,6 +1,9 @@
 /**
  * 单文件刮削流水线：一个视频文件 → 一个 Jellyfin 目录规范的影片文件夹。
  *
+ * 本文件只保留「按顺序编排」：收集与落盘在 `scrapeJobPlan.ts`，元数据与路径写回在
+ * `scrapeJobApply.ts`，上下文与设置快照类型在 `scrapeJobTypes.ts`。
+ *
  * 契约（严格按需求里的顺序与不变量）：
  * 1. **插件按顺序调用**，每个插件都走 `search → detail`；命中详情后只补它缺的资源，
  *    关键信息与启用资源齐全就**提前停止**，不再调用后面的插件（跨插件补全）；
@@ -17,444 +20,43 @@
  * 6. 成功后把元数据写回 `media_item`、图片写进 `media_image`；文件被移动时就地更新
  *    `media_source`（**保持 source id 不变**，墙面与协议地址都不受影响）；
  *    `file.removeEmptyFolder` 为真且源目录空了就删掉它（绝不删资料库目录）；
- * 7. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断。
+ * 7. 参演演员名单按名字写进 `media_cast`（弱关联，不记演员 ID）；`actorScrape` 为真时把资料不全的演员排进后台抓取队列，
+ *    演员抓取失败只记日志，不影响本文件的刮削结果；
+ * 8. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断。
  */
-import {
-  FILE_ROOT,
-  basenameRemotePath,
-  dirnameRemotePath,
-  extnameOf,
-  guessMimeType,
-  joinRemotePath
-} from '@common/types/file'
+import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
 import type { MediaImageType } from '@common/types/media'
 import type { PluginAsset, PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
-import { COVER_ASSET_KINDS, EXTRA_ASSET_KINDS } from '@common/types/plugin'
 import {
   ScrapeError,
   buildNfoXml,
   enabledAssetKinds,
   extractKeyword,
   keepFlagOf,
-  normalizePartToken,
-  partTokenOf,
-  renderTemplate,
-  resolveAssetName,
   resolveAssetFile,
-  sanitizeName,
-  truncateName,
-  type NfoArtwork,
   type ScrapeAssetContext,
   type ScrapeFileStatus
 } from '@common/types/scrape'
-import type {
-  SettingDownload,
-  SettingFile,
-  SettingNaming,
-  SettingScrape
-} from '@common/types/setting'
+import { enqueueItemActorScrape } from '$/modules/actor/actorScrape'
 import { replaceItemImages, type MediaImageDraft } from '$/db/repo/mediaImageRepo'
+import { updateItemMetadata } from '$/db/repo/mediaRepo'
+import { metadataOf, refreshSourcePath, removeSourceFolderIfEmpty } from './scrapeJobApply'
 import {
-  findSourceByPath,
-  getItem,
-  readItemMetadata,
-  updateItem,
-  updateItemMetadata,
-  updateSourcePath,
-  type MediaItemMetadataInput
-} from '$/db/repo/mediaRepo'
-import type { FileClient } from '$/modules/file/FileClient'
-import { invokePlugin } from '$/modules/plugin/pluginRegistry'
-import { downloadAssetToTemp } from './scrapeAssets'
+  IMAGE_KIND_TYPE,
+  SINGLE_KINDS,
+  adoptLocalImage,
+  artworkOf,
+  baseNameOf,
+  collectFromPlugins,
+  downloadAsset,
+  ensureParent,
+  extensionOf,
+  resolveVideoBase,
+  type PlantedAsset
+} from './scrapeJobPlan'
+import type { ScrapeJobContext, ScrapeJobOutcome } from './scrapeJobTypes'
 import { movieDirOf, movieFileName, nfoFileName, resolveOutputDir } from './scrapeLayout'
-import { mergeDetail, needsRemoteInfo, readLocalMeta, type LocalImage } from './scrapeLocalMeta'
-import type { ScrapeRunLog } from './scrapeLogFile'
-import { pickCandidate } from './scrapeMatcher'
-import { readAssets, readCandidates, readDetail } from './scrapePluginData'
-
-/** 参与刮削的插件（顺序即插件页顺序） */
-export interface ScrapePluginRef {
-  id: string
-  name: string
-}
-
-/** 任务启动时冻结的设置快照：任务运行期间改设置不影响已启动的任务 */
-export interface ScrapeSettingsSnapshot {
-  scrape: SettingScrape
-  download: SettingDownload
-  naming: SettingNaming
-  file: SettingFile
-}
-
-/**
- * 任务启动时冻结的资料库策略。
- *
- * 刮削产物的形态是全库统一的固定规范（文件夹 + 同名视频 + NFO + 同目录图片），
- * 所以这里只有「移动到哪里」和「是否优先本地」两个变量。
- */
-export interface ScrapeLibraryPolicy {
-  libraryId: string
-  /** 优先读取本地 NFO 与本地图片，只从互联网补缺失的信息 */
-  localFirst: boolean
-  moveEnabled: boolean
-  moveDirectory: string
-  /** 资料库的媒体目录（连接内绝对路径）：清理空目录时绝不删它们 */
-  libraryRoots: readonly string[]
-}
-
-export interface ScrapeJobContext {
-  taskId: string
-  connectionId: string
-  policy: ScrapeLibraryPolicy
-  dirPath: string
-  entry: {
-    /** 媒体条目 ID：元数据与图片写回的目标 */
-    itemId: string
-    path: string
-    name: string
-    keyword: string
-    num: string
-  }
-  plugins: readonly ScrapePluginRef[]
-  settings: ScrapeSettingsSnapshot
-  client: FileClient
-  signal: AbortSignal
-  log: ScrapeRunLog
-}
-
-export interface ScrapeJobOutcome {
-  status: ScrapeFileStatus
-  pluginId: string
-  title: string
-  message: string
-  /**
-   * 本次结束时文件在连接内的最终路径。
-   *
-   * 未发生移动时就是扫描时的原路径；媒体源靠它就地更新。
-   */
-  finalPath: string
-}
-
-/** 插件资源 / 本地图片 → 媒体图片类型；不在表里的（预告片）只落盘不入库 */
-const IMAGE_KIND_TYPE: Partial<Record<PluginAssetKind, MediaImageType>> = {
-  poster: 'primary',
-  thumb: 'thumb',
-  fanart: 'backdrop',
-  banner: 'banner',
-  logo: 'logo',
-  still: 'still'
-}
-
-/** 只保留一份的图片 kind：多版本会导致文件名互相覆盖 */
-const SINGLE_KINDS: ReadonlySet<PluginAssetKind> = new Set([
-  'poster',
-  'thumb',
-  'fanart',
-  'banner',
-  'logo'
-])
-
-/** 已经就位的资源（本地沿用的与刚下载的共用一套记录） */
-interface PlantedAsset {
-  kind: PluginAssetKind
-  /** 相对影片目录的路径 */
-  relativePath: string
-  /** 连接内绝对路径 */
-  path: string
-  imageType?: MediaImageType
-}
-
-/** 去掉扩展名 */
-function baseNameOf(name: string): string {
-  const index = name.lastIndexOf('.')
-  return index > 0 ? name.slice(0, index) : name
-}
-
-/** 扩展名（含点），没有扩展名时为空串 */
-function extensionOf(name: string): string {
-  const index = name.lastIndexOf('.')
-  return index > 0 ? name.slice(index) : ''
-}
-
-/**
- * 按命名规则算出影片基础名（文件夹名 / 视频文件名 / NFO 文件名三处共用）。
- *
- * 模板渲染为空时回落原名；分盘标记（CD1 / PART2…）始终按 `partStyle` 附在末尾，
- * 否则同名模板会让同一部作品的分盘文件互相覆盖。
- */
-function resolveVideoBase(
-  detail: PluginMovieDetail,
-  originalBase: string,
-  naming: SettingNaming
-): string {
-  const rendered = renderTemplate(naming.fileTemplate, detail, naming)
-  const base = truncateName(sanitizeName(rendered) || originalBase, naming.fileNameMaxLength)
-  const token = normalizePartToken(partTokenOf(originalBase), naming.partStyle)
-  if (token.length === 0) return base
-  return truncateName(`${base} ${token}`, naming.fileNameMaxLength)
-}
-
-/** 启用的 kind 是否已经齐全（本地已有的也算齐全） */
-function isSatisfied(
-  detail: PluginMovieDetail | null,
-  assets: ReadonlyMap<PluginAssetKind, PluginAsset[]>,
-  enabled: readonly PluginAssetKind[],
-  localKinds: ReadonlySet<PluginAssetKind>
-): boolean {
-  if (!detail) return false
-  return enabled.every((kind) => localKinds.has(kind) || (assets.get(kind)?.length ?? 0) > 0)
-}
-
-/** 收集一个插件的资源，只接受尚未拿到的启用 kind */
-function collectAssets(
-  incoming: readonly PluginAsset[],
-  assets: Map<PluginAssetKind, PluginAsset[]>,
-  enabled: readonly PluginAssetKind[],
-  localKinds: ReadonlySet<PluginAssetKind>
-): void {
-  for (const asset of incoming) {
-    if (!enabled.includes(asset.kind)) continue
-    if (localKinds.has(asset.kind)) continue
-    if (SINGLE_KINDS.has(asset.kind)) {
-      if ((assets.get(asset.kind)?.length ?? 0) > 0) continue
-    }
-    const bucket = assets.get(asset.kind) ?? []
-    bucket.push(asset)
-    assets.set(asset.kind, bucket)
-  }
-}
-
-/** 按顺序调用插件，尽可能补齐详情与资源 */
-async function collectFromPlugins(
-  context: ScrapeJobContext,
-  enabled: readonly PluginAssetKind[],
-  localKinds: ReadonlySet<PluginAssetKind>
-): Promise<{
-  detail: PluginMovieDetail | null
-  pluginId: string
-  assets: Map<PluginAssetKind, PluginAsset[]>
-}> {
-  const assets = new Map<PluginAssetKind, PluginAsset[]>()
-  let detail: PluginMovieDetail | null = null
-  let pluginId = ''
-
-  const missing = (kind: PluginAssetKind): boolean =>
-    enabled.includes(kind) && !localKinds.has(kind) && (assets.get(kind)?.length ?? 0) === 0
-
-  for (const plugin of context.plugins) {
-    if (context.signal.aborted) throw new ScrapeError('cancelled')
-    try {
-      if (!detail) {
-        const candidates = readCandidates(
-          await invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })
-        )
-        const picked = pickCandidate(candidates, context.entry.num, context.entry.keyword)
-        if (picked) {
-          const found = readDetail(await invokePlugin(plugin.id, 'detail', { movieId: picked.id }))
-          if (found) {
-            detail = found
-            pluginId = plugin.id
-          }
-        }
-      }
-      if (detail) {
-        const movieId = detail.id
-        if (COVER_ASSET_KINDS.some(missing)) {
-          collectAssets(
-            readAssets(await invokePlugin(plugin.id, 'covers', { movieId })),
-            assets,
-            enabled,
-            localKinds
-          )
-        }
-        if (EXTRA_ASSET_KINDS.some(missing)) {
-          collectAssets(
-            readAssets(await invokePlugin(plugin.id, 'extras', { movieId })),
-            assets,
-            enabled,
-            localKinds
-          )
-        }
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : '未知错误'
-      context.log.warn(`插件 ${plugin.name} 处理失败，继续尝试后续插件：${message}`)
-    }
-    if (isSatisfied(detail, assets, enabled, localKinds)) break
-  }
-
-  return { detail, pluginId, assets }
-}
-
-/** 确保目标文件的父目录存在 */
-async function ensureParent(context: ScrapeJobContext, target: string): Promise<void> {
-  const folder = dirnameRemotePath(target)
-  if (folder === FILE_ROOT) return
-  await context.client.mkdir(folder, { recursive: true })
-}
-
-/** 下载一条资源并上传到目标路径；失败抛错由调用方记警告 */
-async function downloadAsset(
-  context: ScrapeJobContext,
-  target: string,
-  asset: PluginAsset
-): Promise<void> {
-  const download = await downloadAssetToTemp(asset, context.signal)
-  try {
-    await context.client.upload(download.localPath, target, {
-      overwrite: true,
-      signal: context.signal
-    })
-  } finally {
-    await download.cleanup()
-  }
-}
-
-/**
- * 把一张本地图片搬到规范文件名下（`localFirst`）。
- *
- * 规范名已经存在时保留磁盘上那份，本地图片原样不动；搬运失败时仍按原路径入库，
- * 至少不会丢掉这张图。
- */
-async function adoptLocalImage(
-  context: ScrapeJobContext,
-  image: LocalImage,
-  index: number,
-  movieDir: string,
-  assetContext: ScrapeAssetContext
-): Promise<PlantedAsset> {
-  const { client } = context
-  const plan = resolveAssetName(image.kind, image.name, index, assetContext)
-  const target = joinRemotePath(movieDir, plan.relativePath)
-  const imageType = IMAGE_KIND_TYPE[image.kind]
-  if (image.path !== target) {
-    try {
-      if (await client.exists(target)) {
-        context.log.info(`规范文件名已存在，沿用磁盘上的文件：${target}`)
-      } else {
-        await ensureParent(context, target)
-        await client.move(image.path, target, { overwrite: false })
-        context.log.info(`本地图片就位：${image.name} → ${plan.relativePath}`)
-      }
-      return { kind: image.kind, relativePath: plan.relativePath, path: target, imageType }
-    } catch (error) {
-      if (context.signal.aborted) throw new ScrapeError('cancelled')
-      const message = error instanceof Error ? error.message : '未知错误'
-      context.log.warn(`本地图片整理失败（${image.path}）：${message}`)
-    }
-  }
-  return { kind: image.kind, relativePath: plan.relativePath, path: image.path, imageType }
-}
-
-/** 就位的图片 → NFO 里的图片标签值（都是相对影片目录的路径） */
-function artworkOf(planted: readonly PlantedAsset[]): NfoArtwork {
-  const artwork: NfoArtwork = {}
-  const stills: string[] = []
-  for (const item of planted) {
-    if (item.kind === 'poster') artwork.poster ??= item.relativePath
-    else if (item.kind === 'thumb') artwork.thumb ??= item.relativePath
-    else if (item.kind === 'fanart') artwork.backdrop ??= item.relativePath
-    else if (item.kind === 'banner') artwork.banner ??= item.relativePath
-    else if (item.kind === 'logo') artwork.logo ??= item.relativePath
-    else if (item.kind === 'still') stills.push(item.relativePath)
-  }
-  if (stills.length > 0) artwork.stills = stills
-  return artwork
-}
-
-/** 上次刮削写下的 ID 信息：本地优先跳过联网时要沿用，不能清空 */
-function previousMetadataOf(
-  itemId: string
-): { providerIds: Record<string, string>; scraperId: string } | null {
-  if (itemId.length === 0) return null
-  const row = getItem(itemId)
-  if (!row) return null
-  return { providerIds: readItemMetadata(row).providerIds, scraperId: row.scraperId }
-}
-
-/** 插件详情 → 条目元数据列；插件没有的字段一律写空，避免沿用上一次的旧值 */
-function metadataOf(
-  detail: PluginMovieDetail,
-  fallbackNum: string,
-  pluginId: string,
-  itemId: string
-): MediaItemMetadataInput {
-  const previous = pluginId.length > 0 ? null : previousMetadataOf(itemId)
-  const releaseDate = detail.releaseDate ?? ''
-  const year = Number.parseInt(releaseDate.slice(0, 4), 10)
-  return {
-    title: detail.title,
-    num: detail.num ?? fallbackNum,
-    originalTitle: detail.originalTitle ?? '',
-    overview: detail.plot ?? '',
-    tagline: '',
-    premiereDate: releaseDate,
-    productionYear: Number.isFinite(year) ? year : 0,
-    runtimeMinutes: detail.duration ?? 0,
-    officialRating: '',
-    communityRating: 0,
-    genres: [],
-    studios: detail.studio ? [detail.studio] : detail.maker ? [detail.maker] : [],
-    tags: detail.tags ?? [],
-    providerIds: pluginId.length > 0 ? { [pluginId]: detail.id } : (previous?.providerIds ?? {}),
-    scraperId: pluginId.length > 0 ? pluginId : (previous?.scraperId ?? ''),
-    scrapedAt: Date.now()
-  }
-}
-
-/**
- * 文件被移动后就地更新媒体源与条目路径（两者的 id 都不变）。
- *
- * 条目路径必须跟着走：媒体身份按 (connectionId, path) 解析，若只改媒体源、
- * 条目还留着旧路径，下次扫描会按新路径认成全新条目，`cleanupUnseen` 随即把
- * 刚刮好的条目连同图片一起删掉。读不到详情时至少把路径改对。
- */
-async function refreshSourcePath(context: ScrapeJobContext, targetPath: string): Promise<void> {
-  const source = findSourceByPath(context.connectionId, context.entry.path)
-  updateItem(context.entry.itemId, { path: targetPath })
-  if (!source) return
-  const name = basenameRemotePath(targetPath)
-  try {
-    const info = await context.client.stat(targetPath)
-    updateSourcePath(source.id, {
-      path: targetPath,
-      name: info.name,
-      extname: info.extname,
-      mime: info.mime.length > 0 ? info.mime : guessMimeType(info.name),
-      size: info.size,
-      modifiedAt: info.modifiedAt
-    })
-  } catch {
-    updateSourcePath(source.id, {
-      path: targetPath,
-      name,
-      extname: extnameOf(name),
-      mime: guessMimeType(name),
-      size: source.size,
-      modifiedAt: source.modifiedAt
-    })
-  }
-}
-
-/** 移走视频后删掉腾空的源目录（只删源目录本身，且绝不删资料库目录） */
-async function removeSourceFolderIfEmpty(
-  context: ScrapeJobContext,
-  movieDir: string
-): Promise<void> {
-  const { client, settings, policy, dirPath } = context
-  if (!settings.file.removeEmptyFolder) return
-  if (dirPath === movieDir || dirPath === FILE_ROOT) return
-  if (policy.libraryRoots.includes(dirPath)) return
-  try {
-    const rest = await client.list(dirPath)
-    if (rest.length > 0) return
-    await client.remove(dirPath, { recursive: true })
-    context.log.info(`已删除空目录：${dirPath}`)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    context.log.warn(`空目录清理失败（${dirPath}）：${message}`)
-  }
-}
+import { mergeDetail, needsRemoteInfo, readLocalMeta } from './scrapeLocalMeta'
 
 /** 执行单个文件的完整流水线 */
 export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOutcome> {
@@ -620,6 +222,20 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
     }))
   updateItemMetadata(entry.itemId, metadataOf(detail, entry.num, pluginId, entry.itemId))
   replaceItemImages(entry.itemId, images)
+
+  // 8. 演员：把参演名单按名字写进 media_cast；开了自动补全就把资料不全的演员排进后台队列
+  try {
+    const queued = enqueueItemActorScrape(
+      entry.itemId,
+      detail.actors ?? [],
+      context.settings.scrape.actorScrape,
+      context.signal
+    )
+    if (queued > 0) context.log.info(`已把 ${queued} 位演员排进资料抓取队列`)
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : '未知错误'
+    context.log.warn(`演员信息写入失败：${reason}`)
+  }
 
   const parts = [pluginId.length > 0 ? `插件 ${pluginId}` : '本地 NFO', `${planted.length} 个资源`]
   if (nfoWritten) parts.push(`NFO ${nfoFileName(base)}`)

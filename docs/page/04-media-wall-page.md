@@ -16,6 +16,7 @@
 - 内容口径：**以磁盘为准**。墙面主体是资料库扫描出来的影片条目，未刮削的视频也会上墙（文件名占位），磁盘上被删掉的视频会在下次扫描后从墙上消失。
 - 资料库范围：所有数据源（本机 / WebDAV / SMB）聚合成一堵墙，每张卡片带**资料库角标**（`item.libraryName`）。**每个影片都归属于某个资料库**（归属是条目上的真实外键，不再按路径最长前缀猜），因此没有「未归入资料库」这一档。
 - 取数：`@/api` 的 `mediaApi`（`home()` / `wall()` / `detail()`），主进程实现见 `src/main/src/modules/media/mediaWall.ts`。
+- 详情页另有「**清除 NFO**」入口（页头按钮）：二次确认后清掉这条影片的刮削数据与磁盘 NFO，用来处理刮错的数据，见 §4。这是影视墙域唯一的写操作。
 
 ## 2. 首页（`home/MediaHomePage.vue`）
 
@@ -70,10 +71,21 @@
 
 **整墙**（`media:wall`）：`loadMediaWall({ libraryId })` —— `libraryId` 为空串时遍历 `listLibraries()`，否则只取 `getLibrary(libraryId)`（库不存在抛 `notFound`「资料库不存在」）。每个库取 `listMovieItems(libraryId)`——**只列 `type='movie'` 的条目**，不属于任何资料库的影片不会出现在墙上；条目没有主源（已被清理）时跳过。`indexedAt = maxSourceIndexedAt()`（最新媒体源的 `indexed_at`），`libraries = listSummaries()`（带 `videoCount` / `coverUrls`，**0 个视频的库也会出现**），返回 `MediaWallResult{ items, total, indexedAt, libraries }`。整墙一次拉全，搜索 / 排序全在渲染层做，主进程不复制排序规则（首页两排的取样在**主进程**做，见 §2）。
 
-**详情**（`media:detail`）：`loadMediaDetail({ itemId })`——空 id 报 `invalidArgument`「缺少影片 ID」；条目不存在、不是 `movie` 条目、或没有主源时报 `notFound`（「索引里没有这个视频，磁盘上可能已被删除」）。返回 `MediaDetailResult{ item, meta, nfoPath }`，`item` 与墙上同一套卡片数据（含 `playUrl`），详情页不需要再拼任何地址。
+**详情**（`media:detail`）：`loadMediaDetail({ itemId })`——空 id 报 `invalidArgument`「缺少影片 ID」；条目不存在、不是 `movie` 条目、或没有主源时报 `notFound`（「索引里没有这个视频，磁盘上可能已被删除」）。返回 `MediaDetailResult{ item, meta, nfoPath, actors }`，`item` 与墙上同一套卡片数据（含 `playUrl`），详情页不需要再拼任何地址。`actors` 是**参演演员**（`MediaActorRef{ actorId, name, avatarUrl }[]`，按 `media_cast.ordinal` 出演顺序；没有名单时是空数组，`avatarUrl` 为空串表示没头像），由 `actorRefsOfItem(itemId)` 组装、头像是 `storage://actor/...` 地址；演员与影片是**按名字的弱关联**（`media_cast` 只记姓名归一化键，演员行被删掉时 `actorId` 回落空串、渲染层不跳转），名单在刮削入库与扫描 NFO 时写入（见[演员模块](../actor/01-actor-module.md)）。详情页用 `MediaActorStrip.vue` 渲染成「头像 + 姓名」并跳[演员详情页](./05-actor-pages.md)。
 
 - NFO 候选顺序 `movie.nfo` → `{文件名}.nfo`（文件名取主源 `name`），路径为空或读失败 / 解析不出内容都算「没有 NFO」，不报错；
 - NFO 解析用三端共享的纯函数 `parseNfoXml`（`@common/types/media/nfo.ts`），字段口径与写入侧 `buildNfoXml` 对齐；`runtime` 转成分钟。
+
+**清除 NFO**（`media:clear-nfo`，本域唯一的写通道）：`clearMediaNfo({ itemId })`（`src/main/src/modules/media/mediaClearNfo.ts`）——空 id 报 `invalidArgument`「缺少影片 ID」；条目不存在、不是 `movie` 条目、没有主源时报 `notFound`。只对**单条影片**生效，步骤固定为「先磁盘、后数据库」：
+
+1. 删磁盘 NFO：按上面同一套候选顺序逐个 `exists` 再 `remove`，存在的都删。任何一个删不掉（连接不可用、权限不足）就抛 `writeFailed`「磁盘上的 NFO 没有删除（原因），刮削数据保持不变」，**库内数据保持原样**——只清库不删盘，下次开「优先读取本地 NFO」重刮会把同一份错误数据读回来；
+2. 清库内数据：`clearItemMetadata(itemId, { name, num })` 把刮削列整组归零（`scrapedAt = 0`、`sortName` / `originalTitle` / `overview` / `tagline` / `premiereDate` / `officialRating` / `scraperId` 归空、`genres` / `studios` / `tags` 回 `'[]'`、`providerIds` 回 `'{}'`），并像扫描那样把 `name` 还原成**磁盘上的视频文件名**（含扩展名）、`num` 还原成 `normalizeNum(extractKeyword(文件名).num)`；再 `deleteImagesByItem(itemId)` 删掉这条影片的图片记录、`deleteCastByItems([itemId])` 删掉参演名单（还原口径与 `mediaIndexer` 的写入口径一致，所以「清除」后的状态等于「扫描过、还没刮」）；
+3. 扫描拥有的列（`path` / `type` / `parentId` / `hasNfo`）不动，`hasNfo` 交给下次扫描纠正；返回 `MediaClearNfoResult{ itemId, removedNfo }`，`removedNfo` 是**真的删掉**的磁盘路径，本来没有 NFO 时是空数组（不算失败）。
+
+- 磁盘上的**视频与图片文件一个都不删**：图片记录清掉后封面会回退到父目录图片，下次扫描会按文件名规则把它们重新挂回这条影片；
+- 演员本人档案（`actor`）不动，只删 `media_cast` 关联（见[演员模块](../actor/01-actor-module.md)）；
+- 清完**不自动重刮**：详情页只重新 `mediaApi.detail()` 一次，要重刮请回资料库抽屉点「刮削」（`scrapedAt === 0` 会被队列选中）；
+- 注意 `movie.nfo` 是**目录级**候选：一个目录里多部影片共用 `movie.nfo` 时，清除其中一条会把这个文件删掉，兄弟影片的库内元数据不受影响，但它们的 `hasNfo` 要等下次扫描才纠正。
 
 **卡片字段**（`toWallItem()`）：`itemId` / `libraryId` / `libraryName` / `nsfwProtected`（= 所属库的 `nsfwProtection`）/ `connectionId` / `path` / `dirPath` / `name` / `num` / `title` / `coverUrl` / `playUrl` / `dateAdded` / `pluginId`（条目上的 `scraperId`）/ `size` / `modifiedAt`。**没有 `scraped` / `scrapedAt`**：卡片不再打「已刮削 / 未刮削」角标（`scrapedAt` 仍留在库里，只用于队列与标题口径）。
 
@@ -160,7 +172,7 @@ src/renderer/src/windows/main/pages/media/
 
 - `pages/media/` 下**不再有平铺文件**（RL-09：页面目录分层），跨首页与内容页共用的组件放 `pages/media/components/`。
 - 原来页面私有的 `mediaUtils.ts` 已上移为 `src/renderer/src/utils/format.ts`（`formatSize` / `formatTime` / `formatDuration`，未知值统一显示「—」），引用点统一用 `@/utils/format`；工作台也在用同一份，所以不要再在页面里复制。
-- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情 / 逐级浏览取数）、`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
+- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情 / 逐级浏览取数，并导出 `nfoCandidates` / `primarySourceOf` 给清除流程共用）、`mediaClearNfo.ts`（「清除 NFO」：删磁盘 NFO + 清库内刮削数据，本域唯一写操作）、`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
 - 本机路径与连接内路径互转仍走 `src/renderer/src/utils/remotePath.ts`（`toRemoteDir` / `toDisplayDir`）。
 
 ## 7. NSFW 保护
@@ -203,6 +215,9 @@ src/renderer/src/windows/main/pages/media/
 25. 开启 NSFW 保护并把数据源标记 NSFW：列表封面显示遮罩；点进详情页后播放器显示「内容已隐藏，点击播放」，点击后撤遮罩并起播。
 26. 缩放窗口宽度：首页资料库横排与两排横向滚动正常（卡片不压缩），内容页网格列数自适应，详情页播放器按 16:9 等比缩放。
 27. **播放失败兜底 + 路径自愈**：把一个已入库影片的**文件名改掉**（或真删掉）后直接进详情页（不重扫）→ 播放器位置不再是黑屏，而是显示该影片封面（通常是快照）+「视频读不出来……也可以在影视墙里对资料库重新扫描一次」；把文件放回去重新进页面 → 正常起播、兜底层消失。只是**挪到别的目录**（同名同大小）时不该看到兜底，见第 21 条的自愈。
+28. **清除 NFO**：进一个已刮削影片的详情页 → 页头应出现「清除 NFO」（详情没读到时按钮不显示）；点它 → 二次确认写明「清空刮削数据 + 删磁盘 NFO，不自动重刮，视频与图片保留」，点「取消」什么都不发生。确认后：标题回到文件名、简介 / 分类 / 封面 / 参演名单消失，磁盘上该影片目录里的 `movie.nfo` / `<文件名>.nfo` 被删掉（**视频与图片文件还在**），演员本人档案仍在，提示「已清除刮削数据，并删除 N 个 NFO 文件」；本来没有 NFO 时提示「已清除刮削数据（磁盘上没有 NFO 文件）」。
+29. 清除后**不自动重刮**：清除完详情页不应自己发起刮削；此时到资料库抽屉点「刮削」，这条影片应像没刮过一样重新进入队列（`scrapedAt === 0`），刮完标题 / 封面 / 演员回来。
+30. 清不掉时保持原样：把该影片所在目录设成只读（或让连接离线、删掉连接）再点「清除 NFO」→ 提示「磁盘上的 NFO 没有删除（原因），刮削数据保持不变」，库内标题 / 封面 / 演员仍在（不允许出现「库清了、NFO 还在」的半成品状态）。
 
 ## 9. 限制与后续
 
@@ -216,3 +231,4 @@ src/renderer/src/windows/main/pages/media/
 - **多目录资料库的刮削一次只跑一组**：任务表只支持一个「连接 + 目录」，所以一次「刮削」只处理条目最多的那一组目录，其余条目保持 `scrapedAt = 0`，要再点一次「刮削」才会轮到下一组（详见[资料库 · 已知限制](../media/01-media-library.md)）。
 - 删除资料库**只删配置与库内影片记录**，磁盘文件一个都不动；反过来，删除存储会级联删掉它名下的资料库（见[存储页](./02-storage-page.md)），刮削记录同样保留，重新建库扫描后会重新配上。
 - **归属是条目上的外键**，不再是取数时按「最长前缀」现算：改资料库的媒体目录后，需要重新扫描才会把影片划到新的库里（不再是一刷新就自动改归属）。
+- 「清除 NFO」只做单条影片，没有批量 / 整库清除，清完也不自动重刮；`movie.nfo` 是目录级候选，多部影片共用时会被一并删掉（见 §4）。

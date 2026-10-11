@@ -32,7 +32,10 @@
 ```
 src/main/src/modules/scrape/
 ├── scrapeRunner.ts       # 任务编排：单任务互斥、并发调度、取消 / 继续、启动时中断标记、按条目启动（startScrapeTaskForEntries）
-├── scrapeFileJob.ts      # 单文件流水线：本地优先、跨插件补全、强制改名入文件夹、下载、NFO、移动、条目元数据与图片回写
+├── scrapeFileJob.ts      # 单文件流水线**编排**：本地优先、跨插件补全、命名、下载、NFO、移动、条目回写，最后挂参演演员并排队补全
+├── scrapeJobTypes.ts     # 流水线的上下文与结果类型（ScrapeJobContext / ScrapeJobOutcome / ScrapeSettingsSnapshot / ScrapeLibraryPolicy / ScrapePluginRef）
+├── scrapeJobPlan.ts      # 计算与下载：基名、资源计划、跨插件收集（collectFromPlugins）、本地图片就位、向连接上传（downloadAsset）
+├── scrapeJobApply.ts     # 写回与收尾：元数据映射（metadataOf）、媒体源路径刷新（refreshSourcePath）、搬空后删原目录
 ├── scrapeLayout.ts       # 目录规范：文件夹名 / 影片文件名 / NFO 文件名（三者同名）与工作目录解析
 ├── scrapeLocalMeta.ts    # 本地优先：读同目录本地 NFO（parseNfoXml）与本地图片并归类
 ├── scrapePluginData.ts   # vm 沙箱返回值按结构收窄（候选 / 详情 / 资源）
@@ -87,7 +90,7 @@ src/common/types/scrape/
 
 ## 5. 单文件流水线（`scrapeFileJob.ts`）
 
-`runFileJob(context)` 按顺序做六件事：**本地优先读取 → 跨插件补全 → 计算基名与影片文件夹 → 资源落盘 → 写 NFO → 移动视频并回写库**。
+`runFileJob(context)` 按顺序做这些事：**本地优先读取 → 跨插件补全 → 计算基名与影片文件夹 → 资源落盘 → 写 NFO → 移动视频并回写库 → 回写条目元数据与图片 → 挂参演演员并排队补全**。编排留在 `scrapeFileJob.ts`（264 行），计算与写回拆在 `scrapeJobPlan.ts` / `scrapeJobApply.ts`，上下文类型在 `scrapeJobTypes.ts`——三者都只被本流水线使用，行为与拆分前一致。
 
 ### 5.1 目录规范
 
@@ -125,6 +128,8 @@ src/common/types/scrape/
 之后把结果**直接写回条目**：`updateItemMetadata(entry.itemId, metadataOf(detail, entry.num, pluginId, entry.itemId))` 整组覆盖刮削元数据（标题 / 番号 / 简介 / 评分 / 类型 / 外部 ID / `scrapedAt` / `scraperId`；本地优先跳过联网时沿用上次的 `providerIds` / `scraperId`），`replaceItemImages(entry.itemId, images)` 整组替换条目图片（**注意**：它先整组 delete 再 upsert，所以本地保留下来的图片也必须进 `images`，否则会被删掉）。**落盘后不需要额外通知扫描**：下一次扫描会按用途把这些产物（固定名、`{视频基名}-` 前缀名与 `extrafanart` 下的 `fanartN`）收进 `media_image`，并据此把条目算成「已刮削」（见 [资料库](../media/01-media-library.md)）。
 
 写库失败只影响这一个文件的结果行，不影响任务其余文件；条目图片在没有刮到图片时保持原样。
+
+7. **参演演员接线**：`enqueueItemActorScrape(entry.itemId, detail.actors ?? [], settings.scrape.actorScrape, context.signal)`——先把详情里的演员名单按「姓名 → 别名 → 新建档案」解析，再整组写进 `media_cast`（只存 `item_id` + 姓名归一化键 + 出演顺序，**不存演员 ID**），然后按设置把资料不全（`scrapedAt = 0` / 没头像 / 没生日）的演员排进演员域的串行抓取队列。**名单为空时不动名单**，避免只想补元数据的重刮把已有演员清掉；这一步的异常只写一条 warn 日志（`演员信息写入失败：…`），不影响本文件的刮削结果。同一份名单在**扫描**时也会由 NFO 的 `<actor>` 补齐（未刮削且有 NFO 的条目，见[资料库](../media/01-media-library.md) 4.2）；演员两侧的策略见[演员模块](../actor/01-actor-module.md)。
 
 结果行消息形如 `插件 r18-offline，6 个资源，NFO {base}.nfo，→ /电影/{base}/{base}.mkv`（没有命中插件时插件列写「本地 NFO」，没有产出资源时也会照实写 `0 个资源`）。
 
@@ -170,3 +175,4 @@ src/common/types/scrape/
 13. 开「优先读取本地 NFO 和图片」：把一个已有完整 `movie.nfo` 与 `poster.jpg` 的目录扫成条目再刮削，结果行插件列应为「本地 NFO」、不应发网络请求；随后手工删掉本地 NFO 里的简介再刮一次，应只联网补缺失的信息，本地已有的字段不被覆盖。
 14. 把资料库的「文件过滤」设为 100（MB）：小于 100MB 的视频既不进扫描结果，也不进待刮削候选；填 0 时全部放行。
 15. `itemId` 口径：在工作台勾选若干行启动后，对应 `scrape_file.item_id` 应等于这些条目的 `media_item.id`（不是路径、也不是文件名）；在资料库抽屉反向操作 `scrape:start` 时传一个不存在的 id，应报「所选影片已不在待刮削列表中」。
+16. 刮一个带参演演员的文件（刮削器实现了 `actor` 钩子）：影片详情页的「参演演员」条应出现头像 + 姓名，点击能跳到演员详情；开着「自动抓取演员资料」时日志里应出现「自动补全演员资料（…，N 张图片）」，关掉后只挂关联、不抓资料；把已挂好演员的影片重刮一次（详情里没有演员名单）时关联不应被清空。

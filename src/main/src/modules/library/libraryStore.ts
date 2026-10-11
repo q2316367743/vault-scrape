@@ -9,14 +9,12 @@
  * - 删除库只删配置与库内条目，磁盘文件一律不动。
  */
 import {
-  countMovieItems,
   deleteItemsByConnection,
   deleteItemsByLibrary,
   deleteSourcesByConnection,
-  deleteSourcesByLibrary,
-  listItems,
-  listMovieItems
-} from '$/db/repo/mediaRepo'
+  deleteSourcesByLibrary
+} from '$/db/repo/mediaCleanupRepo'
+import { countMovieItems, listItems, listMovieItems } from '$/db/repo/mediaRepo'
 import {
   deleteImagesByConnection,
   deleteImagesByLibrary,

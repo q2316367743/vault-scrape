@@ -9,9 +9,9 @@
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
 | `nsfwProtection` | NSFW 保护总开关：开启后，影视墙与详情页的敏感图片一律遮罩；「存储 `nsfw` 标记」与「资料库 `nsfwProtection`」也同样会遮罩（任一命中即生效）；没有存储上下文的页面（如工具搜索）只按本开关生效 | `false` | 开关 |
-| `actorAvatarDir` | 演员头像目录，留空使用默认位置 | `''` | 输入框 + 选择按钮（选择功能待接入） |
+| `actorImageDir` | 演员图片根目录（头像与图集都放这里），留空使用默认位置（`~/<数据目录>/media/actor`） | `''` | `DirectoryPickerField`（输入框 + 目录选择按钮，选绝对路径） |
 
-应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。演员头像目录留空表示使用默认位置，目录选择按钮当前为 `MessagePlugin.info('目录选择待接入，请先手动输入绝对路径')` 提示占位。存储与资料库侧的配合项是连接上的 `nsfw` 标记与库级 `nsfwProtection`（见[存储管理页面](../page/02-storage-page.md)、[资料库](../media/01-media-library.md)）：**「总开关开启」「该存储被标记为 nsfw」「该资料库开了 nsfwProtection」任一命中就遮罩**，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`（影视墙卡片再叠上主进程下发的 `MediaWallItem.nsfwProtected`）。
+应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。演员图片目录留空表示使用默认位置（`~/<数据目录>/media/actor`），选择按钮由通用组件 `DirectoryPickerField.vue` 提供（走 `dialog:open` 的 `directory: true`，选完把绝对路径写回输入框）；目录在真正写入图片时才创建与校验（不可写则回落默认目录并记一条 `scope: 'actor'` 的 warn），详见[演员模块](../actor/01-actor-module.md)。存储与资料库侧的配合项是连接上的 `nsfw` 标记与库级 `nsfwProtection`（见[存储管理页面](../page/02-storage-page.md)、[资料库](../media/01-media-library.md)）：**「总开关开启」「该存储被标记为 nsfw」「该资料库开了 nsfwProtection」任一命中就遮罩**，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`（影视墙卡片再叠上主进程下发的 `MediaWallItem.nsfwProtected`）。
 
 总开关在渲染层是模块级缓存（`protection` ref，一次读取、全应用共享），所以**它必须能被刷新**：`SettingAppStore.ts` 给 `createSettingGroupStore` 传了 `onSaved` 回调，应用分组保存成功后调用 `refreshNsfwProtection()`。刷新点只能挂在「保存成功之后」——落盘有 300ms 防抖，挂在值变化上会读到主进程里还没更新的旧值，反而把保护状态刷成旧值。效果：切换开关约 300ms 后全应用生效，不需要重启或刷新页面，影视墙的遮罩会立刻出现/消失（见[设置存储](../setting/01-setting-storage.md)的「注意事项」）。
 
@@ -38,6 +38,8 @@
 | `restAfterCount` | 连续刮削多少条后休息，0 表示不休息 | `50` | 数字输入，最小 0 |
 | `restDuration` | 休息时长（秒） | `60` | 数字输入，最小 0 |
 | `fanartDirName` | 剧照目录名：既是刮削结果里存放剧照（`still`）的子目录名，也是「优先读取本地图片」时查找本地剧照的目录名 | `'extrafanart'` | 输入框 |
+| `actorScrape` | 影片刮削入库后，是否自动为参演演员抓取资料（需要刮削器实现 `actor` 钩子；只补空白字段，锁定资料只填空） | `true` | 开关 |
+| `actorImageLimit` | 每位演员最多下载多少张图集图片，0 表示只抓资料、不下载图片（头像不计入这个上限） | `12` | 数字输入，最小 0 |
 
 ## 4. 网络连接（`network`）
 

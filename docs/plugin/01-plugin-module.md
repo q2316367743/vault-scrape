@@ -28,14 +28,17 @@ definePlugin({
   search(keyword, env, ctx): Promise<PluginMovieCandidate[]>,
   detail(movieId, env, ctx): Promise<PluginMovieDetail>,
   covers(movieId, env, ctx): Promise<PluginAsset[]>,
-  extras(movieId, env, ctx): Promise<PluginAsset[]>
+  extras(movieId, env, ctx): Promise<PluginAsset[]>,
+  // 两个可选钩子：实现后才能在演员页「抓取资料」与刮削入库后自动补全演员
+  actor?(name, env, ctx): Promise<PluginActorDetail>,
+  actorAssets?(name, env, ctx): Promise<PluginAsset[]>
 })
 ```
 
 - `meta.id` 必须是 kebab-case（`/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/`），同时是源码文件名 `<id>.js`；
-- 四个方法缺一不可，缺失即 `invalidPlugin`，源码不会落盘；
+- 四个方法缺一不可，缺失即 `invalidPlugin`，源码不会落盘；`actor` / `actorAssets` 是**可选**钩子，实现了才会挂到插件对象上（见 2.5 节）；
 - 脚本「以 `definePlugin(...)` 结尾」和「没有返回值但调用过 definePlugin」两种写法都支持（宿主同时记录调用槽与顶层完成值）；
-- 四个方法的第二个参数都是 `env`：插件自己声明、用户在插件页配置区块填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节。
+- 四个必需方法（以及可选钩子 `actor` / `actorAssets`）的第二个参数都是 `env`：插件自己声明、用户在插件页配置区块填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节。
 
 ### 2.1 返回类型（`@common/types/plugin`）
 
@@ -121,7 +124,7 @@ interface PluginAsset {
 
 1. `new vm.Script(source)` 解析语法，失败即 `evalFailed`，不落盘；
 2. 在 `node:vm` 沙箱里**执行一次顶层代码**（超时 5 秒），拿到 `definePlugin(...)` 的返回值；
-3. 校验 `meta` 与四个方法，缺失即 `invalidPlugin`；
+3. 校验 `meta` 与四个必需方法（`actor` / `actorAssets` 可选，不校验），缺失即 `invalidPlugin`；
 4. 读取 `env` 数组并归一化（丢弃非法项、截断超量、去重），把结果缓存进 `plugins.json` 的 `envFields`；
 5. 只有以上全部通过才写盘；声明表随之出现在插件页右栏的配置区块，由用户填写取值。
 
@@ -153,6 +156,40 @@ interface PluginAsset {
 内置插件与文件插件共用同一套入口：出现在列表里、可启停、可被工具箱的搜索工具调用、走同一个 `plugin:invoke`；区别只是宿主在命中内置 id 时**直接调用其实现**（不编译、不校验环境变量）并跳过源码读写。内置插件不声明环境变量（`env: []`），因此详情里不出现配置区块。内置插件由主进程在启动 / 列表 / 调用前幂等补齐进索引，元信息没变就不写盘。
 
 内置插件的 id 常量 `R18_OFFLINE_PLUGIN_ID = 'r18-offline'` 定义在 `src/common/types/plugin/builtin.ts`（由 `src/common/types/plugin/index.ts` 导出），渲染层与主进程共用同一份；**插件的选用入口只有资料库**——刮削器列表存在 `library.scrapers`（连接上没有该字段），新建资料库时若候选里存在 `R18_OFFLINE_PLUGIN_ID` 就默认勾选。契约与细节见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)。
+
+### 2.5 演员钩子：`actor` 与 `actorAssets`（可选）
+
+演员资料不是影片刮削的必需产出，所以这两个钩子都可选。缺了它们的插件照常工作，只是**演员页的「抓取资料」会跳过它**（显式指定该插件时得到 `invokeFailed`「插件 x 未实现演员资料钩子」），影片刮削后也不会自动补全演员。
+
+```ts
+interface PluginActorDetail {
+  /** 演员姓名，必填；也是宿主匹配已有演员的键（姓名 → 别名 → 新建） */
+  name: string
+  aliases?: string[]
+  gender?: 'female' | 'male' | 'other'
+  birthday?: string          // YYYY-MM-DD
+  birthCountry?: string
+  birthProvince?: string
+  birthCity?: string
+  birthCounty?: string
+  height?: number            // 厘米，0 / 缺失都算「没提供」
+  bust?: number
+  waist?: number
+  hip?: number
+  cup?: string
+  tagline?: string
+  sourceUrl?: string
+  overview?: string
+  tags?: string[]
+}
+```
+
+- 入参：`plugin:invoke` 的 `payload.actorName`；`PluginInvokePayload` 里 `method` 为 `actor` / `actorAssets` 时 `actorName` 必填（缺失报 `invalidArgument`「缺少演员姓名 actorName」），钩子签名是 `actor(name, env, ctx)` / `actorAssets(name, env, ctx)`；
+- `actor()` 返回**一位**演员的资料（不是数组）；`name` 为空会被 `normalizeActorDetail(raw, fallbackName)` 归一回落到入参姓名，仍为空则视为「没命中」；
+- `actorAssets()` 只产出演员图片，只接受 `poster`（头像）/ `thumb` / `still`（图集）——常量 `PLUGIN_ACTOR_ASSET_KINDS`；越界 kind 被丢弃，返回结构仍是 `PluginAsset[]`（链接 + 方法 + 请求头），与 `covers` / `extras` 完全一致；
+- 归一化在 `src/common/types/plugin/normalize.ts` 的 `normalizeActorDetail()`，跨 realm 重建纯对象、非法字段丢弃或截断，**绝不抛错**；运行时在 `pluginRuntime.ts` 的 `buildPlugin()` 里按需挂到插件对象上；
+- 方法名单：`PLUGIN_METHODS`（四个必需）与 `PLUGIN_OPTIONAL_METHODS = ['actor', 'actorAssets']` 拼成 `PLUGIN_METHOD_NAMES`，`plugin:invoke` 的 `readMethod` 用后者放行；
+- 抓取、合并与图片落盘策略（只补空白字段、`locked` 只填空、`actorImageLimit` 上限、串行队列）见[演员模块](../actor/01-actor-module.md)。
 
 ## 3. 插件上下文 `ctx`
 

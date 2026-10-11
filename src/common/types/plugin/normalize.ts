@@ -6,7 +6,9 @@
  * - 非法项丢弃，单个列表超过 PLUGIN_LIST_LIMIT 条时截断并告警，本模块绝不抛错；
  * - 收窄一律走类型谓词，绝不引入 any 与多余的 as 断言。
  */
+import { ACTOR_GENDERS, type ActorGender } from '../actor'
 import { readNumber, readString, readStringArray, toSource } from '../setting/shared'
+import type { PluginActorDetail } from './actor'
 import {
   PLUGIN_ASSET_KINDS,
   PLUGIN_ASSET_METHODS,
@@ -74,6 +76,13 @@ function optionalCount(source: Record<string, unknown>, key: string): number | u
 function optionalStringArray(source: Record<string, unknown>, key: string): string[] | undefined {
   const list = readStringArray(source, key, []).filter((item) => item.length > 0)
   return list.length > 0 ? list : undefined
+}
+
+/** 可选性别：只认公共枚举，空串与未知值一律按未提供处理 */
+function optionalGender(source: Record<string, unknown>): ActorGender | undefined {
+  const value = source.gender
+  if (typeof value !== 'string') return undefined
+  return ACTOR_GENDERS.find((item) => item === value && item !== '')
 }
 
 function readHeaders(source: Record<string, unknown>): Record<string, string> | undefined {
@@ -218,4 +227,31 @@ export function normalizeAssets(raw: unknown, kinds: readonly PluginAssetKind[])
       .filter(isPresent),
     '资源列表'
   )
+}
+
+/** 演员资料：name 必填（缺失时回落到调用方给出的姓名），其余字段非法即回落 undefined */
+export function normalizeActorDetail(raw: unknown, fallbackName: string): PluginActorDetail | null {
+  const source = toSource(raw)
+  if (!source) return null
+  const name = optional(source, 'name') ?? (fallbackName.length > 0 ? fallbackName : null)
+  if (name === null) return null
+  return {
+    name,
+    aliases: optionalStringArray(source, 'aliases'),
+    gender: optionalGender(source),
+    birthday: optional(source, 'birthday'),
+    birthCountry: optional(source, 'birthCountry'),
+    birthProvince: optional(source, 'birthProvince'),
+    birthCity: optional(source, 'birthCity'),
+    birthCounty: optional(source, 'birthCounty'),
+    height: optionalCount(source, 'height'),
+    bust: optionalCount(source, 'bust'),
+    waist: optionalCount(source, 'waist'),
+    hip: optionalCount(source, 'hip'),
+    cup: optional(source, 'cup'),
+    tagline: optional(source, 'tagline'),
+    sourceUrl: optional(source, 'sourceUrl'),
+    overview: optional(source, 'overview'),
+    tags: optionalStringArray(source, 'tags')
+  }
 }

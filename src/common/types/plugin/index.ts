@@ -18,6 +18,8 @@ export {
 
 export { R18_OFFLINE_PLUGIN_ID } from './builtin'
 
+export { PLUGIN_ACTOR_ASSET_KINDS, type PluginActorDetail } from './actor'
+
 export {
   PLUGIN_ID_LIMIT,
   PLUGIN_ID_PATTERN,
@@ -47,6 +49,8 @@ export type { PluginEpisode, PluginMovieCandidate, PluginMovieDetail } from './m
 
 export {
   PLUGIN_METHODS,
+  PLUGIN_METHOD_NAMES,
+  PLUGIN_OPTIONAL_METHODS,
   type DefinePlugin,
   type PluginContext,
   type PluginHtmlLoader,
@@ -59,6 +63,7 @@ export {
 } from './define'
 
 export {
+  normalizeActorDetail,
   normalizeAsset,
   normalizeAssets,
   normalizeCandidate,

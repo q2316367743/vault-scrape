@@ -27,13 +27,12 @@ import { getFileClient } from '$/modules/file/fileClientManager'
 import { listPluginSummaries } from '$/modules/plugin/pluginRegistry'
 import { loadSetting } from '$/modules/setting/settingStore'
 import { broadcastScrapeProgress } from './scrapeEvents'
-import {
-  keywordOf,
-  runFileJob,
-  type ScrapeLibraryPolicy,
-  type ScrapePluginRef,
-  type ScrapeSettingsSnapshot
-} from './scrapeFileJob'
+import { keywordOf, runFileJob } from './scrapeFileJob'
+import type {
+  ScrapeLibraryPolicy,
+  ScrapePluginRef,
+  ScrapeSettingsSnapshot
+} from './scrapeJobTypes'
 import { createScrapeRunLog } from './scrapeLogFile'
 
 /** 运行中的任务：内存态只保存取消句柄与调度队列，真相以 sqlite 为准 */

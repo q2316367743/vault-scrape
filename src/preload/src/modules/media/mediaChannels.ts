@@ -10,5 +10,7 @@ export const MediaChannels = {
   /** 首页读模型：库摘要 + 最近添加 / 推荐两排 */
   home: 'media:home',
   /** 单个视频的详情（含同目录 NFO 解析结果） */
-  detail: 'media:detail'
+  detail: 'media:detail',
+  /** 清除单个视频的刮削数据与磁盘 NFO（本域唯一的写通道） */
+  clearNfo: 'media:clear-nfo'
 } as const

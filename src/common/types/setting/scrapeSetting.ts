@@ -18,6 +18,10 @@ export interface SettingScrape {
   autoScrapeAfterScan: boolean
   /** 剧照目录名（刮削结果内存放剧照的子目录名） */
   fanartDirName: string
+  /** 影片刮削入库后，是否自动为参演演员抓取资料（需要刮削器实现演员钩子） */
+  actorScrape: boolean
+  /** 单个演员最多下载多少张图片；0 表示只抓资料、不下载图片 */
+  actorImageLimit: number
 }
 
 export function buildSettingScrape(): SettingScrape {
@@ -27,7 +31,9 @@ export function buildSettingScrape(): SettingScrape {
     restAfterCount: 50,
     restDuration: 60,
     autoScrapeAfterScan: true,
-    fanartDirName: 'extrafanart'
+    fanartDirName: 'extrafanart',
+    actorScrape: true,
+    actorImageLimit: 12
   }
 }
 
@@ -41,6 +47,8 @@ export function normalizeSettingScrape(raw: unknown): SettingScrape {
     restAfterCount: readNumber(source, 'restAfterCount', base.restAfterCount),
     restDuration: readNumber(source, 'restDuration', base.restDuration),
     autoScrapeAfterScan: readBoolean(source, 'autoScrapeAfterScan', base.autoScrapeAfterScan),
-    fanartDirName: readString(source, 'fanartDirName', base.fanartDirName)
+    fanartDirName: readString(source, 'fanartDirName', base.fanartDirName),
+    actorScrape: readBoolean(source, 'actorScrape', base.actorScrape),
+    actorImageLimit: readNumber(source, 'actorImageLimit', base.actorImageLimit)
   }
 }

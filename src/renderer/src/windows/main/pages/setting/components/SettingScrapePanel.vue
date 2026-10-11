@@ -81,5 +81,32 @@ const { setting } = storeToRefs(useSettingScrapeStore())
         </div>
       </template>
     </t-list-item>
+
+    <t-list-item>
+      <t-list-item-meta
+        title="自动抓取演员资料"
+        description="影片刮削入库后，为参演演员抓取资料与图片；需要刮削器实现演员钩子"
+      />
+      <template #action>
+        <div class="setting-field">
+          <t-switch v-model="setting.actorScrape" />
+        </div>
+      </template>
+    </t-list-item>
+
+    <t-list-item>
+      <t-list-item-meta title="演员图片上限" description="单个演员最多下载多少张图片，0 表示不下载" />
+      <template #action>
+        <div class="setting-field">
+          <t-input-number
+            v-model="setting.actorImageLimit"
+            :min="0"
+            :max="200"
+            theme="normal"
+            suffix="张"
+          />
+        </div>
+      </template>
+    </t-list-item>
   </t-list>
 </template>

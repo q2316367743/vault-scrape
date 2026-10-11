@@ -121,6 +121,14 @@ export interface MediaDetailRequest {
   itemId: string
 }
 
+/** 影片详情页里的一条参演演员：只够画「头像 + 名字」，点进去看完整资料 */
+export interface MediaActorRef {
+  actorId: string
+  name: string
+  /** 头像地址（`storage://actor/...`），没有头像为空串 */
+  avatarUrl: string
+}
+
 export interface MediaDetailResult {
   /** 与墙上同一套解析结果；找不到该条目时主进程直接报错，不会返回空 item */
   item: MediaWallItem
@@ -128,4 +136,23 @@ export interface MediaDetailResult {
   meta: MediaNfoMeta | null
   /** 实际读到的 NFO 路径；没读到为空串 */
   nfoPath: string
+  /** 该影片的参演演员，按出演顺序；没有演员时为空数组 */
+  actors: MediaActorRef[]
+}
+
+export interface MediaClearNfoRequest {
+  /** 条目 ID；主进程据此找主源、目录与同目录 NFO */
+  itemId: string
+}
+
+/**
+ * 「清除 NFO」的结果：库内刮削数据已清空，磁盘上的 NFO 已尽量删除。
+ *
+ * 契约：视频与图片文件一律保留；`removedNfo` 是**真的删掉的**磁盘路径，
+ * 磁盘上本来就没有 NFO 时是空数组（这种情况不算失败）。
+ */
+export interface MediaClearNfoResult {
+  itemId: string
+  /** 被删掉的 NFO 文件在连接内的绝对路径（`movie.nfo` 与 `<视频基础名>.nfo`） */
+  removedNfo: string[]
 }

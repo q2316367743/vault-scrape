@@ -1,4 +1,5 @@
 import { registerDbIpc } from './db/dbIpc'
+import { registerActorIpc } from './modules/actor/actorIpc'
 import { registerAppWindowIpc } from './modules/appWindow/appWindowIpc'
 import { registerDialogIpc } from './modules/dialog/dialogIpc'
 import { registerFileIpc } from './modules/file/fileIpc'
@@ -12,6 +13,7 @@ import { registerSettingIpc } from './modules/setting/settingIpc'
 /** IPC 注册总入口：新增一个域就在这里挂一行 */
 export function registerIpc(): void {
   registerDbIpc()
+  registerActorIpc()
   registerAppWindowIpc()
   registerDialogIpc()
   registerFileIpc()

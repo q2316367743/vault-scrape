@@ -4,14 +4,16 @@
  * 契约（与刮削域同款）：
  * - 实现内部抛 `MediaError`，只有 IPC 边界把它转换成 `MediaResult` 信封；
  * - 每个错误码都有中文文案，渲染层只按 `code` 做逻辑判断，不解析 message；
- * - 「读不到 NFO」「连接已删除」这类可降级情况**不抛错**，只返回空 meta。
+ * - 「读不到 NFO」「连接已删除」这类可降级情况**不抛错**，只返回空 meta；
+ * - 「清除 NFO」是本域唯一的写操作，磁盘 NFO 删不掉时抛 `writeFailed`。
  */
-export type MediaErrorCode = 'notFound' | 'invalidArgument' | 'readFailed' | 'unknown'
+export type MediaErrorCode = 'notFound' | 'invalidArgument' | 'readFailed' | 'writeFailed' | 'unknown'
 
 export const MEDIA_ERROR_CODES: readonly MediaErrorCode[] = [
   'notFound',
   'invalidArgument',
   'readFailed',
+  'writeFailed',
   'unknown'
 ]
 
@@ -19,6 +21,7 @@ export const MEDIA_ERROR_MESSAGES: Readonly<Record<MediaErrorCode, string>> = {
   notFound: '索引里没有这个视频，磁盘上可能已被删除',
   invalidArgument: '参数不合法',
   readFailed: '读取文件失败',
+  writeFailed: '写入或删除文件失败',
   unknown: '未知错误'
 }
 

@@ -26,7 +26,7 @@
 
 ```ts
 interface SettingSchema {
-  app: SettingApp            // 主题 / NSFW 保护 / 演员头像目录
+  app: SettingApp            // 主题 / NSFW 保护 / 演员图片目录
   library: SettingLibrary    // 各资料库类型的媒体后缀清单
   scrape: SettingScrape      // 刮削节奏与剧照目录名
   network: SettingNetwork    // 网络连接
@@ -43,9 +43,9 @@ interface SettingSchema {
 
 ```json
 {
-  "app": { "nsfwProtection": false, "actorAvatarDir": "" },
+  "app": { "nsfwProtection": false, "actorImageDir": "" },
   "library": { "extensions": { "movie": ["mp4", "mkv", "avi", "mov", "wmv", "flv", "webm", "ts", "m2ts", "mpg", "mpeg", "rmvb"] } },
-  "scrape": { "concurrency": 3, "requestDelay": 1, "restAfterCount": 50, "restDuration": 60, "fanartDirName": "extrafanart" },
+  "scrape": { "autoScrapeAfterScan": true, "actorScrape": true, "actorImageLimit": 12, "concurrency": 3, "requestDelay": 1, "restAfterCount": 50, "restDuration": 60, "fanartDirName": "extrafanart" },
   "naming": { "fileTemplate": "{num} {title} ({year}) [{providerId}]", "assetNaming": "fixed", "...": "..." }
 }
 ```

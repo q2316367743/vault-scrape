@@ -6,7 +6,7 @@
  * 2. 与 JS 插件共用同一套调用入口 `pluginRegistry.invokePlugin`，因此同样支持启停与测试面板；
  * 3. 数据缺失、库损坏等一律由实现体抛 `PluginError`（如 `offlineMissing`）。
  */
-import { R18_OFFLINE_PLUGIN_ID } from '@common/types/plugin'
+import { PluginError, R18_OFFLINE_PLUGIN_ID } from '@common/types/plugin'
 import type {
   PluginEnvField,
   PluginInvokeData,
@@ -37,7 +37,9 @@ async function invokeR18Offline(method: PluginMethod, argument: string): Promise
   if (method === 'search') return offlineSearch(argument, 50)
   if (method === 'detail') return offlineDetail(argument)
   if (method === 'covers') return offlineCovers(argument)
-  return offlineExtras(argument)
+  if (method === 'extras') return offlineExtras(argument)
+  /** 离线包只有番号、标题、演员名单等元数据，没有生日 / 身高等资料，也不提供图片 */
+  throw new PluginError('invalidArgument', `离线数据包不提供 ${method} 能力`)
 }
 
 export const BUILTIN_PLUGINS: BuiltinPlugin[] = [

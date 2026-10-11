@@ -35,6 +35,7 @@
 | `src/main/src/modules/library/libraryIpc.ts` | `library:*` 通道注册与入参收窄 |
 | `src/main/src/modules/library/libraryEvents.ts` | 扫描进度广播 |
 | `src/main/src/modules/media/mediaIndexer.ts` | 目录游标 BFS、条目 / 媒体源 / 图片落库、配合 `extensions` 判定视频、清理未扫到的行 |
+| `src/main/src/modules/media/mediaNfoScan.ts` | 扫描期的 NFO 处理：`collectNfoBases` / `hasNfoEvidence`（`has_nfo` 证据）与 `backfillCastFromNfo`（未刮削条目从同目录 NFO 补 `media_cast` 参演名单） |
 | `src/main/src/modules/media/mediaWall.ts` | 首页 / 整墙与详情读模型、`browseLibrary` 逐级浏览 |
 | `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口）；另有一种**路径形式** `storage://{连接ID}/path/{连接内路径}`，给存储页预览未入库的任意文件用（见 [存储页 §7.1](../page/02-storage-page.md)） |
 | `src/common/types/file/preview.ts` | 存储页预览地址的公共纯函数：`FILE_PREVIEW_SEGMENT`、`buildFilePreviewUrl()`、`parseFilePreviewUrl()`、`filePreviewKindOf()`（路径形式只在这里构造与解析，主进程侧只复核路径必须落在连接根内） |
@@ -42,7 +43,7 @@
 
 | `src/renderer/src/windows/main/pages/media/` | 影视墙首页 / 内容页 / 详情页与资料库抽屉、表单（抽屉与表单在 `media/library/`） |
 | `src/renderer/src/windows/main/pages/setting/components/SettingLibraryPanel.vue` | 「设置 → 资料库」面板：逐类型编辑媒体后缀 |
-| `resources/drizzle/0001_smooth_micromacro.sql` | `library` 加 `type` 列的迁移（`ALTER TABLE \`library\` ADD \`type\` text DEFAULT 'movie' NOT NULL;`） |
+| `resources/drizzle/0000_moaning_black_panther.sql` | 当前全量基线迁移（12 张表 + 索引），`library.type` 列也在其中 |
 
 ## 3. 数据结构
 
@@ -52,7 +53,7 @@
 | --- | --- | --- |
 | `id` | text PK | `randomUUID()` |
 | `name` | text | 名称，最长 64 字符，不能为空 |
-| `type` | text | 库类型，`$type<LibraryType>()`，默认 `'movie'`（迁移 `0001_smooth_micromacro.sql` 加列）；**建库后不可改** |
+| `type` | text | 库类型，`$type<LibraryType>()`，默认 `'movie'`（在基线迁移 `0000_moaning_black_panther.sql` 里）；**建库后不可改** |
 | `scrapers` | text | 刮削器插件 id 数组（JSON 数组），**空数组表示该库不刮削** |
 | `nsfw_protection` | integer | NSFW 保护，默认 `true`（草稿未显式给 `false` 时按 `true`） |
 | `min_file_size_mb` | integer | 扫描 / 刮削时排除小于该体积（MB）的视频，默认 `0`（不过滤） |
@@ -79,7 +80,7 @@
 
 条目侧三张表（`media_item` 26 列 / `media_source` 12 列 / `media_image` 9 列）的逐列说明见 [SQLite 存储](../data/01-sqlite-storage.md)。
 
-`media_item.has_nfo`（迁移 `0002_damp_mandarin.sql` 加列）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它现在只是「磁盘上有没有 NFO」的事实标记，**不参与任何界面判定**——影视墙不按刮削与否分类，旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线（`has_nfo` 列保留，避免改动表结构与迁移）；**刮削队列**仍只看 `scrapedAt === 0`（见 §5）。
+`media_item.has_nfo`（在基线迁移 `0000_moaning_black_panther.sql` 里）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它现在只是「磁盘上有没有 NFO」的事实标记，**不参与任何界面判定**——影视墙不按刮削与否分类，旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线（`has_nfo` 列保留，避免改动表结构与迁移）；**刮削队列**仍只看 `scrapedAt === 0`（见 §5）。
 
 契约类型（`src/common/types/library/index.ts`）：
 
@@ -112,6 +113,7 @@
 - 被跳过的目录路径会一并交给清理阶段（`skippedPaths`）：这些目录**没扫到 ≠ 内容已删**，所以清理时会避开这些前缀，不删它们下面的媒体源、条目与图片（避免一次网络抖动就清掉刮削成果）。
 - 目录按需生成 `type='folder'` 条目串起父子层级（`ensureFolderItem`）；**连接根 `/` 不建条目**，其下第一层目录的 `parentId` 为空串。
 - **只把扩展名命中当前库后缀清单的文件建成 `movie` 条目**：判定在 `mediaIndexer.ts` 的私有 `isVideoExtension(extensions, extname)`（`extname` 去点转小写后 `extensions.includes`），**扫描器里不再有硬编码后缀**；`indexImages()` 也用同一份清单判定「视频基名」，顺带索引图片（见 4.3）。
+- **未刮削的条目顺带补参演名单**（`mediaNfoScan.ts`）：`indexVideo()` 返回 `{ itemId, castable }`（`castable` = 库里 `scraped_at = 0`），目录循环接着调 `backfillCastFromNfo()` —— 同目录有 NFO 且 `media_cast` 里还没有这部影片的名单时，读 NFO 里的 `<actor>`（`parseNfoXml`）写进 `media_cast`，并按名字建好演员档案（`syncItemCast`）。NFO 只是数据提供方、数据库是保存方；**已经有名单或已刮削的条目不再读文件**，重扫不会覆盖刮削结果，读失败静默跳过（条目照常入库）。
 - 后缀清单的默认值与清洗规则见[设置项清单 · 资料库](../setting/02-setting-items.md)（默认 `mp4 / mkv / avi / mov / wmv / flv / webm / ts / m2ts / mpg / mpeg / rmvb`，上限 64 个，清空回落默认值）。
 
 ### 4.3 确定性 ID 与 upsert
@@ -244,7 +246,7 @@
 | 远端视频 / 图片缓存 | `~/.vault-scrape/cache/media/<媒体ID>`（上限 512MB，超了按 mtime 剪到 80%） |
 | 刮削运行日志 | `~/.vault-scrape/log/scrape/<任务名>-YYYYMMDD-HHmmss.log`（开关见设置页） |
 | ~~旧资料库配置~~ | `~/.vault-scrape/media/libraries.json` **已废弃，不再读写** |
-| 旧的整库文件 | 上一版本的本机库已归档为 `vault-scrape.db.old-20261010`，下次启动新建空库并依次执行 `0000_heavy_hardball.sql` + `0001_smooth_micromacro.sql`（见 [SQLite 存储](../data/01-sqlite-storage.md)） |
+| 旧的整库文件 | 本机库已多次「删掉 + 重建」（历史归档 `vault-scrape.db.old-20261010`），下次启动新建空库并执行全量基线 `0000_moaning_black_panther.sql`（见 [SQLite 存储](../data/01-sqlite-storage.md)） |
 
 ## 9. 已知限制
 
@@ -289,3 +291,4 @@
 23. 首页两排与「全部影片」：库里既有老片也有新入库影片时回首页，应看到「最近添加」「推荐」两排（各排最多 24 条，`MEDIA_HOME_ROW_LIMIT`，整排无内容则整排不渲染），**不应出现「待刮削」排**；点右上「全部影片」进入 `/media/library`（不带 `libraryId`），标题为「全部影片」、摘要不含「K 个资料库」；在首页搜索框输入关键词回车 → 跳 `/media/library?keyword=…`，关键词为空时不带该参数。
 24. **播放期路径自愈**：在文件管理器里把某个已入库的 `.mp4` 挪到库里别的子目录（例如手工建的 `failed/`），**不要重扫**，回到详情页点播放 → 应能正常起播、能拖进度；主进程日志（`~/.vault-scrape/db` 的 `log` 表或日志页）应有一条 info「索引路径失效，已按文件名找回：<旧路径> → <新路径>」，且 `media_source.path` 已更新到新位置、`id` 没变（封面等 `storage://` 地址不受影响）；再点一次播放不再触发查找。若把视频**改名**（文件名变了）或**真删掉**，则仍应 404，详情页播放器显示封面 + 「视频读不出来……也可以在影视墙里对资料库重新扫描一次」。自愈只对视频生效（`media_source`），图片按原路径读。
 25. **封面回退到快照**：影片所在目录只放 `thumb.jpg`（不放 `poster`）→ 扫描后墙上卡片、详情页大封面与播放器封面都应是这张缩略图；再补一张 `poster.jpg` 重扫 → 回到主图优先。刮削器写的 `{视频基名}-thumb.jpg`、`{视频基名}-poster.jpg` 与 `extrafanart/still1.jpg` 同样要被收录（`extrafanart` 里的图算上一层目录影片的产出）。
+26. **扫描补参演名单（弱关联）**：给一个**未刮削**影片的同目录放一份含 `<actor><name>某某</name></actor>` 的 `movie.nfo` → 扫描后该演员出现在演员列表页（作品数 1），进影片详情页能看到演员条（没头像时首字占位），点进演员详情页能看到这部影片；再扫一次不会重复建演员、也不会重复写名单。在演员详情页「删除演员」→ 演员从列表消失，但影片详情页的演员条**仍在**、只是点不动（弱关联只认名字，`actorId` 回落空串）；把 `movie.nfo` 删掉再扫、或对已刮削的条目重扫，名单都不会被清掉（已刮削的条目扫描时**不读** NFO，名单以刮削结果为准）。
