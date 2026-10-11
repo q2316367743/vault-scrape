@@ -24,7 +24,7 @@ export interface ScrapeTaskDetail {
  * （contextBridge 传递自定义错误的附加属性并不可靠，code 会丢失）。
  */
 export const scrapeApi = {
-  /** 浏览资料库目录：子目录 + 影片，供工作台勾选 */
+  /** 浏览资料库目录：子目录 + 影片（渲染层暂无入口，通道保留） */
   browse: (request: ScrapeBrowseRequest): Promise<ScrapeResult<MediaBrowseEntry[]>> =>
     ipcRenderer.invoke(ScrapeChannels.browse, request),
 

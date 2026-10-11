@@ -116,7 +116,7 @@ export function useMediaLibraries(options: UseMediaLibrariesOptions = {}) {
       if (data.message.length > 0) MessagePlugin.warning(data.message)
       if (data.autoScrape) {
         MessagePlugin.info(
-          `已自动开始刮削「${library.name}」：${data.autoScrape.total} 个文件，进度见工作台`
+          `已自动开始刮削「${library.name}」：${data.autoScrape.total} 个文件，进度见概览页`
         )
       } else if (data.autoScrapeSkipped.length > 0) {
         MessagePlugin.info(`未自动刮削：${data.autoScrapeSkipped}`)
@@ -145,7 +145,7 @@ export function useMediaLibraries(options: UseMediaLibrariesOptions = {}) {
         return
       }
       MessagePlugin.success(
-        `已为「${library.name}」排队 ${result.data.total} 个文件，进度见工作台任务列表`
+        `已为「${library.name}」排队 ${result.data.total} 个文件，进度见概览页的刮削记录`
       )
       await load()
       options.onChanged?.()

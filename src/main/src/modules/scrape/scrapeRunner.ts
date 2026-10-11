@@ -171,7 +171,7 @@ function rowsFromScan(taskId: string, entries: readonly ScrapeScanEntry[]): Scra
 /**
  * 校验待刮削路径必须落在所选根目录的**子树**里。
  *
- * 工作台只勾选根目录下一层的文件；资料库的任务文件散布在多层子目录里，
+ * 任务文件可能散布在所选根目录的多层子目录里（资料库整库刮削尤其如此），
  * 因此这里按前缀判断而不是「父目录必须等于根目录」。
  */
 function assertInside(dirPath: string, paths: readonly string[]): void {
@@ -201,7 +201,7 @@ function setTaskStatus(taskId: string, status: TaskStatus, patch: Partial<TaskIt
  * 从而做到「并发度恒定、不预先给每人分活」。
  *
  * 每个文件都按**它自己所在的目录**处理：产出、改名、失败箱都落在文件旁边，
- * 所以同一个任务可以同时覆盖一棵多层子树（资料库）或一个目录（工作台）。
+ * 所以同一个任务可以覆盖所选根目录下的整棵多层子树。
  */
 async function runFiles(
   taskId: string,

@@ -1,10 +1,7 @@
-import type { MediaBrowseEntry } from '@common/types/media'
-import type { ScrapeResult } from '@common/types/scrape'
-import type { ScrapeBrowseRequest } from '@common/types/scrape/task'
-
-/** 浏览某个资料库下的目录，返回该层的子目录与影片（工作台手动刮削入口） */
-export function browseMedia(request: ScrapeBrowseRequest): Promise<ScrapeResult<MediaBrowseEntry[]>> {
-  return window.preload.scrape.browse(request)
-}
-
+/**
+ * 刮削模块的渲染层入口。
+ *
+ * 契约：主进程桥（`window.preload.scrape`）直接透出，不再包装；
+ * 目录浏览（`scrape:browse`）当前没有渲染层入口，整库刮削由影视墙的资料库抽屉发起。
+ */
 export const scrapeApi = window.preload.scrape

@@ -1,12 +1,18 @@
 import { createRouter, createWebHashHistory, type RouteRecordRaw } from 'vue-router'
 
-/** 十个一级页面（name 同时作为侧栏菜单文案）+ 工具子页与演员子页 */
+/** 九个一级页面（name 同时作为侧栏菜单文案）+ 概览/工具/演员/影视墙的子页 */
 const routes: RouteRecordRaw[] = [
   { path: '/', redirect: '/overview' },
   {
     path: '/overview',
     name: '概览',
     component: () => import('@/windows/main/pages/overview/OverviewPage.vue')
+  },
+  {
+    // 刮削进度详情：参数走 query（taskId），从概览的刮削记录行点进来，只读
+    path: '/overview/scrape',
+    name: '刮削进度详情',
+    component: () => import('@/windows/main/pages/overview/scrape/ScrapeDetailPage.vue')
   },
   {
     // 影视墙首页：资料库横排 + 最近添加 / 推荐两排
@@ -36,11 +42,6 @@ const routes: RouteRecordRaw[] = [
     path: '/actor/detail',
     name: '演员详情',
     component: () => import('@/windows/main/pages/actor/detail/ActorDetailPage.vue')
-  },
-  {
-    path: '/workspace',
-    name: '工作台',
-    component: () => import('@/windows/main/pages/workspace/WorkspacePage.vue')
   },
   {
     path: '/storage',

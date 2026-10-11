@@ -25,7 +25,8 @@
  * 8. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断。
  */
 import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
-import type { MediaImageType } from '@common/types/media'
+import { parseNfoRestore } from '@common/types/media'
+import type { MediaImageType, NfoRestoreFile, NfoRestoreInfo } from '@common/types/media'
 import type { PluginAsset, PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
 import {
   ScrapeError,
@@ -57,6 +58,36 @@ import {
 import type { ScrapeJobContext, ScrapeJobOutcome } from './scrapeJobTypes'
 import { movieDirOf, movieFileName, nfoFileName, resolveOutputDir } from './scrapeLayout'
 import { mergeDetail, needsRemoteInfo, readLocalMeta } from './scrapeLocalMeta'
+
+/**
+ * 对齐「上一次的还原记录」与「这一次就位的资源」。
+ *
+ * 只记**这次真的写下或搬过的**文件：联网下载的（`created`）没有原位置、还原时直接删；
+ * 本地沿用并改了名的（`origin`）还原时搬回去；沿用磁盘上已有文件（保留设置跳过）与
+ * 没挪过位置的本地图片都不记，免得清除时删掉用户自己的文件。
+ * 这一次重新就位的资源一律用这一次的路径；上一次记录里本地沿用的图片如果这次没被重新
+ * 就位、原文件又还在，就接着沿用，免得第二次刮削把第一次留下的还原信息弄丢。
+ */
+async function mergeRestoreFiles(
+  carried: readonly NfoRestoreFile[],
+  planted: readonly PlantedAsset[],
+  context: ScrapeJobContext
+): Promise<NfoRestoreFile[]> {
+  const files: NfoRestoreFile[] = planted
+    .filter((item) => item.origin !== undefined || item.created === true)
+    .map((item) => ({ relativePath: item.relativePath, origin: item.origin ?? '' }))
+  const landed = new Set(files.map((file) => file.relativePath))
+  for (const file of carried) {
+    if (landed.has(file.relativePath) || file.origin.length === 0) continue
+    try {
+      if (await context.client.exists(file.origin)) files.push(file)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '未知错误'
+      context.log.warn(`还原记录沿用失败（${file.relativePath}）：${message}`)
+    }
+  }
+  return files
+}
 
 /** 执行单个文件的完整流水线 */
 export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOutcome> {
@@ -149,7 +180,9 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
       const plan = resolveAssetFile(asset, index + 1, assetContext)
       const target = joinRemotePath(movieDir, plan.relativePath)
       try {
-        if (keepFlagOf(settings.download, kind) && (await client.exists(target))) {
+        // 目标已存在且开着保留设置：文件是用户自己的，既不算本次写下、也不记进还原记录
+        const kept = keepFlagOf(settings.download, kind) && (await client.exists(target))
+        if (kept) {
           context.log.info(`目标已存在，按保留设置跳过：${target}`)
         } else {
           await ensureParent(context, target)
@@ -160,7 +193,8 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
           kind,
           relativePath: plan.relativePath,
           path: target,
-          imageType: IMAGE_KIND_TYPE[kind]
+          imageType: IMAGE_KIND_TYPE[kind],
+          created: !kept
         })
       } catch (error) {
         if (context.signal.aborted) throw new ScrapeError('cancelled')
@@ -171,13 +205,23 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
     }
   }
 
-  // 5. 一定写 NFO（与影片同名，带图片标签）
+  // 5. 一定写 NFO（与影片同名，带图片标签与「刮削前位置」还原记录）
+  // 已经带着还原记录的 NFO（旧版本刮削过、或本地自带）接着沿用，否则用本次的原始位置
+  const carried = local?.nfo ? parseNfoRestore(local.nfo.xml) : null
+  const record = carried ?? { fileName: entry.name, directory: context.dirPath, files: [] }
+  const restore: NfoRestoreInfo = {
+    fileName: record.fileName,
+    directory: record.directory,
+    files: await mergeRestoreFiles(record.files, planted, context)
+  }
   const nfoTarget = joinRemotePath(movieDir, nfoFileName(base))
   let nfoWritten = false
   try {
-    await client.writeText(nfoTarget, buildNfoXml(detail, settings.naming, artworkOf(planted)), {
-      overwrite: true
-    })
+    await client.writeText(
+      nfoTarget,
+      buildNfoXml(detail, settings.naming, artworkOf(planted), restore),
+      { overwrite: true }
+    )
     nfoWritten = true
   } catch (error) {
     if (context.signal.aborted) throw new ScrapeError('cancelled')
@@ -205,7 +249,7 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
       const message = error instanceof Error ? error.message : '未知错误'
       throw new ScrapeError('moveFailed', `移动文件失败：${message}`)
     }
-    await refreshSourcePath(context, targetPath)
+    await refreshSourcePath(client, context.connectionId, entry.itemId, entry.path, targetPath)
     await removeSourceFolderIfEmpty(context, movieDir)
   }
 

@@ -56,6 +56,8 @@ export interface LocalNfo {
   name: string
   path: string
   meta: MediaNfoMeta
+  /** 原文，用来读回「刮削前位置」还原记录（`parseNfoRestore`） */
+  xml: string
 }
 
 export interface LocalMeta {
@@ -118,8 +120,9 @@ export async function readLocalNfo(
     const path = joinRemotePath(dirPath, name)
     try {
       if (!(await client.exists(path))) continue
-      const meta = parseNfoXml(await client.readText(path))
-      if (meta) return { name, path, meta }
+      const xml = await client.readText(path)
+      const meta = parseNfoXml(xml)
+      if (meta) return { name, path, meta, xml }
     } catch {
       // 单个候选读失败就继续；本地 NFO 只是加速手段
     }

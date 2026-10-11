@@ -74,7 +74,7 @@ function readTaskId(payload: unknown): string {
 }
 
 export function registerScrapeIpc(): void {
-  /** 浏览资料库目录：目录 + 影片，供工作台勾选 */
+  /** 浏览资料库目录：目录 + 影片（渲染层暂无入口，通道保留） */
   ipcMain.handle(ScrapeChannels.browse, (_event, payload: unknown) =>
     handle<MediaBrowseEntry[]>(() =>
       browseLibrary({

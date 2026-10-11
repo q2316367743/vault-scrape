@@ -171,7 +171,7 @@ export function findItemByPath(connectionId: string, path: string): MediaItemRow
   )
 }
 
-/** 指定父条目下的直接子条目（工作台浏览用） */
+/** 指定父条目下的直接子条目（目录浏览用） */
 export function listChildItems(libraryId: string, parentId: string): MediaItemRow[] {
   return db()
     .select()
@@ -241,9 +241,9 @@ export function updateItemMetadata(itemId: string, meta: MediaItemMetadataInput)
     .run()
 }
 
-/** 「清除 NFO」要还原的扫描期取值 */
+/** 「还原刮削前」要还原的取值：视频还原到位后的样子 */
 export interface MediaItemRestoreInput {
-  /** 扫描时写下的展示名（视频文件名，含扩展名） */
+  /** 还原后的视频文件名（含扩展名），即扫描会写下的展示名 */
   name: string
   /** 从该文件名解析出的番号 */
   num: string
@@ -252,8 +252,9 @@ export interface MediaItemRestoreInput {
 /**
  * 清除刮削回写的元数据，把条目退回「扫描过、还没刮」的状态。
  *
- * 契约：只动刮削列（元数据一律回空、`scrapedAt = 0`），展示名与番号还原成扫描期取值；
- * 扫描拥有的列（path/type/parentId/hasNfo）一律不改，`hasNfo` 由下次扫描纠正。
+ * 契约：只动刮削列（元数据一律回空、`scrapedAt = 0`），展示名与番号还原成传入的磁盘取值
+ * （还原流程传还原后的文件名）；扫描拥有的列（path/type/parentId/hasNfo）一律不改，
+ * `path` 由还原流程自己用 `updateItem` 更新，`hasNfo` 由下次扫描纠正。
  */
 export function clearItemMetadata(itemId: string, restore: MediaItemRestoreInput): void {
   db()

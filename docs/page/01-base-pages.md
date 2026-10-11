@@ -2,7 +2,7 @@
 
 ## 实现思路
 
-十个一级页面（概览 / 影视墙 / 演员 / 工作台 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、干活、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理、影视墙详情、演员详情与工具搜索（分别见[存储管理页面](./02-storage-page.md)、[影视墙页面](./04-media-wall-page.md)、[演员页面](./05-actor-pages.md)、[工作台页面](./03-workspace-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），工作台接了刮削模块 IPC（选资料库 → 逐级浏览 → 启动 / 取消 / 继续 / 进度推送，不再自己扫盘），影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「清除 NFO」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料）。
+九个一级页面（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理（见[存储管理页面](./02-storage-page.md)）、影视墙详情（见[影视墙页面](./04-media-wall-page.md)）、演员详情（见[演员页面](./05-actor-pages.md)）、工具搜索（见下文「工具」）与刮削进度详情（见[刮削进度与详情页](./03-scrape-detail-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），概览接了任务与刮削模块 IPC（任务统计 / 分页记录 / 当前任务快照 / 进度推送 / 取消 / 继续），影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「还原刮削前」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料）。
 
 页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
@@ -14,10 +14,10 @@
 | --- | --- | --- |
 | `/` | 重定向到 `/overview` | — |
 | `/overview` | `pages/overview/OverviewPage.vue` | 概览 |
+| `/overview/scrape` | `pages/overview/scrape/ScrapeDetailPage.vue` | 刮削进度详情 |
 | `/media` | `pages/media/home/MediaHomePage.vue` | 影视墙 |
 | `/media/library` | `pages/media/wall/MediaWallPage.vue` | 影视墙资料库 |
 | `/media/detail` | `pages/media/detail/MediaDetailPage.vue` | 影视墙详情 |
-| `/workspace` | `pages/workspace/WorkspacePage.vue` | 工作台 |
 | `/storage` | `pages/storage/StoragePage.vue` | 存储 |
 | `/plugin` | `pages/plugin/PluginPage.vue` | 插件 |
 | `/tools` | `pages/tools/ToolsPage.vue` | 工具 |
@@ -30,17 +30,18 @@
 
 ## 概览
 
-- 数据来源：`dbApi.task.stats()` 取任务统计，`dbApi.task.list({ limit: 5 })` 取最近任务。
-- 结构：7 张统计卡片（总数 / 等待中 / 进行中 / 已成功 / 已失败 / 已取消 / 已中断）（`components/StatCard.vue`，props `{ label, value }`）+ 最近任务表格。
-- 表格列：名称 / 状态 / 进度 / 更新时间。状态用带主题色的标签（`statusThemes` 按 `TaskStatus` 取色），进度显示 `finished / total`，更新时间用 dayjs 格式化为 `YYYY-MM-DD HH:mm:ss`。
+- 数据来源：`dbApi.task.stats()` 取任务统计，`dbApi.task.list` / `count` 取刮削记录（分页）；主进程侧 `scrapeApi.listTasks(1)` 取最近一条任务作为「当前任务」，`onProgress` 订阅进度，`cancel` / `resume` 作用于它。
+- 结构：7 张统计卡片（总数 / 等待中 / 进行中 / 已成功 / 已失败 / 已取消 / 已中断）（`components/StatCard.vue`，props `{ label, value }`）+「当前刮削进度」卡片（`components/ScrapeProgressCard.vue`：任务 / 目录 / 更新时间、进度条与已处理 · 失败 · 计划，底部是取消 / 继续按钮，没有任务时提示「在影视墙的资料库抽屉里可发起整库刮削」）+「刮削记录」表（`components/ScrapeTaskTable.vue`：任务名 / 状态 / 已处理 · 计划 / 失败 / 更新时间 + 分页，默认每页 20 条，可选 20 / 50 / 100）。
+- 表格列：名称 / 状态 / 进度 / 更新时间。状态用带主题色的标签（`TASK_STATUS_THEMES` 按 `TaskStatus` 取色），进度显示 `finished / total`，更新时间用 dayjs 格式化为 `YYYY-MM-DD HH:mm`。
+- **点记录表任意一行**进刮削进度详情（`/overview/scrape?taskId=…`，整行可点，光标为手型）；取消 / 继续留在进度卡片，详情页保持只读。详见[刮削进度与详情页](./03-scrape-detail-page.md)。
 
 ## 影视墙
 
-侧栏「概览」下方的第二个一级入口（`/media` 首页 + `/media/library` 内容页 + `/media/detail` 详情页）。首页上半是资料库横排，下半是**最近添加 / 推荐**两排（整排为空则不渲染），工具条提供搜索（回车跳内容页）、资料库抽屉与「全部影片」按钮；内容页是单库或全部影片的网格，支持搜索与三种排序（默认按磁盘时间）。墙面 = 各资料库扫描出来的**影片条目**，不属于任何资料库的影片不会上墙；封面取条目自己的主图、没有就退回父目录条目的主图，没刮过刮削的条目以文件名占位显示（**不按刮削与否分类**）。资料库的增删改与扫描 / 刮削都在资料库抽屉里。详情页页头除「重新读取」外还有「**清除 NFO**」：二次确认后清掉这条影片的刮削数据并删掉磁盘上的 NFO 文件（视频与图片文件、演员档案保留，清完不自动重刮），用来处理刮错的数据，是影视墙域唯一的写操作。图片位统一走 `SensitiveImage`，NSFW 按「全局开关 + 连接 `nsfw` 标记 + 库级 `nsfwProtection`」任一命中即遮罩。详见[影视墙页面](./04-media-wall-page.md)。
+侧栏「概览」下方的第二个一级入口（`/media` 首页 + `/media/library` 内容页 + `/media/detail` 详情页）。首页上半是资料库横排，下半是**最近添加 / 推荐**两排（整排为空则不渲染），工具条提供搜索（回车跳内容页）、资料库抽屉与「全部影片」按钮；内容页是单库或全部影片的网格，支持搜索与三种排序（默认按磁盘时间）。墙面 = 各资料库扫描出来的**影片条目**，不属于任何资料库的影片不会上墙；封面取条目自己的主图、没有就退回父目录条目的主图，没刮过刮削的条目以文件名占位显示（**不按刮削与否分类**）。资料库的增删改与扫描 / 刮削都在资料库抽屉里。详情页页头除「重新读取」外还有「**还原刮削前**」：二次确认后清掉这条影片的刮削数据，并按 NFO 里记的刮削前位置把视频改回原名 / 搬回原目录、删掉刮削写下的图片与预告片（原位置有同名文件时不覆盖，演员档案保留，清完不自动重刮），用来处理刮错的数据，是影视墙域唯一的写操作。图片位统一走 `SensitiveImage`，NSFW 按「全局开关 + 连接 `nsfw` 标记 + 库级 `nsfwProtection`」任一命中即遮罩。详见[影视墙页面](./04-media-wall-page.md)。
 
-## 工作台
+## 刮削进度详情
 
-左栏先选资料库、再逐级浏览目录（`scrape:browse`，不再自己扫盘），右侧是任务卡片 + 条目表格：勾选影片后启动刮削任务，可取消与继续。业务在主进程，页面只消费 `scrapeApi` 的快照与进度推送，因此切换 tab、关闭窗口再回来进度不变。NSFW 保护生效时页头带状态标签。详见[工作台页面](./03-workspace-page.md)与[刮削模块](../scrape/01-scrape-module.md)。
+`/overview/scrape?taskId=…` 是只读二级页：上面是任务信息（`scrape/components/ScrapeTaskSummary.vue`：状态标签 + 任务名 / 目录 / 创建 / 更新时间 + 进度条 + 已处理 · 失败 · 计划 + message），下面是逐文件结果表（`scrape/components/ScrapeFileResultTable.vue`：文件 / 命中标题 / 状态 / 说明 / 更新时间，`max-height="60vh"` 内部滚动）。取数走 `scrapeApi.getTask(taskId)`（一次拿到任务快照 + 全量逐文件结果），运行中的任务再靠 `onProgress` 按 `file.id` 增量更新；参数缺失或任务不存在时显示中文空态。返回按钮由 `SubPageLayout` 提供（`fallback="/overview"`）。详见[刮削进度与详情页](./03-scrape-detail-page.md)。
 
 ## 存储
 
@@ -99,7 +100,7 @@
 | --- | --- |
 | 存储-上传 / 下载 | **入口已随存储页只读改造下线**（`PathDialog` 整套删除）。将来恢复上传 / 下载时再按本行做法接本机文件 / 目录选择器（dialog 域 IPC 已就绪） |
 | 设置-翻译服务 | 翻译服务实现（当前只有开关与目标语言） |
-| 工作台 | 刮削任务创建、队列与执行控制；消费插件产出的「下载配置」并真正下载（含封面角标、NFO 生成、命名落盘） |
+| 刮削 | 按条目挑片入口（`scrape:browse` / `scrape:start` 通道保留、渲染层暂无调用方）；消费插件产出的「下载配置」并真正下载（含封面角标、NFO 生成、命名落盘） |
 | 工具 | 在线番号解析、批量重命名、NFO 校验等工具；搜索工具（`/tools/search`）已接入 |
 | 插件 | 在线插件仓库 / 远程更新；插件请求走代理；子进程级隔离（`utilityProcess`）；编辑器语法高亮；内置离线数据包的增量更新与后台下载（当前只提示、由用户手动触发）；环境变量的「清空 / 单独重置」交互 |
 | 全局 | 暗色模式（`theme.less` 目前只有亮色一套） |

@@ -5,7 +5,7 @@
 存储管理页是[文件模块](../file/01-file-module.md)的前端外壳，但**渲染层只读**：左边管数据源（连接），右边浏览目录与预览文件。它把连接 CRUD、列目录、`stat` 与读文本接出来，渲染层只经 `@/api` 的 `fileApi` 调用，不触碰 `window.preload`。
 
 - 侧栏一级菜单「存储」，图标 `HardDiskStorageIcon`（`src/renderer/src/windows/main/pages/app/AppSide.vue`）。
-- 路由 `/storage`，位于 `/workspace` 与 `/tools` 之间，懒加载 `StoragePage.vue`（`src/renderer/src/windows/main/router.ts`）。
+- 路由 `/storage`，位于 `/actor/detail` 与 `/plugin` 之间，懒加载 `StoragePage.vue`（`src/renderer/src/windows/main/router.ts`）。
 - 覆盖能力：连接的新建 / 编辑 / 删除 / 测试连通，目录浏览（进入目录、面包屑回跳、刷新），以及**媒体文件与 nfo 的预览**。
 - **写操作整体下线**：新建文件夹 / 新建文件 / 上传 / 下载 / 重命名 / 复制 / 移动 / 删除 / 编辑文本，以及传输进度面板（`file:transferProgress` / `file:transferDone` 两个推送不再被订阅）。主进程 [file 模块](../file/01-file-module.md)的 18 个 invoke + 2 个推送**接口本身没有删除**——它是三协议通用能力且有独立文档，只是渲染层不再有任何入口。
 

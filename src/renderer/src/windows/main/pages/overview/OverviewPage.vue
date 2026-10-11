@@ -1,71 +1,5 @@
-<script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import dayjs from 'dayjs'
-import { dbApi } from '@/api'
-import PageLayout from '@/components/PageLayout/PageLayout.vue'
-import type { TaskItem, TaskStats, TaskStatus } from '@common/types/task'
-import StatCard from './components/StatCard.vue'
-
-const stats = ref<TaskStats>({
-  total: 0,
-  pending: 0,
-  running: 0,
-  success: 0,
-  failed: 0,
-  paused: 0,
-  interrupted: 0
-})
-const tasks = ref<TaskItem[]>([])
-const loading = ref(true)
-
-const columns = [
-  { colKey: 'name', title: '任务名', ellipsis: true },
-  { colKey: 'status', title: '状态', width: 100 },
-  { colKey: 'progress', title: '进度', width: 110 },
-  { colKey: 'updatedAt', title: '更新时间', width: 170 }
-]
-
-const statusThemes: Record<TaskStatus, 'default' | 'primary' | 'success' | 'danger' | 'warning'> = {
-  pending: 'default',
-  running: 'primary',
-  success: 'success',
-  failed: 'danger',
-  paused: 'warning',
-  interrupted: 'warning'
-}
-
-const statusLabels: Record<TaskStatus, string> = {
-  pending: '等待',
-  running: '进行中',
-  success: '成功',
-  failed: '失败',
-  paused: '已取消',
-  interrupted: '已中断'
-}
-
-function formatTime(value: number): string {
-  return dayjs(value).format('YYYY-MM-DD HH:mm:ss')
-}
-
-async function load(): Promise<void> {
-  loading.value = true
-  try {
-    const [statResult, taskResult] = await Promise.all([
-      dbApi.task.stats(),
-      dbApi.task.list({ limit: 5 })
-    ])
-    stats.value = statResult
-    tasks.value = taskResult
-  } finally {
-    loading.value = false
-  }
-}
-
-onMounted(load)
-</script>
-
 <template>
-  <page-layout title="概览" description="刮削任务的整体情况">
+  <page-layout title="概览" description="刮削进度与历史记录，点记录行查看逐文件结果">
     <div class="stat-grid">
       <stat-card label="任务总数" :value="stats.total" />
       <stat-card label="等待中" :value="stats.pending" />
@@ -76,26 +10,73 @@ onMounted(load)
       <stat-card label="已中断" :value="stats.interrupted" />
     </div>
 
-    <t-card class="recent-card" title="最近任务" :bordered="false">
-      <t-table
-        row-key="id"
-        :data="tasks"
-        :columns="columns"
-        :loading="loading"
-        size="small"
-        hover
-      >
-        <template #status="{ row }">
-          <t-tag :theme="statusThemes[row.status as TaskStatus]" variant="light">
-            {{ statusLabels[row.status as TaskStatus] }}
-          </t-tag>
-        </template>
-        <template #progress="{ row }">{{ row.finished }} / {{ row.total }}</template>
-        <template #updatedAt="{ row }">{{ formatTime(row.updatedAt) }}</template>
-      </t-table>
-    </t-card>
+    <scrape-progress-card
+      :task="task"
+      :total="total"
+      :finished="finished"
+      :failed="failed"
+      :percentage="percentage"
+      :can-cancel="canCancel"
+      :can-resume="canResume"
+      :acting="acting"
+      @cancel="cancel"
+      @resume="resume"
+    />
+
+    <scrape-task-table
+      :tasks="tasks"
+      :loading="loadingTasks"
+      :page="page"
+      :page-size="pageSize"
+      :total="recordsTotal"
+      @update:page="page = $event"
+      @update:page-size="pageSize = $event"
+      @open="openDetail"
+    />
   </page-layout>
 </template>
+
+<script setup lang="ts">
+/**
+ * 概览页：任务统计 + 当前刮削进度 + 刮削记录。
+ *
+ * 契约：
+ * - 取数与状态机都在 `useScrapeOverview`，本页只做组装与跳转；
+ * - 记录行点击进 `/overview/scrape?taskId=…`（只读的刮削进度详情），
+ *   取消 / 继续留在进度卡片，详情页不放动作按钮；
+ * - 进度条与记录表共用 `useScrapeTaskDisplay` 的状态文案与配色。
+ */
+import { useRouter } from 'vue-router'
+import PageLayout from '@/components/PageLayout/PageLayout.vue'
+import ScrapeProgressCard from './components/ScrapeProgressCard.vue'
+import ScrapeTaskTable from './components/ScrapeTaskTable.vue'
+import StatCard from './components/StatCard.vue'
+import { useScrapeOverview } from './composables/useScrapeOverview'
+
+const router = useRouter()
+const {
+  stats,
+  tasks,
+  recordsTotal,
+  page,
+  pageSize,
+  loadingTasks,
+  task,
+  acting,
+  total,
+  finished,
+  failed,
+  percentage,
+  canCancel,
+  canResume,
+  cancel,
+  resume
+} = useScrapeOverview()
+
+function openDetail(taskId: string): void {
+  void router.push({ name: '刮削进度详情', query: { taskId } })
+}
+</script>
 
 <style scoped lang="less">
 .stat-grid {
@@ -103,9 +84,5 @@ onMounted(load)
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   margin-bottom: 16px;
-}
-
-.recent-card {
-  border-radius: var(--td-radius-large);
 }
 </style>

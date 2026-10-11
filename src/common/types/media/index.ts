@@ -12,8 +12,8 @@
 import type { MediaLibrarySummary } from '../library'
 import type { MediaNfoMeta } from './nfo'
 
-export { parseNfoXml } from './nfo'
-export type { MediaNfoMeta } from './nfo'
+export { parseNfoRestore, parseNfoXml } from './nfo'
+export type { MediaNfoMeta, NfoRestoreFile, NfoRestoreInfo } from './nfo'
 export type { MediaLibrarySummary } from '../library'
 export * from './error'
 export * from './result'
@@ -100,7 +100,7 @@ export interface MediaWallResult {
   libraries: MediaLibrarySummary[]
 }
 
-/** 资料库内的一个可浏览节点（工作台挑文件用） */
+/** 资料库内的一个可浏览节点（目录浏览用） */
 export interface MediaBrowseEntry {
   itemId: string
   /** 条目类型：`movie` 可刮削，`folder` 用于继续下钻 */
@@ -146,13 +146,24 @@ export interface MediaClearNfoRequest {
 }
 
 /**
- * 「清除 NFO」的结果：库内刮削数据已清空，磁盘上的 NFO 已尽量删除。
+ * 「还原刮削前」（通道 `media:clear-nfo`）的结果：库内刮削数据已清空，NFO 与刮削写下的附属文件已尽量删掉，
+ * 视频按 NFO 里的「刮削前位置」记录改回名 / 移回原目录。
  *
- * 契约：视频与图片文件一律保留；`removedNfo` 是**真的删掉的**磁盘路径，
- * 磁盘上本来就没有 NFO 时是空数组（这种情况不算失败）。
+ * 契约：`removedNfo` / `removedAssets` / `restoredAssets` 都是**真的改动过**的磁盘路径，
+ * 磁盘上本来就没有对应文件时是空数组（不算失败）；演员档案（`actor`）一律不动。
  */
 export interface MediaClearNfoResult {
   itemId: string
   /** 被删掉的 NFO 文件在连接内的绝对路径（`movie.nfo` 与 `<视频基础名>.nfo`） */
   removedNfo: string[]
+  /** 被删掉的刮削产物（图片 / 预告片）在连接内的绝对路径 */
+  removedAssets: string[]
+  /** 被搬回刮削前位置的本地图片在连接内的绝对路径（目标已存在时不动它） */
+  restoredAssets: string[]
+  /** 视频是否回到了刮削前的记录位置；NFO 里没有可用记录（或没处可放）时为 false */
+  restored: boolean
+  /** 还原后的视频路径；没还原时就是清除前的路径 */
+  path: string
+  /** 删掉的空影片目录在连接内的绝对路径；没删时为空串 */
+  removedDir: string
 }

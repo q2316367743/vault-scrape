@@ -56,9 +56,13 @@ withDefaults(
 
 .page-title {
   margin: 0;
+  min-width: 0;
   font-size: 16px;
   font-weight: 600;
   color: var(--td-text-color-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .page-description {

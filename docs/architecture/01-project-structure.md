@@ -63,8 +63,8 @@ src/
         ├── components/      # 跨页面通用组件（PageLayout/（含 PageLayout.vue 与 SubPageLayout.vue） / menu / SensitiveImage.vue / DirectoryPickerField.vue：本机目录选择字段，供存储页「本地磁盘」根目录用）
         ├── global/          # 全局状态
         ├── hooks/           # 通用 hooks
-        ├── utils/           # 渲染层通用工具（format.ts：体积 / 时间格式化，影视墙与工作台共用；remotePath.ts：本机绝对路径 ↔ 连接内路径；另有 lang / modal）
-        └── windows/main/    # 主窗口：入口、App.vue、router、store、pages（影视墙按 home / wall / detail / library 分层，工作台的浏览与勾选 / 任务面板，存储页的浏览器与传输，设置页八个分组）
+        ├── utils/           # 渲染层通用工具（format.ts：体积 / 时间格式化，影视墙与刮削展示共用；remotePath.ts：本机绝对路径 ↔ 连接内路径；另有 lang / modal）
+        └── windows/main/    # 主窗口：入口、App.vue、router、store、pages（影视墙按 home / wall / detail / library 分层，概览的刮削进度与记录按 components / composables / scrape 分层，存储页的浏览器与传输，设置页八个分组）
 ```
 
 ### 页面目录分层（RL-09）
@@ -82,9 +82,9 @@ src/renderer/src/windows/main/pages/media/
     └── composables/{useLibraryForm.ts,useMediaLibraries.ts}
 ```
 
-`pages/media/` 下不再有平铺文件；原来的 `pages/media/mediaUtils.ts` 因工作台也在用，上移为 `src/renderer/src/utils/format.ts`，引用点统一改成 `@/utils/format`（`formatSize` / `formatTime`）。资料库的媒体目录是**连接内路径**，所以表单用 `library/components/RemoteDirDialog.tsx`（走 `fileApi.list` 列目录）而不是本机目录控件 `src/renderer/src/components/DirectoryPickerField.vue`（后者选本机绝对路径，服务于存储页「本地磁盘」的根目录字段；两者语义不同、并存，见[系统对话框模块](../dialog/01-dialog-module.md)）。
+`pages/media/` 下不再有平铺文件；原来的 `pages/media/mediaUtils.ts` 因影视墙与刮削展示也要用，上移为 `src/renderer/src/utils/format.ts`，引用点统一改成 `@/utils/format`（`formatSize` / `formatTime`）。资料库的媒体目录是**连接内路径**，所以表单用 `library/components/RemoteDirDialog.tsx`（走 `fileApi.list` 列目录）而不是本机目录控件 `src/renderer/src/components/DirectoryPickerField.vue`（后者选本机绝对路径，服务于存储页「本地磁盘」的根目录字段；两者语义不同、并存，见[系统对话框模块](../dialog/01-dialog-module.md)）。
 
-同一条分层规则也在其它页面上落地：命令式弹窗进各页的 `modals/`（`src/renderer/src/windows/main/pages/plugin/modals/`、`.../storage/modals/`、`.../tools/search/modals/`），页内列表 / 表格 / 表单组件进 `components/`，页面状态与副作用进 `composables/`，纯函数工具留在页面根（如 `storageUtils.ts`、`workspaceUtils.ts`）。
+同一条分层规则也在其它页面上落地：命令式弹窗进各页的 `modals/`（`src/renderer/src/windows/main/pages/plugin/modals/`、`.../storage/modals/`、`.../tools/search/modals/`），页内列表 / 表格 / 表单组件进 `components/`，页面状态与副作用进 `composables/`，纯函数工具留在页面根（如 `storageUtils.ts`、`pages/tools/search/toolUtils.ts`）。
 
 ### 媒体域与资料库域的边界
 

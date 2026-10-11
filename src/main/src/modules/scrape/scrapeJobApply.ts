@@ -9,6 +9,7 @@ import {
   extnameOf,
   guessMimeType
 } from '@common/types/file'
+import type { FileClient } from '$/modules/file/FileClient'
 import type { PluginMovieDetail } from '@common/types/plugin'
 import {
   findSourceByPath,
@@ -66,16 +67,24 @@ export function metadataOf(
  * 条目路径必须跟着走：媒体身份按 (connectionId, path) 解析，若只改媒体源、
  * 条目还留着旧路径，下次扫描会按新路径认成全新条目，`cleanupUnseen` 随即把
  * 刚刮好的条目连同图片一起删掉。读不到详情时至少把路径改对。
+ *
+ * 入参显式给出（不吃 `ScrapeJobContext`）：刮削与「清除 NFO」的还原都要用这套口径。
  */
-export async function refreshSourcePath(context: ScrapeJobContext, targetPath: string): Promise<void> {
-  const source = findSourceByPath(context.connectionId, context.entry.path)
-  updateItem(context.entry.itemId, { path: targetPath })
+export async function refreshSourcePath(
+  client: FileClient,
+  connectionId: string,
+  itemId: string,
+  fromPath: string,
+  toPath: string
+): Promise<void> {
+  const source = findSourceByPath(connectionId, fromPath)
+  updateItem(itemId, { path: toPath })
   if (!source) return
-  const name = basenameRemotePath(targetPath)
+  const name = basenameRemotePath(toPath)
   try {
-    const info = await context.client.stat(targetPath)
+    const info = await client.stat(toPath)
     updateSourcePath(source.id, {
-      path: targetPath,
+      path: toPath,
       name: info.name,
       extname: info.extname,
       mime: info.mime.length > 0 ? info.mime : guessMimeType(info.name),
@@ -84,7 +93,7 @@ export async function refreshSourcePath(context: ScrapeJobContext, targetPath: s
     })
   } catch {
     updateSourcePath(source.id, {
-      path: targetPath,
+      path: toPath,
       name,
       extname: extnameOf(name),
       mime: guessMimeType(name),

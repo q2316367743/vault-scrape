@@ -5,8 +5,8 @@
  * 1. 模块内部抛 `MediaError`，**只有 IPC 边界**把错误转成 `MediaResult` 信封；
  * 2. 入参一律按 unknown 从渲染层收窄，缺字段抛 `invalidArgument`；
  * 3. 影视墙与首页只读：不落盘、不触发刮削，也不改资源索引；
- * 4. `media:clear-nfo` 是本域唯一的写通道：删条目自己的刮削成果（库内元数据 + 磁盘 NFO），
- *    不碰视频与图片文件（详见 `mediaClearNfo`）。
+ * 4. `media:clear-nfo` 是本域唯一的写通道：删条目自己的刮削成果（库内元数据 + 磁盘 NFO + 刮削写下的图片 / 预告片），
+ *    并按 NFO 里的还原记录把视频改回原名、搬回原目录（详见 `mediaClearNfo`）。
  */
 import { ipcMain } from 'electron'
 import {

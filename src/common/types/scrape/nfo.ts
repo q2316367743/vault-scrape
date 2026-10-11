@@ -6,6 +6,8 @@
  * - 标题使用 `naming.nfoTitleTemplate` 渲染，渲染为空时回落详情标题；
  * - 图片写**相对影片目录**的文件名（`poster.jpg` / `extrafanart/fanart1.jpg`），
  *   与目录规范一一对应，读回本地时不需要任何路径换算；
+ * - 「刮削前位置」写在 `<originalfilename>` / `<originaldirectory>` / `<plantedfile>`
+ *   私有标签里，只由本宿主读回（读侧见 `@common/types/media` 的 `parseNfoRestore`）；
  * - 只做 XML 转义，不做任何网络/文件操作。
  */
 import type { PluginMovieDetail } from '../plugin'
@@ -45,11 +47,51 @@ export interface NfoArtwork {
   logo?: string
 }
 
-/** 生成 NFO 文本（以换行结尾） */
+/** 刮削就位的附属文件：清除 NFO 时按 `origin` 决定搬回还是删掉 */
+export interface NfoRestoreFile {
+  /** 相对影片目录的路径（`poster.jpg` / `extrafanart/fanart1.jpg`），与 `NfoArtwork` 同口径 */
+  relativePath: string
+  /** 本地沿用的图片刮削前的位置（连接内绝对路径）；联网下载的为空串（直接删） */
+  origin: string
+}
+
+/** 「刮削前位置」还原记录：写在 NFO 里，清除 NFO 时据此把视频改回名、移回原目录 */
+export interface NfoRestoreInfo {
+  /** 刮削前的视频文件名（含扩展名） */
+  fileName: string
+  /** 刮削前的视频所在目录（连接内绝对路径） */
+  directory: string
+  files: readonly NfoRestoreFile[]
+}
+
+/**
+ * 追加宿主私有的还原记录（Kodi / Jellyfin 会忽略未知标签）。
+ *
+ * 记录不全（缺文件名或缺目录）时整块不写：宁可没有记录、退化成「只清数据」，
+ * 也不留一份还原不回去的半截数据。
+ */
+function appendRestore(rows: string[], restore: NfoRestoreInfo): void {
+  const fileName = restore.fileName.trim()
+  const directory = restore.directory.trim()
+  if (fileName.length === 0 || directory.length === 0) return
+  rows.push('  <!-- vault-scrape 还原记录：清除 NFO 时按此还原，其它工具可忽略 -->')
+  rows.push(`  <originalfilename>${escapeXml(fileName)}</originalfilename>`)
+  rows.push(`  <originaldirectory>${escapeXml(directory)}</originaldirectory>`)
+  for (const file of restore.files) {
+    const relativePath = file.relativePath.trim()
+    if (relativePath.length === 0) continue
+    const origin = file.origin.trim()
+    const attribute = origin.length === 0 ? '' : ` original="${escapeXml(origin)}"`
+    rows.push(`  <plantedfile relative="${escapeXml(relativePath)}"${attribute} />`)
+  }
+}
+
+/** 生成 NFO 文本（以换行结尾）；`restore` 为空时与旧版本完全一致 */
 export function buildNfoXml(
   detail: PluginMovieDetail,
   naming: SettingNaming,
-  artwork: NfoArtwork = {}
+  artwork: NfoArtwork = {},
+  restore: NfoRestoreInfo | null = null
 ): string {
   const rows: string[] = []
   const push = (name: string, value?: string): void => {
@@ -108,6 +150,8 @@ export function buildNfoXml(
   if (detail.episodes && detail.episodes.length > 0) {
     push('episodeCount', String(detail.episodes.length))
   }
+
+  if (restore) appendRestore(rows, restore)
 
   return `${NFO_DECLARATION}\n<movie>\n${rows.join('\n')}\n</movie>\n`
 }

@@ -53,6 +53,10 @@ export interface PlantedAsset {
   /** 连接内绝对路径 */
   path: string
   imageType?: MediaImageType
+  /** 本地沿用的图片搬进影片目录前的位置（连接内绝对路径）；联网下载的没有这一项 */
+  origin?: string
+  /** 本次真的往磁盘写下过这个文件（下载成功）；沿用磁盘上已有文件（保留设置跳过）时没有这一项 */
+  created?: boolean
 }
 
 /** 去掉扩展名 */
@@ -205,7 +209,7 @@ export async function downloadAsset(
  * 把一张本地图片搬到规范文件名下（`localFirst`）。
  *
  * 规范名已经存在时保留磁盘上那份，本地图片原样不动；搬运失败时仍按原路径入库，
- * 至少不会丢掉这张图。
+ * 至少不会丢掉这张图。真的搬动了才记 `origin`：NFO 里的还原记录靠它把这张图搬回原名。
  */
 export async function adoptLocalImage(
   context: ScrapeJobContext,
@@ -219,15 +223,17 @@ export async function adoptLocalImage(
   const target = joinRemotePath(movieDir, plan.relativePath)
   const imageType = IMAGE_KIND_TYPE[image.kind]
   if (image.path !== target) {
+    let origin: string | undefined
     try {
       if (await client.exists(target)) {
         context.log.info(`规范文件名已存在，沿用磁盘上的文件：${target}`)
       } else {
         await ensureParent(context, target)
         await client.move(image.path, target, { overwrite: false })
+        origin = image.path
         context.log.info(`本地图片就位：${image.name} → ${plan.relativePath}`)
       }
-      return { kind: image.kind, relativePath: plan.relativePath, path: target, imageType }
+      return { kind: image.kind, relativePath: plan.relativePath, path: target, imageType, origin }
     } catch (error) {
       if (context.signal.aborted) throw new ScrapeError('cancelled')
       const message = error instanceof Error ? error.message : '未知错误'

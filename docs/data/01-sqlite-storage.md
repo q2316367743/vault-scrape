@@ -137,7 +137,7 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 
 渲染层通过 `dbApi`（`@/api` 再导出）以 `dbApi.log.list(...)` / `dbApi.task.stats()` 形式调用。
 
-媒体条目 / 媒体源 / 图片与逐文件刮削结果在 `db` 域之外**只有影视墙与资料库会读**：`db` 域不为它们开 IPC 通道，影视墙走 `media` 域通道 `media:wall` / `media:detail`，工作台逐级浏览走 `scrape:browse`（见 [影视墙页面](../page/04-media-wall-page.md)、[工作台页面](../page/03-workspace-page.md)）；条目封面与播放地址都是 `storage://` URL。**`media_item` / `media_image` / `media_cast` 的唯一外部写通道是 `media:clear-nfo`**（详情页「清除 NFO」：刮削列归零 + `name` / `num` 还原成扫描期取值，并删掉该条目的图片与参演名单，磁盘上的 NFO 文件同时删除、视频与图片文件保留），其余写入都由扫描 / 刮削主进程内部完成。其余场景（`storage://` 协议处理、扫描后的清理、删除存储时的级联）都由主进程自己使用这些仓储。
+媒体条目 / 媒体源 / 图片与逐文件刮削结果在 `db` 域之外**只有影视墙与资料库会读**：`db` 域不为它们开 IPC 通道，影视墙走 `media` 域通道 `media:wall` / `media:detail`，资料库目录浏览走 `scrape:browse`（渲染层暂无入口，通道保留）（见 [影视墙页面](../page/04-media-wall-page.md)、[刮削进度与详情页](../page/03-scrape-detail-page.md)）；条目封面与播放地址都是 `storage://` URL。**`media_item` / `media_image` / `media_cast` 的唯一外部写通道是 `media:clear-nfo`**（详情页「还原刮削前」：按 NFO 里的还原记录把视频改回原名 / 搬回原目录并刷新 `media_source.path`、删掉刮削写下的图片与 NFO、刮削列归零 + `name` / `num` 还原成还原后的磁盘文件名，再删掉该条目的图片与参演名单），其余写入都由扫描 / 刮削主进程内部完成。其余场景（`storage://` 协议处理、扫描后的清理、删除存储时的级联）都由主进程自己使用这些仓储。
 
 ## 迁移
 

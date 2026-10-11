@@ -4,8 +4,14 @@
  * 契约：
  * - 纯函数，只用字符串扫描，不引第三方 XML 库，也不导入 `node:*`（本目录三端共享）；
  * - 字段口径与写入侧 `@common/types/scrape/nfo.ts` 的 `buildNfoXml` 对齐；
- * - 没有 `<movie>` 根或所有字段都为空时返回 `null`，绝不抛错。
+ * - 没有 `<movie>` 根或所有字段都为空时返回 `null`，绝不抛错；
+ * - `parseNfoRestore` 只认本宿主写下的「刮削前位置」私有标签（`<originalfilename>` /
+ *   `<originaldirectory>` / `<plantedfile>`），别的工具写的 NFO 一律返回 `null`。
  */
+
+import type { NfoRestoreFile, NfoRestoreInfo } from '../scrape/nfo'
+
+export type { NfoRestoreFile, NfoRestoreInfo } from '../scrape/nfo'
 
 /** 从 NFO 读回的影片元信息：缺失字段统一给空串 / 0 / 空数组，调用方不必再判 undefined */
 export interface MediaNfoMeta {
@@ -104,4 +110,69 @@ export function parseNfoXml(xml: string): MediaNfoMeta | null {
     tags: allTags(xml, 'tag')
   }
   return hasContent(meta) ? meta : null
+}
+
+/**
+ * 取所有 `<name … />`（自闭合）或 `<name …>…</name>` 标签的属性原文与文本。
+ *
+ * 与 `allTags` 分开：`allTags` 的口径是「有内容的成对标签」，行为不能动；
+ * 还原记录里的 `<plantedfile>` 是自闭合的，需要额外认这一种写法。
+ */
+function allTagMatches(xml: string, name: string): { attrs: string; value: string }[] {
+  const pattern = new RegExp(`<${name}\\b([^>]*?)(?:/>|>([\\s\\S]*?)</${name}>)`, 'gi')
+  const values: { attrs: string; value: string }[] = []
+  for (const matched of xml.matchAll(pattern)) {
+    values.push({ attrs: matched[1] ?? '', value: decodeXmlText(matched[2] ?? '') })
+  }
+  return values
+}
+
+/** 取标签属性原文里的一个属性值，取不到返回空串 */
+function attrOf(attrs: string, name: string): string {
+  const matched = new RegExp(`\\b${name}\\s*=\\s*"([^"]*)"`, 'i').exec(attrs)
+  return matched ? decodeXmlText(matched[1] ?? '') : ''
+}
+
+/** 相对影片目录的路径：非空、相对、路径段不含空段 / `.` / `..`，否则 `null` */
+function safeRelativePath(value: string): string | null {
+  const relative = value.trim()
+  if (relative.length === 0 || relative.startsWith('/')) return null
+  const segments = relative.split('/')
+  if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) return null
+  return relative
+}
+
+/** 连接内绝对路径：`/` 开头、路径段不含 `.` / `..`，否则空串（＝这条记录不可用） */
+function safeRemotePath(value: string): string {
+  const path = value.trim()
+  if (!path.startsWith('/')) return ''
+  if (path.split('/').some((segment) => segment === '.' || segment === '..')) return ''
+  return path
+}
+
+/** 视频文件名：非空、不含路径分隔符、不是 `.` / `..`，否则空串 */
+function safeFileName(value: string): string {
+  const name = value.trim()
+  if (name.length === 0 || name === '.' || name === '..') return ''
+  if (name.includes('/') || name.includes('\\')) return ''
+  return name
+}
+
+/**
+ * 读回「刮削前位置」还原记录；没有记录 / 记录不可用时返回 `null`（调用方退化成只清数据）。
+ *
+ * 磁盘上的 NFO 可能是旧版本写的、第三方工具写的、甚至被人手改过，这里一律当作不可信输入：
+ * 路径不合法就丢掉条目，整条记录不合法就返回 `null`，绝不抛错。
+ */
+export function parseNfoRestore(xml: string): NfoRestoreInfo | null {
+  const fileName = safeFileName(firstTag(xml, 'originalfilename'))
+  const directory = safeRemotePath(firstTag(xml, 'originaldirectory'))
+  if (fileName.length === 0 || directory.length === 0) return null
+  const files: NfoRestoreFile[] = []
+  for (const matched of allTagMatches(xml, 'plantedfile')) {
+    const relativePath = safeRelativePath(attrOf(matched.attrs, 'relative'))
+    if (relativePath === null) continue
+    files.push({ relativePath, origin: safeRemotePath(attrOf(matched.attrs, 'original')) })
+  }
+  return { fileName, directory, files }
 }

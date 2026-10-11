@@ -5,7 +5,8 @@
  * - 实现内部抛 `MediaError`，只有 IPC 边界把它转换成 `MediaResult` 信封；
  * - 每个错误码都有中文文案，渲染层只按 `code` 做逻辑判断，不解析 message；
  * - 「读不到 NFO」「连接已删除」这类可降级情况**不抛错**，只返回空 meta；
- * - 「清除 NFO」是本域唯一的写操作，磁盘 NFO 删不掉时抛 `writeFailed`。
+ * - 「还原刮削前」（通道 `media:clear-nfo`）是本域唯一的写操作：磁盘 NFO 删不掉时抛 `writeFailed`，
+ *   其余磁盘动作（还原 / 删除图片、搬回视频）失败只跳过，不报错。
  */
 export type MediaErrorCode = 'notFound' | 'invalidArgument' | 'readFailed' | 'writeFailed' | 'unknown'
 
