@@ -103,7 +103,7 @@ interface PluginEpisode {
 
 字段口径与命名模板占位符一致（`num` / `maker` / `label` / `series` / `actors` / `duration` 等），方便后续直接拼装文件名。
 
-**剧集口径**（`isSeries` / `episodeCount` / `episodes` / `PluginEpisode`）：搜索候选只需用 `isSeries` 标出「这是剧集」、`episodeCount` 给总集数；分集清单在 `detail` 里用 `episodes[]` 给出——`season` 缺省按第 1 季、`0` 表示特别篇，`index` 是季内序号，宿主按 `<季>:<集号>` 把它与扫描出来的**集文件**对齐（对不上的集不入库，见[剧集支持](../media/02-series-support.md)），每集的 `title` 进集 NFO 的 `<title>` / 详情页选集标题、`plot` 进 `<plot>`（缺省回落剧集简介）、`duration` 进 `<runtime>`、`releaseDate` 进 `<aired>`。剧集库的搜索关键字是**剧集目录名**（宿主会去掉结尾的年份），命不中时回落**剧集名**（扫描期条目名就是目录名，两者可能同一串），**宿主只发一次 `search`**，不会拿两种关键字各搜一遍；候选命中口径（`pickSeriesCandidate`）是「年份过滤 → 池内唯一候选 → 池内标题包含关键词（≥ 3 字符）」：候选的 `date` 以剧集目录名里的四位年份开头就只在这个池子里挑，池子里只有一条就直接用，否则再按关键词包含找，**分不出高低就返回 null**（绝不猜）。
+**剧集口径**（`isSeries` / `episodeCount` / `episodes` / `PluginEpisode`）：搜索候选只需用 `isSeries` 标出「这是剧集」、`episodeCount` 给总集数；分集清单在 `detail` 里用 `episodes[]` 给出——`season` 缺省按第 1 季、`0` 表示特别篇，`index` 是季内序号，宿主按 `<季>:<集号>` 把它与扫描出来的**集文件**对齐（对不上的集不入库，见[剧集支持](../media/02-series-support.md)），每集的 `title` 进集 NFO 的 `<title>` / 详情页选集标题、`plot` 进 `<plot>`（缺省回落剧集简介）、`duration` 进 `<runtime>`、`releaseDate` 进 `<aired>`。剧集库的搜索关键字是**剧集目录名**（宿主会去掉结尾的年份），命不中时回落**剧集名**（扫描期条目名就是目录名，两者可能同一串），**宿主只发一次 `search`**，不会拿两种关键字各搜一遍；候选命中口径（`pickSeriesCandidate`）是「年份过滤 → 池内唯一候选 → 池内标题包含关键词（≥ 3 字符）→ 反过来『关键词包含候选标题』（多条命中取标题最长的一条）」：候选的 `date` 以剧集目录名里的四位年份开头就只在这个池子里挑，池子里只有一条就直接用，否则再按关键词包含找，最后允许「目录名里含候选标题」这条反向判定兜住本地目录名比插件标题长的情况，**全都不中就返回 null**。影片侧同理：`pickCandidate` 先按番号精确匹配（`num` 来自宿主对文件名的猜测），**番号对不上不再直接判失败**，而是回落到同一套标题判定——所以**没有番号概念的插件（如 TMDB）不要乱填 `num`**，填了反而把候选推向番号匹配。有一个真实影片信息插件同时刮电影与剧集的完整范例：[TMDB](./05-tmdb-plugin.md)。
 
 ### 2.2 资源返回「下载配置」而不是裸链接
 

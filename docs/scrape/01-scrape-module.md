@@ -41,7 +41,7 @@ src/main/src/modules/scrape/
 ├── scrapeLayout.ts       # 目录规范：文件夹名 / 影片文件名 / NFO 文件名（三者同名）与工作目录解析（剧集流水线复用它的 movieFileName / nfoFileName）
 ├── scrapeLocalMeta.ts    # 本地优先：读同目录本地 NFO（parseNfoXml）与本地图片并归类（**剧集流水线暂不支持本地优先**）
 ├── scrapePluginData.ts   # vm 沙箱返回值按结构收窄（候选 / 详情 / 资源；含分集 `episode.plot`）
-├── scrapeMatcher.ts      # 候选选择：影片 pickCandidate（按番号 / 关键词）、剧集 pickSeriesCandidate（年份池 + 关键词包含，剧集没有番号）
+├── scrapeMatcher.ts      # 候选选择：影片 pickCandidate（先按番号，对不上回落标题判定）、剧集 pickSeriesCandidate（年份池 + 标题判定，剧集没有番号）
 ├── scrapeAssets.ts       # 资源下载到临时目录 + 清理
 ├── scrapeLogFile.ts      # 「保存日志到文件」的落盘日志
 ├── scrapeEvents.ts       # 进度广播给所有窗口
@@ -122,6 +122,7 @@ src/common/types/scrape/
 
 1. **本地优先**（库级 `localFirst` 为真时）：`scrapeLocalMeta.readLocalMeta(client, { dirPath, originalBase, fanartDirName })` 读同目录的本地 NFO（候选 `${原基名}.nfo` → `movie.nfo`，用 `parseNfoXml` 解析，解析不出就当作没有）与本地图片（固定名 / `{原基名}-` 前缀名 / 与影片同名的图 / `extrafanart` 下的全部图片，按 `LocalImage.kind` 归类）。`needRemote = 没有可用本地详情 || 某个启用 kind 本地没有 || 本地 NFO 缺关键信息（needsRemoteInfo：缺简介、缺演员、片商 / 厂牌 / 系列全空）`——命中才联网，且**只补缺的**：`mergeDetail(本地, 远程)` 逐字段以本地非空值优先。本地详情够用且不缺资源时，结果行插件列写「本地 NFO」，一次网络请求都不发。
 2. **跨影片信息插件补全**：按可用插件顺序，第一个插件先 `search(keyword)` → `pickCandidate(candidates, num, keyword)` 选候选 → `detail(movieId)`；拿到详情后，只对「仍缺失的、且被下载选项勾选的」封面类（`thumb` / `poster` / `fanart` / `banner` / `logo`，走 `covers`）与花絮类（`still` / `trailer`，走 `extras`）请求资源。`isSatisfied(detail, assets, enabled)` 计入本地已就位的 kind，命中即 `break`——即「A 插件只刮到 NFO、B 插件补封面」的补全语义，同时提前停止避免多余请求。单个插件抛错只 `log.warn` 后继续下一个插件，不让一个坏插件毁掉整个文件。到最后一个插件都没有可信详情时：结果行 `failed`、消息 `未找到匹配的刮削结果`，文件留在原目录不动（原 `file.moveAfterFailure` 与 `path.failedOutputDir` 已随设置瘦身删除）。
+   **候选匹配口径**（`scrapeMatcher.ts`）：`num` 非空时先找 `isSameNum` 相等的候选；**对不上不再直接判失败**，而是与没有 `num` 时同路走**标题判定**——唯一候选 → 候选标题包含关键词 → 关键词包含候选标题（`normalizeNum` 后 ≥3 字符才算，多条命中取**标题最长**的一条）。这条回落是给**没有番号概念**的插件（如 [TMDB](../plugin/05-tmdb-plugin.md)）留的路：`Inception.2010.1080p.BluRay.mkv` 会被宿主猜出番号 `INCEPTION 2010`（见 §3），而插件候选不带番号，硬卡番号就永远匹配不上；副作用是番号对不上的成人站点插件也会转向标题判定。
 3. **命名（一定会重命名，没有开关）**：`base = resolveVideoBase(detail, originalBase, naming)` = `renderTemplate(naming.fileTemplate, detail, naming)` → `sanitizeName` → `truncateName(..., naming.fileNameMaxLength)`，为空时回落到原文件名；再按 `naming.partStyle` 用 `normalizePartToken(partTokenOf(原文件名), partStyle)` 把分盘标记（CD/PART/DISC）附在末尾，避免模板同名导致 CD1/CD2 互相覆盖。`base` 同时决定文件夹名、影片文件名与 NFO 文件名。
 4. **资源落盘**：
    - 本地图片先「就位」（`adoptLocalImage`）：目标规范名已存在就直接沿用；否则 `client.move` 到规范名（同一目录内改名），失败只 `log.warn` 并按原路径入库，不中断；`poster` / `thumb` / `fanart` / `banner` / `logo` 这类单张 kind 只取本地第一张，`still` 全收。
@@ -143,7 +144,7 @@ src/common/types/scrape/
 
 剧集库的一个任务行就是一个**剧集目录**，由 `runSeriesJob(context)` 一次性完成「剧集 → 季 → 集」三层产物；纯 IO 辅助拆在同目录的 `scrapeSeriesAssets.ts`（远端集索引、资源落盘、搬空目录清理）。完整口径（扫描层级、读模型、还原）见 [剧集支持](../media/02-series-support.md)。
 
-**搜索关键字（这是剧集与影片最大的差别）**：剧集用**剧集目录名**当关键词——`entry.keyword = seriesKeywordOf(item.name)`（`extractKeyword` 清洗后**去掉结尾年份**，`Show 2019` → `Show`；年份另有用途），命不中再回落剧集名；`pickSeriesCandidate(candidates, keyword, year)` 先按详情年份（`candidate.date` 前缀）筛出一个池子（池空则退回全部候选），**池里只有一条就直接用**，否则再按「标题 / 番号包含关键词」判断（`normalizeNum` 后至少 3 个字符才参与，分不出高低就返回 `null` 换下一个插件），**剧集没有番号**。剧集只发一次 `search`，没有「搜不到再搜一次」的二次查询。
+**搜索关键字（这是剧集与影片最大的差别）**：剧集用**剧集目录名**当关键词——`entry.keyword = seriesKeywordOf(item.name)`（`extractKeyword` 清洗后**去掉结尾年份**，`Show 2019` → `Show`；年份另有用途），命不中再回落剧集名；`pickSeriesCandidate(candidates, keyword, year)` 先按详情年份（`candidate.date` 前缀）筛出一个池子（池空则退回全部候选），再在池子里按**标题判定**挑一条：**唯一候选** → 「标题 / 番号包含关键词」（`normalizeNum` 后至少 3 个字符才参与）→ 「关键词包含候选标题」（同样 ≥3 字符才算，多条命中取**标题最长**的一条，用来兜住「剧集目录名比插件标题长」如 `The Office US` / `The Last of Us 最后生还者`）；全都不中返回 `null`，换下一个插件，**剧集没有番号**。剧集只发一次 `search`，没有「搜不到再搜一次」的二次查询。
 
 **命名与产物三件套**：模板默认 `seriesFolderTemplate = '{title} ({year})'`、`seasonFolderTemplate = 'Season {season}'`、`episodeFileTemplate = '{showTitle} S{season}E{episode}'`（渲染函数 `renderSeasonFolderName` / `renderEpisodeTemplate`）。剧集目录 = 剧集文件夹，季目录渲染为空时回落 `'Season ' + padNumber(season)`，**集 NFO 与集文件同名**（`nfoFileName(集基名)`），每集剧照是 `<集基名>-thumb.<ext>`（`EPISODE_THUMB_SUFFIX = '-thumb'`），集文件扩展名沿用源文件：
 
@@ -214,3 +215,4 @@ src/common/types/scrape/
 17. **剧集任务 = 整部剧一次**：新建一个「剧集」库（`Season 01/S01E01.mkv`、`Season 01/S01E02.mkv`）扫出剧集条目后点「刮削」→ 任务名仍是 `资料库 · 名称`，**一条任务行对应整部剧**（任务行的 `path` 就是剧集目录），结果消息形如 `插件 X，2 集，1 季，2 个剧集资源，…`；刮完影视墙上该剧的标题与封面**直接更新**（同样不需要「刮削完再扫一遍」）。
 18. **剧集产物与关键字口径**：刮一部目录名带年份的剧（如 `Some Show 2019/`）→ 搜索关键词应是**去掉年份的剧集目录名** `Some Show`（可在插件日志里核对），产物为 `tvshow.nfo` + `Season 01/season.nfo` + `Show S01E01.mkv` / `Show S01E01.nfo` + `Show S01E01-thumb.jpg`（季目录与集文件名都按命名模板，集 NFO 与集文件同名），剧集目录按 `{title} ({year})` 改名；`tvshow.nfo` 末尾能看到还原记录（剧集根记原剧集目录名与原目录、集 NFO 记原集文件名与原目录）。
 19. **剧集刮削与还原闭环**：把剧集（连同季目录）刮一遍再走「还原刮削前」→ 剧集目录改回原名、集文件改回原名并搬回旧季目录；**季目录名不回改**（旧季目录由集文件搬回时重建），刮削时新建的季目录搬空后会被当空目录删掉。剧集在资料库扫描侧的用例见 [资料库 §10](../media/01-media-library.md)、界面侧见 [影视墙页面 §8](../page/04-media-wall-page.md)。
+20. **番号对不上时的回落**（§5.2 候选匹配口径）：给影片库配上没有番号概念的插件（如 [TMDB](../plugin/05-tmdb-plugin.md)），放进 `Inception.2010.1080p.BluRay.mkv`（宿主会猜出番号 `INCEPTION 2010`）→ 应正常匹配候选并刮出中文标题 / 简介 / 封面，而不是「未找到匹配的刮削结果」；再放一个插件里查不到的文件（如 `没有这部电影.2024.mkv`）→ 仍应失败，说明回落没有退化成乱猜。剧集侧对应场景：剧集目录名比插件标题长（`The Office US` / `The Last of Us 最后生还者`）时应命中同剧候选。

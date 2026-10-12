@@ -143,12 +143,14 @@ episodeItemId(connectionId, path)                               // sha1('episode
 
 - **关键词 = 剧集目录名**：`libraryScrape.ts:107` 用 `seriesKeywordOf(item.name)`；`item.name` 在扫描期就是 `basenameRemotePath(剧集目录)`（刮削后被刮削标题覆盖，是同一个字段）。`seriesKeywordOf`（`episode.ts:129`）先用与影片一致的 `extractKeyword` 清洗，再**去掉结尾的年份**（`Show 2019` → `Show`）—— 年份留着会让「包含关键词」匹配失败，年份另有用途（`seriesYearOf`）。
 - **只发一次 `search`**：`scrapeJobPlan.ts:152` 对每个插件调 `invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })`，**没有「按目录名搜不到再拿剧集名重搜一次」的二次查询**；`scrapeSeriesJob.ts:5` 注释里的「剧集目录名或剧集名」指的是同一件事。
-- **匹配器 `pickSeriesCandidate(candidates, keyword, year)`**（`scrapeMatcher.ts:53`，剧集没有番号）：
+- **匹配器 `pickSeriesCandidate(candidates, keyword, year)`**（`scrapeMatcher.ts`，剧集没有番号）：
   1. `year` 是 4 位时先筛 `(candidate.date ?? '').startsWith(year)`，池非空只用这个池，否则用全量；
   2. 池内只有一个候选 → 直接取；
   3. 否则取标题 / 番号「包含关键词」的候选（`containsKeyword`：`normalizeNum` 后长度 ≥ 3 才算，判据是 `normalizeNum(title) + normalizeNum(candidateNum)` 包含 `normalizeNum(keyword)`）；
-  4. 分不出高低返回 `null`（**绝不猜**），由调用方换下一个插件。
-  `containsKeyword` 的「≥3 个字符」门槛意味着过短的目录名（如 `SP`）不参与包含判定。
+  4. 再反过来判「关键词包含候选标题」（`pickLongestTitle`：候选标题 `normalizeNum` 后长度 ≥ 3 才算，**多条命中取标题最长的一条**）—— 用来兜住「剧集目录名比插件标题长」的情况（`The Office US` / `The Last of Us 最后生还者`，TMDB 这类插件的标题只是其中一段）；
+  5. 全都不中返回 `null`（不改判成硬凑），由调用方换下一个插件。
+  `containsKeyword` / `pickLongestTitle` 的「≥3 个字符」门槛意味着过短的目录名（如 `SP`）不参与包含判定。
+  第 4 步与影片侧的回落共用 `pickByTitle`（`pickCandidate` 在「有番号但对不上」时也走这套标题判定，见 [刮削模块 §5.2](../scrape/01-scrape-module.md)）。
 
 ### 4.4 资源落盘与目录清理（`scrapeSeriesAssets.ts`）
 
