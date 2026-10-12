@@ -107,7 +107,7 @@
 - `builtinPlugins.ts` 的 `BuiltinPlugin` 带 `kind`，导出 `listBuiltinPlugins(kind)` 与 `findBuiltinPlugin(kind, id)`（列表 / 查找都按类别过滤）；当前只有**影片信息**类别的 `r18-offline`（`meta.kind = 'movie'`、`meta.name = 'R18 离线数据包'`、`env: []`），`invoke` 把四个方法直接映射到查询层：`search → offlineSearch`、`detail → offlineDetail`、`covers → offlineCovers`、`extras → offlineExtras`。插件 id 取自 `@common/types/plugin` 的 `R18_OFFLINE_PLUGIN_ID`（见 §1），文件内再 `export` 一次供主进程其它模块引用。
 - **它只通过「资料库的刮削器」被使用**：`scrapers` 是资料库自己的字段（`library.scrapers`），**连接（`FileConnection`）上已没有该字段**——同一个存储可以挂多个资料库，各自选不同的刮削器。新建资料库时，只要候选列表里有 `R18_OFFLINE_PLUGIN_ID` 就默认勾选它（插件未启用 / 加载失败时保持不勾）；一个刮削器都不勾选 = 该库不刮削（允许，但扫描后不会自动刮削、也点不了「刮削」）。细节见[资料库](../media/01-media-library.md)。
 - **影片类别**的 `plugin/movie/plugins.json` 里多了一条 `builtin: boolean` 记录；主进程启动 / 列表 / 调用前会把内置插件幂等补齐进**所在类别**的索引（保留用户设置的 `enabled` 与环境变量值，元信息没变就不写盘）。同 ID 冲突时内置插件接管并写 `warn` 日志。
-- `PluginSummary.source` 为 `'builtin' | 'file'`：内置插件的 `filePath` 是空串，界面隐藏「编辑代码」「删除」，并显示「内置」标签与「内置实现（无源码文件）」。
+- `PluginSummary.source` 为 `'builtin' | 'file'`：内置插件的 `filePath` 是空串，界面隐藏「编辑代码」「删除」，并显示「内置」标签与「内置插件（无源码文件）」。
 - 内置插件 `env` 为空数组，`hasEnv` 恒为 `false`：详情页不渲染配置区块（`PluginDetail.vue` 上按 `v-if="plugin.hasEnv"` 门控），「R18 离线数据包」这类无需参数的内置插件不会出现空的环境变量区域。
 - 调用路径：`invokePlugin` 校验存在 → 已启用 → 参数非空，命中内置即 `invokeWithTimeout(() => builtin.invoke(...), {…})`（与 JS 插件共用超时与日志），**不做 env 校验、不编译**；JS 插件路径保持不变。
 - `plugin:movie:readCode` / `plugin:movie:saveCode` / 导入覆盖 / 删除对内置插件分别抛 `notFound` / `unsupported`，`removePlugin` 与 `writePluginSource` 在 store 层再兜一层。

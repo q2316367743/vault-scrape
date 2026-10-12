@@ -78,7 +78,7 @@ async function setAvatar(imageId: string): Promise<void> {
 
 async function removePhoto(imageId: string): Promise<void> {
   try {
-    await MessageBoxUtil.confirm('删除后本机文件与数据库记录都会清掉，确定删除这张图片？', '删除图片')
+    await MessageBoxUtil.confirm('删除后这张图片的文件与记录都会被清掉，确定删除？', '删除图片')
   } catch {
     return
   }

@@ -58,7 +58,7 @@
     <t-list-item v-if="isMac">
       <t-list-item-meta
         title="mpv 画面嵌入窗口（实验）"
-        description="仅 macOS：开启后尝试把 mpv 画面嵌进播放窗口，可能只有声音没有画面；关闭时用「mpv 独立窗口贴住视频区」的方案"
+        description="仅 macOS：把 mpv 画面嵌进播放窗口；可能出现只有声音没有画面，遇到就关掉它"
       />
       <template #action>
         <div class="setting-field"><t-switch v-model="setting.macEmbed" /></div>

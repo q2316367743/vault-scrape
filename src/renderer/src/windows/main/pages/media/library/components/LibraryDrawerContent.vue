@@ -89,8 +89,8 @@ const {
 
 const progressText = computed(() => {
   const event = progress.value
-  if (!event) return '正在遍历目录…'
-  return `已遍历 ${event.scannedDirs} 个目录，索引 ${event.indexedFiles} 个文件`
+  if (!event) return '正在扫描目录…'
+  return `已扫描 ${event.scannedDirs} 个目录，收录 ${event.indexedFiles} 个文件`
 })
 
 function onCreated(): void {

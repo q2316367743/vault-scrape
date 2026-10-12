@@ -98,7 +98,7 @@ const { libraries, rows, loading, failure, total, indexedAt, load } = useMediaHo
 const visibleRows = computed(() => rows.value.filter((row) => row.items.length > 0))
 
 const summary = computed(() => {
-  const indexed = indexedAt.value > 0 ? ` · 索引更新于 ${formatTime(indexedAt.value)}` : ''
+  const indexed = indexedAt.value > 0 ? ` · 最近扫描 ${formatTime(indexedAt.value)}` : ''
   return `共 ${total.value} 部 · ${libraries.value.length} 个资料库${indexed}`
 })
 

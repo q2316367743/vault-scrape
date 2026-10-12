@@ -1,5 +1,5 @@
 <template>
-  <page-layout title="日志" description="日志写入本地数据库，最多保留最近的记录">
+  <page-layout title="日志" description="应用运行日志，只保留最近的记录">
     <template #extra>
       <t-select v-model="levelFilter" class="log-level" :options="levelOptions" />
       <t-button theme="danger" variant="outline" :disabled="total === 0" @click="onClear">

@@ -131,21 +131,14 @@ const {
   noSourceHint
 } = useDetailView(detail, connections)
 /** 剧集：播哪一集由选集状态决定（影片没有集时回落条目自己） */
-const { seasons, activeId, playUrl, activeEpisode, select } = useEpisodeSelection(detail)
+const { seasons, activeId, playUrl, select } = useEpisodeSelection(detail)
 /** 手动匹配：开窗搜候选，应用成功后重读详情 */
 const { open: onManualMatch } = useManualMatch(detail, protect)
 
 const clearing = ref(false)
 
-/** 播放入口的一句话说明：没有源时说清原因，有源时说清「会开新窗口」 */
-const playHint = computed(() => {
-  if (playUrl.value.length === 0) return noSourceHint.value
-  const opening = '点「播放」会在独立窗口里打开：左侧是画面，右侧是影片详情与选集。'
-  if (!isSeries.value) return opening
-  const episode = activeEpisode.value
-  const label = episode ? `第 ${episode.seasonNumber} 季第 ${episode.episodeNumber} 集` : '选中的这一集'
-  return `将播放${label}。${opening}`
-})
+/** 播放入口的说明：只在「按钮为什么点不动」时给一句原因，有源时不预告任何东西 */
+const playHint = computed(() => (playUrl.value.length === 0 ? noSourceHint.value : ''))
 
 /** 打开播放窗口：剧集把选中的那一集一起带过去，影片只带条目本身 */
 function onPlay(): void {

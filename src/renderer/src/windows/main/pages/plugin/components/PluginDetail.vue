@@ -90,7 +90,7 @@ const emit = defineEmits<{
 /** 内置插件没有源码文件，不能编辑、不能删除 */
 const isBuiltin = computed(() => props.plugin.source === 'builtin')
 const sourceText = computed(() =>
-  isBuiltin.value ? '内置实现（无源码文件）' : props.plugin.filePath
+  isBuiltin.value ? '内置插件（无源码文件）' : props.plugin.filePath
 )
 
 function onToggle(value: unknown): void {

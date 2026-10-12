@@ -77,7 +77,7 @@ interface WallOption {
 const SORT_OPTIONS: WallOption[] = [
   { value: 'title', label: '按标题' },
   { value: 'size', label: '按体积' },
-  { value: 'modified', label: '按磁盘时间' }
+  { value: 'modified', label: '按修改时间' }
 ]
 
 const route = useRoute()
@@ -105,7 +105,7 @@ const pageTitle = computed(() => {
 })
 
 const pageDescription = computed(
-  () => `磁盘上的${noun.value}聚成一堵墙，标题与封面来自刮削记录与同目录 NFO`
+  () => `资料库里的${noun.value}聚成一堵墙，标题与封面来自刮削`
 )
 
 const emptyTitle = computed(() => {
@@ -114,7 +114,7 @@ const emptyTitle = computed(() => {
 })
 
 const summary = computed(() => {
-  const indexed = indexedAt.value > 0 ? ` · 索引更新于 ${formatTime(indexedAt.value)}` : ''
+  const indexed = indexedAt.value > 0 ? ` · 最近扫描 ${formatTime(indexedAt.value)}` : ''
   return `共 ${visible.value.length} 部${indexed}`
 })
 

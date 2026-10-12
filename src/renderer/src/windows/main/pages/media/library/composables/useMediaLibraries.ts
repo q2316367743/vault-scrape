@@ -111,7 +111,7 @@ export function useMediaLibraries(options: UseMediaLibrariesOptions = {}) {
       const data = result.data
       const removed = data.removedItems > 0 ? `，移除 ${data.removedItems} 个` : ''
       MessagePlugin.success(
-        `「${library.name}」扫描完成：索引 ${data.indexedFiles} 个文件（视频 ${data.indexedVideos} 个）${removed}，待刮削 ${data.pending} 个`
+        `「${library.name}」扫描完成：收录 ${data.indexedFiles} 个文件（视频 ${data.indexedVideos} 个）${removed}，待刮削 ${data.pending} 个`
       )
       if (data.message.length > 0) MessagePlugin.warning(data.message)
       if (data.autoScrape) {

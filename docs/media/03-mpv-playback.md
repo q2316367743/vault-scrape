@@ -177,7 +177,7 @@ preload 侧 `src/preload/src/modules/player/player.ts` 暴露 `playerApi`（`ope
 | 字段 | 默认 | 含义 |
 | --- | --- | --- |
 | `app.mpvPath` | `''` | mpv 可执行文件路径；留空自动探测。**只有配到（或探测到）mpv，播放窗口才用 mpv**；探测不到静默用内置播放器 |
-| `app.macEmbed` | `false` | 仅 macOS 的实验开关：把 mpv 画面嵌进播放窗口（`--wid`）。默认关闭，用「mpv 无边框独立窗口贴住视频区」的方案 |
+| `app.macEmbed` | `false` | 仅 macOS 的实验开关：把 mpv 画面嵌进播放窗口（`--wid`）。默认关闭，走「mpv 无边框独立窗口贴住视频区」的方案；界面文案只提示「可能出现只有声音没有画面」 |
 
 设置页 `pages/setting/components/SettingAppPanel.vue` 里两项都带说明文案与「检测」（`playerApi.detect(setting.mpvPath)`）；macOS 选文件要选到 `mpv.app/Contents/MacOS/mpv` 这一层。
 

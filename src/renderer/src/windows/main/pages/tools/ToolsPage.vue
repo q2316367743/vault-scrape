@@ -16,7 +16,7 @@ function open(path: string): void {
 </script>
 
 <template>
-  <page-layout title="工具" description="按功能进入独立工具页；工具需要插件时，在工具页里选择用哪个插件">
+  <page-layout title="工具" description="按功能选择工具，需要插件的工具在页内选一个插件">
     <div class="tool-grid">
       <t-card
         v-for="entry in toolEntries"

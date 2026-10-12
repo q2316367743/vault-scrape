@@ -2,7 +2,7 @@
   <section class="play-bar">
     <div class="play-bar-text">
       <h4 class="section-title">播放</h4>
-      <p class="play-bar-hint">{{ hint }}</p>
+      <p v-if="hint.length > 0" class="play-bar-hint">{{ hint }}</p>
     </div>
     <t-button theme="primary" size="large" :disabled="disabled" @click="emit('play')">
       <template #icon>
@@ -19,14 +19,15 @@
  * 契约：
  * - 详情页不再内嵌播放器：点「播放」由页面调 `playerApi.open()` 打开独立播放窗口
  *   （左侧 mpv / 内置播放器画面，右侧影片详情侧栏）；
- * - `hint` 由页面按场景给（有源 / 没有源 / 剧集当前选到第几集），本组件不做判定；
+ * - `hint` 由页面给：只在没有可播地址时给一句原因（解释按钮为什么置灰），空串时这一行不渲染；
+ *   有可播地址时不再预告「会开新窗口」之类的界面形状，播哪一集由选集区高亮表达；
  * - 没有可播地址时按钮置灰，但仍显示 `hint` 说明原因，不留一块空白。
  */
 import { PlayCircleIcon } from 'tdesign-icons-vue-next'
 
 withDefaults(
   defineProps<{
-    /** 按钮上方的一句说明 */
+    /** 按钮旁的一句原因说明；空串时不渲染 */
     hint: string
     /** 没有可播地址时置灰 */
     disabled?: boolean

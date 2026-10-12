@@ -1,7 +1,7 @@
 <template>
   <page-layout
     title="演员"
-    description="资料存在数据库里，头像与图集存在本机数据目录；点卡片进详情看全部出演作品。"
+    description="演员档案与图集，点卡片进详情看全部出演作品。"
   >
     <template #extra>
       <t-button variant="outline" :loading="scraping" @click="onScrapeMissing">

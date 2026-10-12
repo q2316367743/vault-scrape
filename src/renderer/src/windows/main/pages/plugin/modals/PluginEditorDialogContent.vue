@@ -21,7 +21,7 @@ const SAMPLE_HINT =
   '环境变量：写 env: [{ key, label, type }] 声明，安装与保存时宿主会在沙箱里执行脚本读取它；\n' +
   '方法签名：(keyword|movieId, env, ctx)，env 是已填写的环境变量值，敏感项已解密；\n' +
   '可用能力：ctx.request(options)、ctx.log(level, message)、$ = cheerio.load(html)；\n' +
-  '不可用：import、require、process、fetch、定时器之外的 Node API。保存时会先编译校验，失败则不落盘。'
+  '不可用：import、require、process、fetch、定时器之外的 Node API。保存前会先编译校验，失败则不会保存。'
 
 const content = ref('')
 const loading = ref(false)

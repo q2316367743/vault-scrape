@@ -112,12 +112,17 @@ function onToggle(): void {
   emit('command', { kind: 'toggle' })
 }
 
-function onSeek(value: number): void {
-  emit('command', { kind: 'seek', position: value })
+/** `t-slider` 回调给的是 `number | number[]`，这里只取第一个值 */
+function sliderNumber(value: number | number[]): number {
+  return Array.isArray(value) ? value[0] : value
 }
 
-function onVolume(value: number): void {
-  emit('command', { kind: 'volume', volume: value })
+function onSeek(value: number | number[]): void {
+  emit('command', { kind: 'seek', position: sliderNumber(value) })
+}
+
+function onVolume(value: number | number[]): void {
+  emit('command', { kind: 'volume', volume: sliderNumber(value) })
 }
 
 function onToggleMute(): void {
