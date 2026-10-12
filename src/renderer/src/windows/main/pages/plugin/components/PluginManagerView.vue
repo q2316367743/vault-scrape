@@ -8,6 +8,8 @@
       @reorder="onReorder"
       @refresh="refresh"
       @import-plugins="onImport"
+      @set-enabled="onSetEnabledMany"
+      @remove-many="onRemoveMany"
     />
     <plugin-detail
       v-if="active"
@@ -35,7 +37,8 @@
  *
  * 契约：只按 `kind` 取对应类别的状态与通道，页面本身不感知具体是哪一个类别；
  * 自身不套 page-layout（页头由外壳的 tab 条承担），标题栏与「刷新 / 导入」都下沉到
- * 左列表 `PluginList` 的面板头；导入重名走命令式确认弹窗覆盖；配置保存后由详情上抛
+ * 左列表 `PluginList` 的面板头；批量启停 / 删除与单个一样在这层处理（删除走确认弹窗，
+ * 内置插件先剔除）；导入重名走命令式确认弹窗覆盖；配置保存后由详情上抛
  * 最新摘要，这里就地更新列表状态，不整表刷新。
  */
 import { onMounted } from 'vue'
@@ -61,8 +64,10 @@ const {
   refresh,
   select,
   setEnabled,
+  setEnabledMany,
   reorder,
   remove,
+  removeMany,
   importPlugins,
   readCode,
   saveCode,
@@ -133,6 +138,36 @@ function onEnabled(value: boolean): void {
   const plugin = active.value
   if (!plugin) return
   void setEnabled(plugin, value)
+}
+
+/** 按 ID 从当前列表里取摘要（批量操作用），已不存在的 ID 自动忽略 */
+function summariesOf(ids: string[]): PluginSummary[] {
+  return plugins.value.filter((plugin) => ids.includes(plugin.id))
+}
+
+function onSetEnabledMany(ids: string[], enabled: boolean): void {
+  void setEnabledMany(summariesOf(ids), enabled)
+}
+
+/** 批量删除：内置插件没有源码文件、也不可删除，先剔除再确认 */
+function onRemoveMany(ids: string[]): void {
+  const targets = summariesOf(ids).filter((plugin) => plugin.source !== 'builtin')
+  const skipped = ids.length - targets.length
+  if (targets.length === 0) {
+    MessageUtil.info('内置插件不可删除，当前选中的都是内置插件')
+    return
+  }
+  const dialog = DialogPlugin.confirm({
+    header: `删除 ${targets.length} 个插件`,
+    body: `会同时删除插件源码文件与已保存的环境变量，且不可恢复。${
+      skipped > 0 ? `另有 ${skipped} 个内置插件不可删除，将跳过。` : ''
+    }`,
+    theme: 'warning',
+    onConfirm: async () => {
+      dialog.hide()
+      await removeMany(targets)
+    }
+  })
 }
 
 function onChanged(plugin: PluginSummary): void {

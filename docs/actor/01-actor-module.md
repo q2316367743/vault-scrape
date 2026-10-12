@@ -17,6 +17,7 @@
 
 - `name_key` 是姓名归一化键（`actorNameKey`），`actor_alias.alias_key` 同理；两者都用于去重与匹配，展示永远用原始写法；
 - `gender` 取值 `''` / `female` / `male` / `other`（`ACTOR_GENDERS`）；`birthday` 是 `YYYY-MM-DD` 文本；身高与三围是整数厘米，**0 表示未填写**；
+- `bust` / `waist` / `hip` / `cup` 只有女演员会用：数据库字段照旧可存（插件抓回来不拦），但**界面只在 `gender === 'female'` 时展示**这三围与罩杯，其它性别整项不出现（见 [演员页面 §3 / §4](../page/05-actor-pages.md)）；
 - `tags` 是用户标签（JSON 字符串数组），刮削永不覆盖；`locked` 为真时刮削**只填空白字段**；
 - `scraped_at` / `scraper_id` 记录最后一次命中的插件，用于「资料不全」排队与详情页展示。
 
@@ -43,9 +44,10 @@
 | `modules/actor/actorWrite.ts` | 写操作：`saveActor`（新增 / 编辑，含同名冲突校验）、`removeActor`（连带清磁盘图片）、`setActorAvatarOf` |
 | `modules/actor/actorLink.ts` | 影片 ↔ 演员弱关联：`syncItemCast`（按姓名 / 别名解析、缺失则建演员，再整组写 `media_cast`）、`ensureActorsOf`、`actorRefsOfItem` |
 | `modules/actor/actorView.ts` | 数据库行 → 公共展示形状（`actorSummaryOf` / `actorDetailOf`，统一拼头像地址） |
-| `modules/actor/actorScrape.ts` | 演员信息插件抓取与合并、图片下载、串行队列、刮削入库后的自动补全 |
+| `modules/actor/actorScrape.ts` | 演员信息插件抓取与合并、图片下载、串行队列、队列状态计数、刮削入库后的自动补全 |
 | `modules/actor/actorProtocol.ts` | `storage://actor` 的响应实现（`serveActorImage`） |
-| `modules/actor/actorIpc.ts` | 九个 `actor:*` 通道 + `ActorResult` 信封 |
+| `modules/actor/actorEvents.ts` | 补全队列状态向所有窗口的单向推送（`actor:progress`） |
+| `modules/actor/actorIpc.ts` | 十个 `actor:*` 调用通道 + `ActorResult` 信封 |
 
 ## 4. 读模型与写操作
 
@@ -67,7 +69,7 @@
 3. 姓名与用户标签永不被覆盖；别名在未锁定时直接用插件结果，锁定时与原值合并去重；
 4. 图片按 `actorImageLimit` 限量（0 = 只抓资料不下图）：`poster` 只在没有头像时存一张，其余进图集；下载走刮削域的 `downloadAssetToTemp`，落盘后调 `saveActorImage({ source: 'scrape' })` 并 `cleanup` 临时文件；图片扩展名优先从资源 url 末段推断（`PluginAsset.name` 是展示名，如「头像」，只在 url 取不到扩展名时兜底），仍识别不了就跳过并记 warn；
 5. 命中后写回资料、`replaceAliases`（有变化时）、`scraper_id` / `scraped_at`；全部失败只记日志，不打断调用方；
-6. 自动补全走**模块级串行队列**（`enqueueActorScrape`），同一演员排队期间不重复入队，取消（`ActorError('cancelled')`）静默处理。
+6. 自动补全走**模块级串行队列**（`enqueueActorScrape`），同一演员排队期间不重复入队，取消（`ActorError('cancelled')`）静默处理；队列自己维护 `ActorScrapeStatus` 计数并逐位广播进度（见 §6），被取消的那一位算「已处理」但不算失败。
 
 ### 5.1 四个触发场景
 
@@ -75,7 +77,7 @@
 | --- | --- | --- | --- |
 | 1 | 影片入库后 | `scrapeFileJob` 第 7 步 `enqueueItemActorScrape(itemId, detail.actors ?? [], settings.scrape.actorScrape, signal)` | 先把参演名单写进 `media_cast`，再按设置为「资料不全」（`scraped_at === 0` / 没有头像 / 没有生日）的演员排队；受设置 `scrape.actorScrape` 控制，走串行队列 |
 | 2 | 打开演员详情页 | `ActorDetailPage.vue` 在 `load()` 之后异步触发一次 | 受设置 `scrape.actorScrapeOnOpen`（默认开）控制；资料不全（没抓过 / 没头像 / 没生日）**且未锁定**才抓；同一演员一次会话内只试一次（会话级 `Set` 去重），静默执行、失败不打扰；没有启用的演员插件时直接跳过 |
-| 3 | 详情页「抓取资料」 | `ActorDetailPage.vue` 的 `onScrape` | 手动立即执行，可多选插件 |
+| 3 | 详情页「抓取资料」 | `ActorDetailPage.vue` 的 `onScrape` → `detail/modals/ActorScrapeDialog` | 手动：弹窗里**单选一个**演员信息插件（只列已启用且编译通过的，默认选中上次用过的 `vault-scrape:actor-scrape-plugin`），只把选中的那一个 ID 作为 `pluginIds` 传下去；只有它是空数组时主进程才会补成「全部启用的插件」，所以弹窗保证有选中项 |
 | 4 | 列表页「补全缺失资料」 | `actorIpc.ts` → `scrapeMissingActors(ACTOR_SCRAPE_MISSING_LIMIT)` | 批量补全，走串行队列 |
 
 四个入口共用同一条 `scrapeActor` 链路与同一套合并规则（上面 1–6 条）。
@@ -89,7 +91,9 @@
 
 ## 6. IPC 通道与错误码
 
-`src/preload/src/modules/actor/actorChannels.ts`：`actor:list` / `actor:detail` / `actor:save` / `actor:remove` / `actor:importImages` / `actor:removeImage` / `actor:setAvatar` / `actor:scrape` / `actor:scrapeMissing`。渲染层入口是 `@/api` 的 `actorApi`（`window.preload.actor`）。
+`src/preload/src/modules/actor/actorChannels.ts`：十个调用通道 `actor:list` / `actor:detail` / `actor:save` / `actor:remove` / `actor:importImages` / `actor:removeImage` / `actor:setAvatar` / `actor:scrape` / `actor:scrapeMissing` / `actor:scrapeStatus`，外加一个单向推送 `actor:progress`。渲染层入口是 `@/api` 的 `actorApi`（`window.preload.actor`）：`scrapeStatus()` 拉补全队列快照，`onScrapeProgress(listener)` 订阅全量状态事件（返回退订函数）。
+
+补全队列的进度可观：`actorScrape.ts` 维护内存计数（`total` / `finished` / `failed` / `pending` / `running` / `currentName` / `updatedAt`，形状是 `ActorScrapeStatus`），入队、开始抓下一位、每位抓完各广播一次；概览页的「演员资料补全」卡片订阅它（`overview/composables/useActorScrape.ts` + `overview/components/ActorScrapeProgressCard.vue`）。跑空后保留最后一轮数字，下一轮入队时归零重算；应用重启即清零（不落库）。
 
 参数一律在 `actorIpc.ts` 里收窄（`readId` / `readListRequest` / `readSaveRequest` / `readImageRequest` / `readImportRequest` / `readScrapeRequest`），成功返回 `actorOk(data)`，失败返回 `actorFail(code, message)`；渲染层只按 `code` 分支、展示 `message`。
 
@@ -111,4 +115,4 @@
 - 别名 / 姓名匹配基于归一化键，改姓名不会自动合并两个演员；
 - 一位演员的头像只有一张，旧头像被顶掉后仍留在图集里（文件不删）；
 - 离线内置插件（`r18-offline`）属**影片信息**类别、**不实现 `actor`**：离线库只有番号 / 标题 / 演员名单，没有生日身高，所以演员抓取永远不会命中它（离线库的名单仍会写进 `media_cast`），演员资料需要另外启用一个演员信息插件；
-- 抓取是串行队列，批量补全大量演员时耗时较长（队列进度只在日志里看）。
+- 抓取是串行队列，批量补全大量演员时耗时较长；进度在概览页「演员资料补全」卡片上看（`total` / `finished` / `failed` / `pending` / 当前演员），但队列状态只在主进程内存里、**不落库**，应用重启即清零，也没有「逐位结果」的历史表 —— 单次结果仍在日志里看；队列本身不支持取消（随发起它的刮削任务一起被 `signal` 中止）。

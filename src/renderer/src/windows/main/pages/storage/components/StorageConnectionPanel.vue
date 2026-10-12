@@ -215,13 +215,13 @@ const emit = defineEmits<{
 }
 
 .connection-actions {
-  display: none;
   flex-shrink: 0;
+  visibility: hidden;
   align-items: center;
 }
 
 .connection-item:hover .connection-actions,
 .connection-item.is-active .connection-actions {
-  display: flex;
+  visibility: visible;
 }
 </style>

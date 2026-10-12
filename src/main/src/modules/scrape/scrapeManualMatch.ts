@@ -1,41 +1,26 @@
 /**
- * 手动匹配：把用户在弹窗里选中的候选**直接**灌进既有刮削流水线。
+ * 手动匹配：把用户在弹窗里选中的候选变成**一条真正的刮削任务**。
  *
  * 契约：
- * 1. 与自动刮削产物完全一致（命名整理、下载图片、写 NFO、必要时移动、回写条目元数据与演员），
- *    差别只有两点：跳过 search 与候选挑选（走 `ScrapeJobContext.forced`），并**忽略本地优先与保留已有图片**，
- *    保证用户这次选的元数据与封面真正落盘；
+ * 1. 产物与自动刮削完全一致（命名整理、下载图片、写 NFO、必要时移动、回写条目元数据与演员），
+ *    差别只有两点：跳过 `search` 与候选挑选（走 `ScrapeJobContext.forced`），并**忽略本地优先与
+ *    保留已有图片**，保证用户这次选的元数据与封面真正落盘；
  * 2. 可选的插件只有「所属资料库的 scrapers ∩ 当前可用插件」，与批量任务同一口径；
- * 3. 与批量任务**互斥**：共用 `scrapeRunSlot`，已有刮削在跑时抛 `busy`；
- * 4. 不落任务表：手动匹配是单条即时执行，进度与结果由本函数的返回值与 IPC 信封承载。
+ * 3. 与批量任务**互斥**：共用 `scrapeRunSlot`（由 `startScrapeTaskForEntries` 判断），已有刮削在跑时抛 `busy`；
+ * 4. **立即返回**：任务会落 `task` / `scrape_file` 并广播 `scrape:progress`，调用方拿到 `taskId`
+ *    后跳进度详情页（`/overview/scrape?taskId=…`）即可，**不要在这里等流水线跑完**（那是分钟级的事）。
  */
 import { dirnameRemotePath } from '@common/types/file'
 import { ScrapeError } from '@common/types/scrape'
-import type { ScrapeMatchRequest, ScrapeMatchResult } from '@common/types/scrape'
-import type { SettingDownload } from '@common/types/setting'
+import type { ScrapeMatchRequest, ScrapeMatchResult, ScrapeScanEntry } from '@common/types/scrape'
 import type { MediaItemRow } from '$/db/schema/mediaItem'
 import { getLibrary } from '$/db/repo/libraryRepo'
 import { getItem, listSourcesByItem } from '$/db/repo/mediaRepo'
-import { getFileClient } from '$/modules/file/fileClientManager'
 import { primarySourceOf } from '$/modules/media/mediaWall'
-import { keywordOf, runFileJob } from './scrapeFileJob'
-import { createScrapeRunLog } from './scrapeLogFile'
-import type { ScrapeJobContext, ScrapeJobOutcome } from './scrapeJobTypes'
-import { libraryPolicy, snapshotSettings, usablePlugins } from './scrapeRunner'
-import { releaseRunSlot, takeRunSlot } from './scrapeRunSlot'
-import { runSeriesJob } from './scrapeSeriesJob'
-
-/** 手动匹配时强制关闭的「保留已有图片」，让新选的封面与剧照覆盖旧图 */
-const NO_KEEP: Pick<
-  SettingDownload,
-  'keepThumb' | 'keepPoster' | 'keepFanart' | 'keepStill' | 'keepTrailer'
-> = {
-  keepThumb: false,
-  keepPoster: false,
-  keepFanart: false,
-  keepStill: false,
-  keepTrailer: false
-}
+import { keywordOf } from './scrapeFileJob'
+import { MANUAL_MATCH_TASK_PREFIX } from './scrapeManualPolicy'
+import { startScrapeTaskForEntries } from './scrapeRunner'
+import { usablePlugins } from './scrapeUsablePlugins'
 
 /** 条目在磁盘上的落点：手动匹配只认主源 */
 interface MatchTarget {
@@ -70,25 +55,13 @@ function resolveTarget(item: MediaItemRow): MatchTarget {
   }
 }
 
-/** 结果与流水线产物同形：状态、插件、标题、提示、最终路径 */
-function toResult(itemId: string, outcome: ScrapeJobOutcome): ScrapeMatchResult {
-  return {
-    itemId,
-    status: outcome.status,
-    pluginId: outcome.pluginId,
-    title: outcome.title,
-    message: outcome.message,
-    finalPath: outcome.finalPath
-  }
-}
-
 /**
- * 按用户选中的候选刮削单条。
+ * 按用户选中的候选刮削单条：校验通过后建任务并立即返回任务 ID。
  *
- * 失败一律抛错，由 IPC 边界转成 `ScrapeResult` 信封（`describeScrapeError` 给中文文案）；
- * 流水线自身返回的 `failed`（例如详情取不到）原样透出。
+ * 校验失败一律抛错，由 IPC 边界转成 `ScrapeResult` 信封（`describeScrapeError` 给中文文案）；
+ * 任务建好之后的过程与失败原因都在任务的逐文件结果里（`scrape:getTask` / 进度详情页）。
  */
-export async function matchItemManually(request: ScrapeMatchRequest): Promise<ScrapeMatchResult> {
+export function matchItemManually(request: ScrapeMatchRequest): ScrapeMatchResult {
   const itemId = request.itemId.trim()
   const pluginId = request.pluginId.trim()
   const movieId = request.movieId.trim()
@@ -109,39 +82,25 @@ export async function matchItemManually(request: ScrapeMatchRequest): Promise<Sc
   }
 
   const target = resolveTarget(item)
-  const taskId = `manual:${item.id}`
-  const controller = takeRunSlot(taskId)
-  const log = createScrapeRunLog(`手动匹配 ${target.name}`)
-
-  try {
-    const settings = snapshotSettings()
-    const keyword = keywordOf(target.name)
-    const context: ScrapeJobContext = {
-      taskId,
-      connectionId: target.connectionId,
-      // 手动匹配的语义就是「用我选的这条」：不读本地、也不保留旧图
-      policy: { ...libraryPolicy(library, target.connectionId), localFirst: false },
-      dirPath: target.dirPath,
-      entry: {
-        itemId: item.id,
-        path: target.filePath,
-        name: target.name,
-        keyword: keyword.keyword,
-        num: keyword.num
-      },
-      plugins: [plugin],
-      settings: { ...settings, download: { ...settings.download, ...NO_KEEP } },
-      client: await getFileClient(target.connectionId),
-      signal: controller.signal,
-      log,
-      forced: { pluginId, movieId }
-    }
-
-    const outcome =
-      item.type === 'series' ? await runSeriesJob(context) : await runFileJob(context)
-    log.info(`手动匹配结束：${outcome.status}，${outcome.message}`)
-    return toResult(item.id, outcome)
-  } finally {
-    releaseRunSlot()
+  const keyword = keywordOf(target.name)
+  const entry: ScrapeScanEntry = {
+    itemId: item.id,
+    path: target.filePath,
+    name: target.name,
+    // 体积与修改时间只用于扫描期排序 / 过滤，手动匹配用不到，占位即可
+    size: 0,
+    modifiedAt: Date.now(),
+    keyword: keyword.keyword,
+    num: keyword.num
   }
+  const task = startScrapeTaskForEntries({
+    connectionId: target.connectionId,
+    libraryId: library.id,
+    dirPath: target.dirPath,
+    taskName: `${MANUAL_MATCH_TASK_PREFIX}${target.name}`,
+    entries: [entry],
+    scraperIds: [pluginId],
+    forced: { pluginId, movieId }
+  })
+  return { itemId: item.id, taskId: task.id }
 }

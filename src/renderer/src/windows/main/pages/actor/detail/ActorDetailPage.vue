@@ -5,7 +5,7 @@
     fallback="/actor"
   >
     <template #extra>
-      <t-button variant="outline" :loading="scraping" @click="onScrape">
+      <t-button variant="outline" @click="onScrape">
         <template #icon><user-add-icon /></template>
         抓取资料
       </t-button>
@@ -54,12 +54,13 @@
  *
  * 契约：
  * - 参数只从路由 query 读（`actorId`），可以直接刷新、重复进入；
- * - 「抓取资料」把当前所有启用的演员插件交给主进程，由主进程按顺序试、命中即止；
- * - 打开页面且资料不全时，按 `scrape.actorScrapeOnOpen` 自动补一次（静默，同一演员一次会话只试一次）；
+ * - 「抓取资料」是手动入口：弹窗里选一个演员插件（默认上次选过的），只跑选中这一个；
+ * - 打开页面且资料不全时，按 `scrape.actorScrapeOnOpen` 自动补一次（静默，同一演员一次会话只试一次，
+ *   这里仍然把全部启用的插件交给主进程按顺序试——自动流程没有人工决策环节）；
  * - 出演作品用影视墙的卡片渲染，点进影片详情；连接信息从 `useFileConnections` 反查；
  * - 返回按钮由 SubPageLayout 提供，本页不在 `#extra` 里再放。
  */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
 import { DeleteIcon, EditIcon, UserAddIcon } from 'tdesign-icons-vue-next'
@@ -75,6 +76,7 @@ import ActorProfileBlock from './components/ActorProfileBlock.vue'
 import ActorGalleryBlock from './components/ActorGalleryBlock.vue'
 import { useActorDetail } from './composables/useActorDetail'
 import { openActorEditorDialog } from '../modals/ActorEditorDialog'
+import { openActorScrapeDialog } from './modals/ActorScrapeDialog'
 
 const router = useRouter()
 const { actorId, detail, loading, failure, load } = useActorDetail()
@@ -82,7 +84,6 @@ const { connections, refresh } = useFileConnections()
 
 const actor = computed(() => detail.value?.actor ?? null)
 const description = computed(() => actor.value?.name ?? actorId)
-const scraping = ref(false)
 const { setting } = storeToRefs(useSettingScrapeStore())
 /** 本次会话已经自动抓过的演员：来回进出详情页不重复打插件 */
 const autoScraped = new Set<string>()
@@ -116,25 +117,14 @@ function onEdit(): void {
   openActorEditorDialog({ actor: actor.value, onSaved: () => void load() })
 }
 
-/** 抓取前先问插件列表：只有启用中的插件才有机会命中，禁用的不传下去 */
-async function onScrape(): Promise<void> {
+/** 「抓取资料」：弹窗里手动选一个插件再跑，抓完刷新页面资料 */
+function onScrape(): void {
   if (!actor.value) return
-  scraping.value = true
-  const plugins = await pluginApi.actor.list()
-  if (!plugins.ok) {
-    scraping.value = false
-    MessageUtil.error(plugins.message)
-    return
-  }
-  const pluginIds = plugins.data.filter((item) => item.enabled).map((item) => item.id)
-  const result = await actorApi.scrape({ actorId: actor.value.actorId, pluginIds })
-  scraping.value = false
-  if (!result.ok) {
-    MessageUtil.error(result.message)
-    return
-  }
-  MessageUtil.info(result.data.message)
-  await load()
+  openActorScrapeDialog({
+    actorId: actor.value.actorId,
+    actorName: actor.value.name,
+    onDone: () => void load()
+  })
 }
 
 async function onRemove(): Promise<void> {

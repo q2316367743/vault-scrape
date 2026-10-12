@@ -126,7 +126,7 @@ const {
 /** 剧集：播哪一集由选集状态决定（影片没有集时回落条目自己） */
 const { seasons, activeId, playUrl, activeEpisode, select } = useEpisodeSelection(detail)
 /** 手动匹配：开窗搜候选，应用成功后重读详情 */
-const { open: onManualMatch } = useManualMatch(detail, protect, () => void load())
+const { open: onManualMatch } = useManualMatch(detail, protect)
 
 const clearing = ref(false)
 

@@ -2,7 +2,8 @@
  * 手动匹配弹窗外壳（命令式）。
  *
  * 契约：外壳只负责打开弹窗、渲染内容组件与底部按钮；
- * 搜索、选择与「应用」都在 `MediaMatchContent.vue` 里，应用成功后通过 `emit('success')` 回传。
+ * 搜索与选择在 `MediaMatchContent.vue` 里，点「使用所选」只**建一条刮削任务并立即返回 taskId**
+ * （刮削是分钟级的，不能把弹窗卡在转圈上），成功回传后关窗、提示并跳进度详情页。
  */
 import { ref } from 'vue'
 import { Button, DialogPlugin } from 'tdesign-vue-next'
@@ -20,8 +21,8 @@ export interface MediaMatchDialogOptions {
   nsfwProtected: boolean
   /** 封面是否打码：与详情页同一口径 */
   protect: boolean
-  /** 应用成功后的回调：详情页用它重新读取条目 */
-  onApplied?: () => void
+  /** 任务建好后的回调：详情页拿 `taskId` 跳刮削进度详情页 */
+  onApplied?: (taskId: string) => void
 }
 
 export function openMediaMatchDialog(options: MediaMatchDialogOptions): void {
@@ -56,12 +57,8 @@ export function openMediaMatchDialog(options: MediaMatchDialogOptions): void {
         protect={options.protect}
         onSuccess={(result: ScrapeMatchResult) => {
           dialog.hide()
-          if (result.status === 'success') {
-            MessageUtil.success(`已使用「${result.title}」的元数据${result.message ? `：${result.message}` : ''}`)
-          } else {
-            MessageUtil.warning(result.message)
-          }
-          options.onApplied?.()
+          MessageUtil.success('已开始刮削，可在进度页查看进度')
+          options.onApplied?.(result.taskId)
         }}
       />
     )

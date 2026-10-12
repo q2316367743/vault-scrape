@@ -15,7 +15,8 @@ import {
   isActorImageExtension,
   type ActorScrapeMissingResult,
   type ActorScrapeRequest,
-  type ActorScrapeResult
+  type ActorScrapeResult,
+  type ActorScrapeStatus
 } from '@common/types/actor'
 import {
   PLUGIN_ASSET_KINDS,
@@ -42,6 +43,7 @@ import { downloadAssetToTemp, type AssetDownload } from '$/modules/scrape/scrape
 import { loadSetting } from '$/modules/setting/settingStore'
 import { syncItemCast } from './actorLink'
 import { saveActorImage } from './actorAsset'
+import { broadcastActorScrapeStatus } from './actorEvents'
 
 /** 「抓取缺失资料」一次最多排队的演员数 */
 export const ACTOR_SCRAPE_MISSING_LIMIT = 200
@@ -382,14 +384,64 @@ export function scrapeActor(
 let queue: Promise<void> = Promise.resolve()
 const queued = new Set<string>()
 
+/**
+ * 队列的实时计数（进程内内存态，随进程重启清零）。
+ * 跑空后保留最后一轮的数字供概览页展示，下一轮入队时归零重算；`pending > 0` 即「正在跑」。
+ */
+let queueTotal = 0
+let queueFinished = 0
+let queueFailed = 0
+let queuePending = 0
+let queueCurrentName = ''
+let queueUpdatedAt = 0
+
+/** 补全队列的当前状态快照（渲染层挂载时拉一次，之后靠 `actor:progress` 增量覆盖） */
+export function actorScrapeStatus(): ActorScrapeStatus {
+  return {
+    total: queueTotal,
+    finished: queueFinished,
+    failed: queueFailed,
+    pending: queuePending,
+    running: queuePending > 0,
+    currentName: queueCurrentName,
+    updatedAt: queueUpdatedAt
+  }
+}
+
+/** 状态变化即广播：入队、开始抓下一位、每位抓完各推一次 */
+function publishQueueStatus(): void {
+  queueUpdatedAt = Date.now()
+  broadcastActorScrapeStatus(actorScrapeStatus())
+}
+
+/** 收尾一位：成功 / 失败 / 中途取消都算「已处理」，失败数只在真正报错时加一 */
+function finishQueueItem(actorId: string, failed: boolean): void {
+  queued.delete(actorId)
+  queuePending = Math.max(0, queuePending - 1)
+  queueFinished += 1
+  if (failed) queueFailed += 1
+  queueCurrentName = ''
+  publishQueueStatus()
+}
+
 /** 把演员排进串行抓取队列（刮削入库后自动补全用）；返回本次真正入队的数量 */
 export function enqueueActorScrape(actorIds: readonly string[], signal?: AbortSignal): number {
-  let count = 0
-  for (const actorId of actorIds) {
-    if (actorId.length === 0 || queued.has(actorId)) continue
+  const targets = actorIds.filter((actorId) => actorId.length > 0 && !queued.has(actorId))
+  if (targets.length === 0) return 0
+  if (queuePending === 0) {
+    // 上一轮已经跑空：新一批从零开始计数，避免把旧数字叠上来
+    queueTotal = 0
+    queueFinished = 0
+    queueFailed = 0
+  }
+  for (const actorId of targets) {
     queued.add(actorId)
-    count += 1
+    queueTotal += 1
+    queuePending += 1
     queue = queue.then(async (): Promise<void> => {
+      queueCurrentName = getActor(actorId)?.name ?? ''
+      publishQueueStatus()
+      let failed = false
       try {
         if (signal?.aborted) return
         const result = await scrapeActorOnce(actorId, [], signal ?? new AbortController().signal)
@@ -402,19 +454,21 @@ export function enqueueActorScrape(actorIds: readonly string[], signal?: AbortSi
           })
         }
       } catch (error) {
-        if (!(error instanceof ActorError && error.code === 'cancelled')) {
-          appendLog({
-            level: 'warn',
-            scope: 'actor',
-            message: `自动抓取演员资料失败：${describeError(error)}`
-          })
-        }
+        // 任务被取消不算失败，也不写日志
+        if (error instanceof ActorError && error.code === 'cancelled') return
+        failed = true
+        appendLog({
+          level: 'warn',
+          scope: 'actor',
+          message: `自动抓取演员资料失败：${describeError(error)}`
+        })
       } finally {
-        queued.delete(actorId)
+        finishQueueItem(actorId, failed)
       }
     })
   }
-  return count
+  publishQueueStatus()
+  return targets.length
 }
 
 /**

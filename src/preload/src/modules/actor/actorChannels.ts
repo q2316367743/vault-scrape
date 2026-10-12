@@ -22,5 +22,9 @@ export const ActorChannels = {
   /** 抓取一位演员的资料与图片 */
   scrape: 'actor:scrape',
   /** 批量抓取资料不全的演员（进后台队列） */
-  scrapeMissing: 'actor:scrapeMissing'
+  scrapeMissing: 'actor:scrapeMissing',
+  /** 读补全队列的当前状态（挂载时拉一次快照） */
+  scrapeStatus: 'actor:scrapeStatus',
+  /** 补全队列进度推送（主进程 → 渲染层，单向；与快照同形） */
+  progress: 'actor:progress'
 } as const

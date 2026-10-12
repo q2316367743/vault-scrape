@@ -134,3 +134,28 @@ export interface ActorScrapeMissingResult {
   queued: number
   message: string
 }
+
+/**
+ * 演员资料补全队列的实时状态（概览页进度卡用）。
+ *
+ * 契约：
+ * - 队列只在主进程内存里，重启即清零；跑空后保留最近一轮的数字，直到下一轮排队时重置；
+ * - 一次抓取的结果是「成功 / 失败 / 被取消」，`finished` 是三者之和，`failed` 只统计真正报错的；
+ * - 事件与快照同形（全量状态，不做字段合并），渲染层覆盖本地值即可。
+ */
+export interface ActorScrapeStatus {
+  /** 本轮排队的演员总数（队列未跑空时追加入队的批次会累加） */
+  total: number
+  /** 已处理完的演员数（成功 + 失败 + 被取消） */
+  finished: number
+  /** 其中抓取失败的演员数 */
+  failed: number
+  /** 队列里还没轮到的演员数（含正在抓的那一位） */
+  pending: number
+  /** 队列是否正在工作 */
+  running: boolean
+  /** 正在抓取的演员姓名；没有在跑时为空串 */
+  currentName: string
+  /** 最近一次状态变化时间；0 表示本次进程还没排过队 */
+  updatedAt: number
+}

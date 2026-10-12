@@ -7,12 +7,13 @@
  * 3. 任务与逐文件结果**始终先落库再推送**，渲染层关闭或切走再回来时拉快照即可复原进度；
  * 4. 取消（`cancel`）把任务置为 `paused`，未处理的文件仍是 `pending`，可以「继续」；
  * 5. 应用重启时残留的 `running` 任务由 `markInterruptedOnStartup()` 标记为 `interrupted`；
- * 6. 单文件失败只累计 `failed` 并写结果行，**不中断**其余文件。
+ * 6. 单文件失败只累计 `failed` 并写结果行，**不中断**其余文件；
+ * 7. 详情页的「手动匹配」也走这里：建一条只有一条文件的任务，并带上**强制候选**（`forced`），
+ *    此时忽略「本地优先」与「保留已有图片」，让用户选中的元数据与封面真正落盘。
  */
 import { randomUUID } from 'crypto'
 import { basenameRemotePath, dirnameRemotePath, normalizeRemotePath } from '@common/types/file'
 import type { MediaLibrary } from '@common/types/library'
-import type { PluginSummary } from '@common/types/plugin'
 import {
   ScrapeError,
   type ScrapeFileItem,
@@ -24,12 +25,19 @@ import { findLibraryByPath, getLibrary, patchLibrary } from '$/db/repo/libraryRe
 import { listTask, getTask, insertTask, updateTask, interruptRunningTasks } from '$/db/repo/taskRepo'
 import { insertScrapeFiles, listScrapeFile, updateScrapeFile } from '$/db/repo/scrapeRepo'
 import { getFileClient } from '$/modules/file/fileClientManager'
-import { moviePlugins } from '$/modules/plugin/pluginRegistries'
 import { loadSetting } from '$/modules/setting/settingStore'
 import { broadcastScrapeProgress } from './scrapeEvents'
 import { keywordOf, runFileJob } from './scrapeFileJob'
+import {
+  applyForcedMatch,
+  assertManualTaskResumable,
+  forcedOf,
+  forgetForced,
+  rememberForced
+} from './scrapeManualPolicy'
 import { runSeriesJob } from './scrapeSeriesJob'
 import type {
+  ScrapeForcedMatch,
   ScrapeJobContext,
   ScrapeJobOutcome,
   ScrapeLibraryPolicy,
@@ -38,6 +46,7 @@ import type {
 } from './scrapeJobTypes'
 import { createScrapeRunLog } from './scrapeLogFile'
 import { currentRun, isRunActive, releaseRunSlot, takeRunSlot } from './scrapeRunSlot'
+import { assertUsablePlugins } from './scrapeUsablePlugins'
 
 /**
  * 任务的刮削器与资料库绑定（内存态）。
@@ -64,40 +73,6 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     }, ms)
     signal.addEventListener('abort', onAbort, { once: true })
   })
-}
-
-/** 某个资料库可用的刮削器；`configuredCount` 用于区分「一个没装」和「装了但没勾」 */
-export interface LibraryPlugins {
-  list: ScrapePluginRef[]
-  configuredCount: number
-}
-
-/**
- * 可用插件：按插件页顺序，过滤停用与加载失败的（只取「影片信息」类别的插件）。
- *
- * 只认资料库绑定的刮削器（**不再回落到存储配置**）；空清单是合法状态
- * （该库不刮削），此时直接返回空数组，由调用方按「未配置刮削器」处理。
- * 无论勾选顺序如何，命中顺序只看插件页排序。
- */
-/** 资料库里配的刮削器 ∩ 当前可用插件（顺序按插件页），供任务与手动匹配共用 */
-export function usablePlugins(scraperIds: readonly string[]): LibraryPlugins {
-  const all = moviePlugins
-    .listPluginSummaries()
-    .filter((plugin: PluginSummary) => plugin.enabled && plugin.loadError.length === 0)
-    .map((plugin) => ({ id: plugin.id, name: plugin.name }))
-  const configured = [...new Set(scraperIds.filter((id) => id.length > 0))]
-  if (configured.length === 0) return { list: [], configuredCount: 0 }
-  const wanted = new Set(configured)
-  return { list: all.filter((plugin) => wanted.has(plugin.id)), configuredCount: configured.length }
-}
-
-/** 取可用插件；为空时按原因给出不同提示 */
-function assertUsablePlugins(scraperIds: readonly string[]): ScrapePluginRef[] {
-  const plugins = usablePlugins(scraperIds)
-  if (plugins.list.length > 0) return plugins.list
-  throw plugins.configuredCount === 0
-    ? new ScrapeError('pluginMissing', '该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择')
-    : new ScrapeError('pluginMissing', '资料库配置的刮削器均不可用，请重新选择')
 }
 
 /** 快照当前设置：任务与手动匹配都按同一份口径执行流水线 */
@@ -215,7 +190,8 @@ async function runFiles(
   client: Awaited<ReturnType<typeof getFileClient>>,
   signal: AbortSignal,
   log: ReturnType<typeof createScrapeRunLog>,
-  isSeries: boolean
+  isSeries: boolean,
+  forced: ScrapeForcedMatch | undefined
 ): Promise<void> {
   const total = files.length
   let cursor = 0
@@ -250,7 +226,8 @@ async function runFiles(
         settings,
         client,
         signal,
-        log
+        log,
+        ...(forced ? { forced } : {})
       }
 
       let outcome: ScrapeJobOutcome
@@ -304,8 +281,13 @@ async function execute(
   const controller = takeRunSlot(task.id)
   const log = createScrapeRunLog(task.name)
   const plugins = assertUsablePlugins(scraperIds)
-  const policy = libraryPolicy(library, task.connectionId)
-  const settings = snapshotSettings()
+  // 手动匹配的语义就是「用我选的这条」：不读本地、也不保留旧图（见 scrapeManualPolicy）
+  const forced = forcedOf(task.id)
+  const { policy, settings } = applyForcedMatch(
+    libraryPolicy(library, task.connectionId),
+    snapshotSettings(),
+    forced
+  )
   let hardFailure = false
   let client: Awaited<ReturnType<typeof getFileClient>>
 
@@ -325,7 +307,8 @@ async function execute(
       client,
       controller.signal,
       log,
-      library.type === 'tv'
+      library.type === 'tv',
+      forced
     )
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误'
@@ -336,6 +319,7 @@ async function execute(
     releaseRunSlot()
     taskScrapers.delete(task.id)
     taskLibraries.delete(task.id)
+    forgetForced(task.id)
   }
 
   if (hardFailure) return
@@ -370,6 +354,11 @@ export interface ScrapeEntriesRequest {
   entries: readonly ScrapeScanEntry[]
   /** 资料库绑定的刮削器（必填，不再回落到存储配置） */
   scraperIds: readonly string[]
+  /**
+   * 强制候选：只有详情页「手动匹配」会传。命中该插件时跳过 `search` 与候选挑选，
+   * 并让这次执行忽略「本地优先」与「保留已有图片」（见 `scrapeManualPolicy`）。
+   */
+  forced?: ScrapeForcedMatch
 }
 
 /**
@@ -415,6 +404,7 @@ export function startScrapeTaskForEntries(request: ScrapeEntriesRequest): Scrape
   insertScrapeFiles(rows)
   taskScrapers.set(taskId, [...request.scraperIds])
   taskLibraries.set(taskId, library.id)
+  if (request.forced) rememberForced(taskId, request.forced)
 
   const pending = rows.filter((row) => row.status === 'pending')
   if (pending.length === 0) {
@@ -447,6 +437,7 @@ export function resumeScrapeTask(taskId: string): ScrapeTaskSnapshot {
   if (currentRun()) throw new ScrapeError('busy')
   const task = getScrapeTask(taskId)
   if (task.status === 'running') throw new ScrapeError('busy', '任务正在运行')
+  assertManualTaskResumable(taskId, task.name)
   const pending = listScrapeFile(taskId).filter(
     (item) => item.status === 'pending' || item.status === 'running'
   )

@@ -4,7 +4,8 @@
  * 契约（沿用 media / scrape 域写法）：
  * 1. 模块内部抛 `ActorError`，**只有 IPC 边界**把错误转成 `ActorResult` 信封；
  * 2. 入参一律按 unknown 从渲染层收窄，缺字段抛 `invalidArgument`；
- * 3. `scrape` 是同步等待一次抓取结果，`scrapeMissing` 只排队、立即返回。
+ * 3. `scrape` 是同步等待一次抓取结果，`scrapeMissing` 只排队、立即返回，
+ *    `scrapeStatus` 读队列快照，进度另有 `actor:progress` 单向推送。
  */
 import { ipcMain } from 'electron'
 import {
@@ -27,7 +28,8 @@ import {
   type ActorSaveResult,
   type ActorScrapeMissingResult,
   type ActorScrapeRequest,
-  type ActorScrapeResult
+  type ActorScrapeResult,
+  type ActorScrapeStatus
 } from '@common/types/actor'
 import {
   readBoolean,
@@ -38,7 +40,7 @@ import {
   toSource
 } from '@common/types/setting/shared'
 import { ActorChannels } from '~/modules/actor/actorChannels'
-import { ACTOR_SCRAPE_MISSING_LIMIT, scrapeActor, scrapeMissingActors } from './actorScrape'
+import { ACTOR_SCRAPE_MISSING_LIMIT, actorScrapeStatus, scrapeActor, scrapeMissingActors } from './actorScrape'
 import { importActorImages, removeActorImage } from './actorAsset'
 import { loadActorDetail, loadActorList } from './actorService'
 import { removeActor, saveActor, setActorAvatarOf } from './actorWrite'
@@ -164,5 +166,8 @@ export function registerActorIpc(): void {
   )
   ipcMain.handle(ActorChannels.scrapeMissing, () =>
     handle<ActorScrapeMissingResult>(() => scrapeMissingActors(ACTOR_SCRAPE_MISSING_LIMIT))
+  )
+  ipcMain.handle(ActorChannels.scrapeStatus, () =>
+    handle<ActorScrapeStatus>(() => actorScrapeStatus())
   )
 }

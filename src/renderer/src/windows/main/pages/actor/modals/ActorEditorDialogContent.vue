@@ -6,6 +6,7 @@
  * - 本组件不含任何操作按钮，取消 / 保存由外壳 `ActorEditorDialog.tsx` 的 footer 提供；
  * - 通过 `defineExpose` 暴露 `submit` / `saving` / `canSubmit`（ModalContentExpose）；
  * - 只提交用户能改的字段；头像与图集在详情页单独管理，不在这里出现；
+ * - 三围与罩杯只对女演员（`gender === 'female'`）出现，切换性别只影响表单显隐、不清空已填的值；
  * - 保存成功后 `emit('success', actorId)`，由外壳关窗并通知调用方刷新。
  */
 import { computed, reactive, ref } from 'vue'
@@ -58,6 +59,8 @@ const GENDER_OPTIONS = ACTOR_GENDERS.map((value) => ({
 }))
 
 const canSubmit = computed(() => name.value.trim().length > 0)
+/** 三围与罩杯只对女演员展示（男 / 其他 / 未设置都不显示） */
+const isFemale = computed(() => form.gender === 'female')
 
 function requestOf(): ActorSaveRequest {
   return {
@@ -139,22 +142,22 @@ defineExpose({ submit, saving, canSubmit })
       <t-form-item label="出生地 · 区 / 县">
         <t-input v-model="form.birthCounty" clearable placeholder="如 涩谷区" />
       </t-form-item>
-      <t-form-item label="罩杯">
+      <t-form-item v-if="isFemale" label="罩杯">
         <t-input v-model="form.cup" clearable placeholder="如 D" />
       </t-form-item>
     </div>
 
-    <div class="form-row form-row-four">
+    <div class="form-row" :class="{ 'form-row-four': isFemale }">
       <t-form-item label="身高（cm）">
         <t-input-number v-model="form.height" :min="0" :max="260" theme="normal" />
       </t-form-item>
-      <t-form-item label="胸围（cm）">
+      <t-form-item v-if="isFemale" label="胸围（cm）">
         <t-input-number v-model="form.bust" :min="0" :max="200" theme="normal" />
       </t-form-item>
-      <t-form-item label="腰围（cm）">
+      <t-form-item v-if="isFemale" label="腰围（cm）">
         <t-input-number v-model="form.waist" :min="0" :max="200" theme="normal" />
       </t-form-item>
-      <t-form-item label="臀围（cm）">
+      <t-form-item v-if="isFemale" label="臀围（cm）">
         <t-input-number v-model="form.hip" :min="0" :max="200" theme="normal" />
       </t-form-item>
     </div>

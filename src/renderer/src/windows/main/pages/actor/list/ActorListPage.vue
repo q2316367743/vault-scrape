@@ -2,7 +2,6 @@
   <page-layout
     title="演员"
     description="资料存在数据库里，头像与图集存在本机数据目录；点卡片进详情看全部出演作品。"
-    :padded="false"
   >
     <template #extra>
       <t-button variant="outline" :loading="scraping" @click="onScrapeMissing">
@@ -130,7 +129,8 @@ async function onScrapeMissing(): Promise<void> {
     MessageUtil.error(result.message)
     return
   }
-  MessageUtil.info(result.data.message)
+  const queued = result.data.queued
+  MessageUtil.info(queued > 0 ? `${result.data.message}，进度见概览页` : result.data.message)
   await load()
 }
 
@@ -165,7 +165,6 @@ function onLimitChange(value: unknown): void {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px 20px;
 }
 
 .actor-filters {

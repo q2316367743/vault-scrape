@@ -5,7 +5,11 @@
  * 契约：
  * - 纯展示，不取数、不改数据，编辑入口在页面 `#extra`；
  * - 头像走 `SensitiveImage` 但不传 `protect`：演员图片不参与 NSFW 保护，永远直接显示；
- * - 空字段统一显示「未填写」，不隐藏行，方便一眼看出还缺什么。
+ * - 空字段统一显示「未填写」，不隐藏行，方便一眼看出还缺什么；
+ * - 三围与罩杯只有女演员（`gender === 'female'`）才有，其余性别（男 / 其他 / 未设置）整行不展示，
+ *   库里可能残留的旧值也不在这里露出（口径见 docs/page/05-actor-pages.md）；
+ * - 「来源链接」不进资料格，单独一行放在资料块最后，用 `t-link` 展示、点击交系统默认浏览器打开；
+ * - 「简介」是描述性正文，用「边框 + 圆角」的独立容器装，正文用二级字色，跟上面的字段值区分开。
  */
 import { computed } from 'vue'
 import SensitiveImage from '@/components/SensitiveImage.vue'
@@ -27,21 +31,40 @@ interface ProfileCell {
   value: string
 }
 
+/** 三围与罩杯只对女演员展示 */
+const isFemale = computed(() => props.actor.gender === 'female')
+
 const cells = computed<ProfileCell[]>(() => {
   const actor = props.actor
-  return [
+  const list: ProfileCell[] = [
     { label: '性别', value: actor.gender ? actorGenderLabel(actor.gender) : EMPTY },
     { label: '生日', value: actor.birthday || EMPTY },
     { label: '出生地', value: actorBirthplaceText(actor) || EMPTY },
-    { label: '身高', value: actorHeightText(actor.height) || EMPTY },
-    { label: '三围', value: actorMeasurementsText(actor) || EMPTY },
-    { label: '罩杯', value: actor.cup || EMPTY },
-    { label: '来源链接', value: actor.sourceUrl || EMPTY },
+    { label: '身高', value: actorHeightText(actor.height) || EMPTY }
+  ]
+  if (isFemale.value) {
+    list.push(
+      { label: '三围', value: actorMeasurementsText(actor) || EMPTY },
+      { label: '罩杯', value: actor.cup || EMPTY }
+    )
+  }
+  list.push(
     { label: '收录时间', value: actor.scrapedAt > 0 ? formatTime(actor.scrapedAt) : '未刮削' },
     { label: '刮削插件', value: actor.scraperId || '—' },
     { label: '资料锁定', value: actor.locked ? '已锁定（刮削只补空白）' : '未锁定' }
-  ]
+  )
+  return list
 })
+
+/**
+ * 用系统默认浏览器打开来源页。
+ *
+ * 这里不写 `href`、也不让 `t-link` 自己跳转：主窗口的 `setWindowOpenHandler` 会把 `window.open`
+ * 交给 `shell.openExternal`（src/main/index.ts:65-68），应用窗口本身不会被带离当前页面。
+ */
+function openSource(): void {
+  window.open(props.actor.sourceUrl, '_blank')
+}
 
 const initial = computed(() => props.actor.name.trim().slice(0, 1) || '演')
 </script>
@@ -83,8 +106,23 @@ const initial = computed(() => props.actor.name.trim().slice(0, 1) || '演')
         </t-tag>
       </div>
 
-      <p v-if="actor.overview" class="profile-overview">{{ actor.overview }}</p>
-      <p v-else class="profile-overview is-empty">还没有简介。</p>
+      <div class="profile-overview-box">
+        <p v-if="actor.overview" class="profile-overview">{{ actor.overview }}</p>
+        <p v-else class="profile-overview is-empty">还没有简介。</p>
+      </div>
+
+      <div class="profile-line profile-source">
+        <span class="profile-line-label">来源链接</span>
+        <t-link
+          v-if="actor.sourceUrl"
+          class="profile-source-url"
+          theme="primary"
+          @click="openSource"
+        >
+          {{ actor.sourceUrl }}
+        </t-link>
+        <span v-else class="profile-source-url is-empty">{{ EMPTY }}</span>
+      </div>
     </div>
   </section>
 </template>
@@ -174,11 +212,29 @@ const initial = computed(() => props.actor.name.trim().slice(0, 1) || '演')
   color: var(--td-text-color-placeholder);
 }
 
+.profile-source-url {
+  font-size: 13px;
+  word-break: break-all;
+  cursor: pointer;
+}
+
+.profile-source-url.is-empty {
+  color: var(--td-text-color-placeholder);
+  cursor: default;
+}
+
+// 简介是「描述」而不是字段值：给一层边框 + 圆角的独立容器，正文降成二级字色
+.profile-overview-box {
+  padding: 10px 12px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-medium);
+}
+
 .profile-overview {
   margin: 0;
   font-size: 13px;
   line-height: 1.7;
-  color: var(--td-text-color-primary);
+  color: var(--td-text-color-secondary);
   white-space: pre-wrap;
 }
 

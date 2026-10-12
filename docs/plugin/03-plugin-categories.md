@@ -57,7 +57,7 @@ pluginApi.legacy()   // 只读：旧版平铺插件目录里的残留 .js
 | --- | --- | --- | --- |
 | 1 | 影片入库后 | 刮削流水线第 7 步 `enqueueItemActorScrape`（`scrapeFileJob.ts`） | 受设置 `scrape.actorScrape` 控制，走串行队列 |
 | 2 | 打开演员详情页 | `ActorDetailPage.vue` 的 `load()` 之后 | 受设置 `scrape.actorScrapeOnOpen`（默认开）控制；资料不全（没抓过 / 没头像 / 没生日）且未锁定才抓；**同一演员一次会话只试一次**（会话级 `Set` 去重），静默执行、失败不打扰 |
-| 3 | 详情页「抓取资料」 | `ActorDetailPage.vue` 的 `onScrape` | 手动，立即执行 |
+| 3 | 详情页「抓取资料」 | `ActorDetailPage.vue` 的 `onScrape` → `detail/modals/ActorScrapeDialog` | 手动：弹窗里单选一个已启用且编译通过的演员信息插件（默认上次用过的），只跑这一个 |
 | 4 | 列表页「补全缺失资料」 | `scrapeMissingActors`（`actorScrape.ts`，上限 `ACTOR_SCRAPE_MISSING_LIMIT`） | 批量补全，走串行队列 |
 
 `actorScrape.ts` 只取 actor 类别里「已启用且编译通过」的插件；插件列表由 `actorPlugins.listPluginSummaries()` 给出，调用走 `actorPlugins.invokePlugin(id, 'actor' | 'actorAssets', { actorName })`。影片刮削链路则只认 `moviePlugins`，两边不再共用一份插件列表。
@@ -70,12 +70,13 @@ pluginApi.legacy()   // 只读：旧版平铺插件目录里的残留 .js
 pages/plugin/
 ├── PluginHomePage.vue          # tab 条（值取自路由参数）+ 旧版残留提示 + <router-view>
 ├── components/                 # 三个类别共用
-│   ├── PluginManagerView.vue   # 左列表 + 右详情（props: kind），不自带页头，导入流程与确认弹窗在这
-│   ├── PluginList.vue          # 与类别无关；面板头放「刷新 / 导入」，事件上抛给管理视图
+│   ├── PluginManagerView.vue   # 左列表 + 右详情（props: kind），不自带页头，导入 / 批量删除的确认弹窗在这
+│   ├── PluginList.vue          # 与类别无关；行内勾选框 + 多选，事件上抛给管理视图
+│   ├── PluginListHeader.vue    # 面板头（全选 + 数量 + 刷新 / 导入）与批量操作条（启用 / 停用 / 删除 / 取消）
 │   ├── PluginDetail.vue        # 概览 + 配置区块；`#extra` 插槽留给类别专属面板
 │   ├── PluginConfigPanel.vue   # 环境变量填写
 │   └── PluginLegacyAlert.vue   # 旧版平铺目录残留提示
-├── composables/usePluginManager.ts   # usePluginManager(kind)：每个类别一份模块级状态
+├── composables/                # usePluginManager(kind)（每类一份模块级状态）+ usePluginSelection（多选 UI 状态）
 ├── modals/                     # 源码编辑器弹窗（与类别无关）
 ├── movie/                      # 影片信息：MoviePluginPage.vue + 离线数据包面板
 ├── actor/                      # 演员信息：ActorPluginPage.vue
@@ -85,6 +86,7 @@ pages/plugin/
 - 路由：`/plugin` 重定向到 `/plugin/movie`，子路由名分别是「影片信息插件」「演员信息插件」「翻译插件」；
 - 「当前选中的插件」按类别分别持久化（`vault-scrape:plugin-active:<kind>`），工具箱搜索页与「影片信息插件」页共用同一份 movie 选择；
 - 类别专属面板（当前只有内置插件的「离线数据包」）通过 `PluginDetail` 的 `#extra` 插槽注入，共用组件不感知具体类别；
+- 批量启停 / 删除：左栏每行勾选框 + 面板头全选（`usePluginSelection` 只管多选与失效清理，不落 localStorage），有选中项时面板头下出现批量条；`PluginManagerView` 收到 ID 数组后自己映射摘要、弹确认框、剔除内置插件（内置插件主进程拒绝删除），`usePluginManager` 的 `setEnabledMany` / `removeMany` 串行逐个调用现有单条 IPC（`plugin:<类别>:setEnabled` / `:remove`），完成后再刷新一次列表——**没有新增 IPC 通道 / 主进程接口**；
 - 离线数据包面板跟着「影片信息」搬到 `pages/plugin/movie/`。
 
 ## 7. 旧插件：不迁移，但会提示

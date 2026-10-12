@@ -372,7 +372,7 @@ interface PluginEnvField {
 | `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义与实现（当前仅影片类别的 `r18-offline`，见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)） |
 | `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
 | `src/preload/src/modules/plugin/` | `channelsOf(kind)` 通道常量与 `pluginApi.{movie,actor,translate,legacy}` 桥 |
-| `src/renderer/src/windows/main/pages/plugin/` | 插件页：外壳（`PluginHomePage.vue` 三个 tab + 旧版残留提示）与三个类别子页；共用管理视图 `components/PluginManagerView.vue`（左列表 + 右详情，`props: kind`）、列表（`PluginList.vue`，transparent 左栏，sortablejs 拖拽重排、整行可拖）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停 + `#extra` 类别专属插槽）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`）；`composables/usePluginManager.ts` 按类别各维护一份状态 |
+| `src/renderer/src/windows/main/pages/plugin/` | 插件页：外壳（`PluginHomePage.vue` 三个 tab + 旧版残留提示）与三个类别子页；共用管理视图 `components/PluginManagerView.vue`（左列表 + 右详情，`props: kind`，导入与批量删除的确认弹窗）、列表（`PluginList.vue`，transparent 左栏，sortablejs 拖拽重排、整行可拖、行内勾选多选）与面板头 `components/PluginListHeader.vue`（全选 + 数量 + 刷新 / 导入 + 批量操作条）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停 + `#extra` 类别专属插槽）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`）；`composables/usePluginManager.ts` 按类别各维护一份状态（批量启停 / 删除为串行循环，复用既有单条 IPC），`composables/usePluginSelection.ts` 管多选 UI 状态 |
 | `src/renderer/src/windows/main/pages/tools/` | 工具箱：索引页在根（`ToolsPage.vue` + `toolRegistry.ts`），子路由各自成目录——搜索工具在 `search/`（`ToolSearchPage.vue` 用 `SubPageLayout`：标题左侧返回图标 + 选插件 + 两个入口，插件选择与「影片信息插件」页共享 `usePluginManager('movie')`），影片详情抽屉在 `search/modals/`（`MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `search/composables/useMoviePreview.ts`） |
 
 ## 10. 完整示例插件

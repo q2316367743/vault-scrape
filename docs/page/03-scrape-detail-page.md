@@ -2,24 +2,26 @@
 
 ## 1. 定位与入口
 
-刮削的「进度 + 历史」集中在**概览页**（`/overview`）：顶部 7 张任务统计卡，下面是「当前刮削进度」卡片（可取消 / 继续）与「刮削记录」分页表。点记录表任意一行进**刮削进度详情**（`/overview/scrape?taskId=…`），只读展示该任务的任务信息与逐文件结果。
+刮削的「进度 + 历史」集中在**概览页**（`/overview`）：顶部 7 张任务统计卡，下面是「当前刮削进度」卡片（可取消 / 继续）、「演员资料补全」卡片（只读进度）与「刮削记录」分页表。点记录表任意一行进**刮削进度详情**（`/overview/scrape?taskId=…`），只读展示该任务的任务信息与逐文件结果。
 
 - 原「工作台」（`/workspace`：选资料库 → 逐级浏览目录 → 勾选影片排队）**已整体下线**，手动挑片入口一并删除。刮削入口只剩影视墙资料库抽屉里的整库「刮削」（候选 = 全库 `scrapedAt = 0` 的影片），见[影视墙页面](./04-media-wall-page.md)与[资料库](../media/01-media-library.md)。
 - 主进程 / preload 的 `scrape:browse`（资料库目录浏览）与 `scrape:start`（按 `media_item.id` 排队）通道**保留**，但渲染层当前没有调用方；渲染层原来包装 `browseMedia` 的 `src/renderer/src/api/scrape.ts` 现在只导出 `scrapeApi = window.preload.scrape`。
 - 数据来源：sqlite 侧 `dbApi.task.stats()` / `dbApi.task.list` / `dbApi.task.count`（`db` 域无信封）；主进程侧 `scrapeApi.listTasks(1)` / `getTask` / `running` / `cancel` / `resume` / `onProgress`（`ScrapeResult` 信封）。两条链路都不新增 IPC。
-- 页面约定：概览用 `PageLayout`（title「概览」，description「刮削进度与历史记录，点记录行查看逐文件结果」）；详情用 `SubPageLayout`（title「刮削进度详情」，description 是任务名，`fallback="/overview"`，返回图标按钮在标题左侧，**不要在 `#extra` 里再放返回按钮**）。
+- 页面约定：概览用 `PageLayout`（title「概览」，description「刮削与演员补全进度、历史记录，点记录行查看逐文件结果」）；详情用 `SubPageLayout`（title「刮削进度详情」，description 是任务名，`fallback="/overview"`，返回图标按钮在标题左侧，**不要在 `#extra` 里再放返回按钮**）。
 
 ## 2. 目录结构
 
 ```
 src/renderer/src/windows/main/pages/overview/
-├── OverviewPage.vue                    # 组装：7 张统计卡 + 进度卡片 + 记录表；行点击跳详情
+├── OverviewPage.vue                    # 组装：7 张统计卡 + 进度卡片 + 演员补全卡片 + 记录表；行点击跳详情
 ├── components/
 │   ├── StatCard.vue                    # 统计卡（原有）
 │   ├── ScrapeProgressCard.vue          # 当前刮削进度：任务 / 目录 / 进度条 / 取消 / 继续
+│   ├── ActorScrapeProgressCard.vue     # 演员资料补全：当前演员 / 进度条 / 已处理 · 失败 · 排队中 · 计划（只读）
 │   └── ScrapeTaskTable.vue             # 刮削记录表：任务列表 + 分页，行点击 open(taskId)
 ├── composables/
 │   ├── useScrapeOverview.ts            # 状态机：统计 / 记录分页 / 当前任务 / 进度订阅 / 取消 / 继续
+│   ├── useActorScrape.ts               # 演员补全队列：挂载拉快照 + 订阅 actor:progress 全量状态
 │   └── useScrapeTaskDisplay.ts         # 纯展示常量与工具：状态文案与主题色、时间格式化、百分比
 └── scrape/                             # 刮削进度详情（子页面独占子目录）
     ├── ScrapeDetailPage.vue            # 页面骨架：SubPageLayout + 任务信息 + 逐文件结果
@@ -58,6 +60,13 @@ src/renderer/src/windows/main/pages/overview/
 - `onMounted` 先订阅 `scrapeApi.onProgress`，再 `Promise.all([loadStats(), loadTasks(), loadCurrent()])`；`onUnmounted` 退订。
 - `cancel()` 成功后 `running = false` 并重新拉一次快照，提示「已取消，剩余影片可稍后继续」；`resume()` 成功后 `running = true` 并重新拉快照；两个动作共用 `acting` 给按钮做 loading。
 
+### `useActorScrape()`（概览的演员补全）
+
+- 返回 `{ status, hasTask, percentage, loadStatus }`；`hasTask = status.total > 0`，`percentage = toPercentage(status.finished, status.total)`。
+- 数据来自主进程的演员补全队列（与概览的刮削任务是完全独立的两条链路）：`onMounted` 先 `actorApi.onScrapeProgress(next => status.value = next)` 订阅 `actor:progress`，再 `void loadStatus()`（`actorApi.scrapeStatus()` + `isActorOk` 判定）拉一次快照；事件是**全量状态**而不是增量字段，直接覆盖本地值。
+- 队列在主进程跑，`onUnmounted` 只退订，关页面 / 切页不影响补全；重新挂载即可复原当前进度。
+- 内存态：跑空后保留最后一轮数字（卡片仍显示「已完成 / 有失败」），应用重启清零；卡片没有动作按钮，队列不支持取消。
+
 ### `useScrapeTaskDetail()`（详情）
 
 - 返回 `{ taskId, task, files, loading, failure, load }`。`taskId` 从 `route.query.taskId` 读，非 string 视为缺失。
@@ -75,7 +84,7 @@ src/renderer/src/windows/main/pages/overview/
 按项目约定只跑 `yarn run typecheck`，运行时行为手工验证：
 
 1. 侧栏不再有「工作台」；访问旧书签 `#/workspace` 不应再出现工作台页面（当前没有兜底路由，会显示空内容区）。
-2. 概览页自上而下是 7 张统计卡、「当前刮削进度」卡片、「刮削记录」表。
+2. 概览页自上而下是 7 张统计卡、「当前刮削进度」卡片、「演员资料补全」卡片、「刮削记录」表。
 3. 记录表分页：切到第 2 页、把每页条数改成 50 / 100，表格内容与总数应同步正确，改每页条数后回到第 1 页。
 4. 点记录行任意位置进详情页：侧栏「概览」仍高亮，标题左侧有返回按钮，点它回到概览。
 5. 详情页只读（没有取消 / 继续按钮）；正在跑的任务，进度条与逐文件状态应随推送变化，不需要刷新页面。
@@ -83,3 +92,4 @@ src/renderer/src/windows/main/pages/overview/
 7. 详情页手改地址去掉 `taskId`（`#/overview/scrape`）显示中文提示且不发请求；填一个不存在的 `taskId` 显示主进程的错误文案。
 8. 从影视墙资料库抽屉点「刮削」后回到概览页：进度卡片与记录表出现同一条任务；扫描触发的自动刮削提示应写「进度见概览页」。
 9. 本页没有图片位，因此不涉及 NSFW 遮罩。
+10. 演员页点「补全缺失资料」后回概览页：提示写「…，进度见概览页」，卡片标题「演员资料补全」，标签从「补全中」变「已完成」，当前演员与 `已处理 / 计划` 随推送递增；有失败时标签「有失败」且进度条变红；关掉概览页再回来数字不丢（队列在主进程），重启应用后回到「空闲」。

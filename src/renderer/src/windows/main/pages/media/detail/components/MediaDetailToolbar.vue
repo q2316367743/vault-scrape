@@ -1,26 +1,14 @@
 <template>
   <div class="detail-bar" :class="{ 'is-solid': collapsed }">
-    <t-button
-      class="bar-button"
-      variant="text"
-      shape="circle"
-      aria-label="返回"
-      @click="goBack"
-    >
+    <t-button class="bar-button" shape="circle" aria-label="返回" @click="goBack">
       <chevron-left-icon />
     </t-button>
 
     <span class="bar-title" :title="title" :aria-hidden="!collapsed">{{ title }}</span>
 
-    <t-dropdown
-      :options="options"
-      trigger="click"
-      placement="bottom-right"
-      @click="onAction"
-    >
+    <t-dropdown :options="options" trigger="click" placement="bottom-right" @click="onAction">
       <t-button
         class="bar-button"
-        variant="text"
         :shape="collapsed ? 'circle' : 'round'"
         :loading="busy"
         aria-label="更多"

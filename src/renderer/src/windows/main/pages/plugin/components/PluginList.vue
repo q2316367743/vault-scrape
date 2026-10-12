@@ -1,22 +1,18 @@
 <template>
   <aside class="plugin-list">
-    <div class="panel-head">
-      <div class="panel-heading">
-        <span class="panel-title">已安装插件</span>
-        <span class="plugin-count">{{ plugins.length }}</span>
-      </div>
-      <div class="panel-actions">
-        <t-tooltip content="刷新" placement="top-right">
-          <t-button variant="text" size="small" :loading="loading" @click="emit('refresh')">
-            <template #icon><refresh-icon /></template>
-          </t-button>
-        </t-tooltip>
-        <t-button theme="primary" size="small" @click="emit('import-plugins')">
-          <template #icon><add-icon /></template>
-          导入
-        </t-button>
-      </div>
-    </div>
+    <plugin-list-header
+      :total="plugins.length"
+      :loading="loading"
+      :selected-count="selectedCount"
+      :all-selected="allSelected"
+      :partial-selected="partialSelected"
+      @refresh="emit('refresh')"
+      @import-plugins="emit('import-plugins')"
+      @toggle-all="toggleAll"
+      @set-enabled="onSetEnabled"
+      @remove-many="onRemoveMany"
+      @clear="clear"
+    />
 
     <div ref="bodyRef" class="plugin-body">
       <t-loading :loading="loading" size="small">
@@ -29,6 +25,12 @@
             @click="emit('select', plugin.id)"
           >
             <div class="plugin-row">
+              <span class="plugin-check" @click.stop>
+                <t-checkbox
+                  :checked="selectedIds.has(plugin.id)"
+                  @change="onCheck(plugin.id, $event)"
+                />
+              </span>
               <t-tooltip content="按住任意位置拖动即可调整顺序" placement="top-left">
                 <span class="drag-handle"><move-icon /></span>
               </t-tooltip>
@@ -70,9 +72,11 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { AddIcon, MoveIcon, RefreshIcon } from 'tdesign-icons-vue-next'
+import { MoveIcon } from 'tdesign-icons-vue-next'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import type { PluginSummary } from '@common/types/plugin'
+import { usePluginSelection } from '../composables/usePluginSelection'
+import PluginListHeader from './PluginListHeader.vue'
 
 const props = defineProps<{
   plugins: PluginSummary[]
@@ -88,7 +92,26 @@ const emit = defineEmits<{
   refresh: []
   /** 面板头上的「导入」，由管理视图走完整的导入 / 覆盖确认流程 */
   'import-plugins': []
+  /** 批量启用 / 停用选中的插件 */
+  'set-enabled': [ids: string[], enabled: boolean]
+  /** 批量删除选中的插件（确认弹窗在管理视图） */
+  'remove-many': [ids: string[]]
 }>()
+
+const { selectedIds, selectedList, selectedCount, allSelected, partialSelected, toggle, toggleAll, clear } =
+  usePluginSelection(() => props.plugins)
+
+function onCheck(id: string, checked: boolean): void {
+  toggle(id, checked)
+}
+
+function onSetEnabled(enabled: boolean): void {
+  emit('set-enabled', selectedList.value, enabled)
+}
+
+function onRemoveMany(): void {
+  emit('remove-many', selectedList.value)
+}
 
 const bodyRef = ref<HTMLElement | null>(null)
 let sortable: Sortable | null = null
@@ -112,6 +135,9 @@ function setupSortable(): void {
     animation: 150,
     // 整行都能拖（不限定手柄，手柄只是视觉提示）；没有位移的点击不会触发原生拖拽，仍按选中处理
     draggable: '.plugin-item',
+    // 勾选框区域不参与拖拽；也不拦它的 mousedown，否则勾选框会丢掉键盘焦点
+    filter: '.plugin-check',
+    preventOnFilter: false,
     ghostClass: 'plugin-item-ghost',
     onEnd: (event: SortableEvent) => {
       const { oldIndex, newIndex } = event
@@ -141,37 +167,6 @@ onBeforeUnmount(destroySortable)
   overflow: hidden;
 }
 
-.panel-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-shrink: 0;
-  height: 40px;
-  padding: 0 8px 0 12px;
-  border-bottom: 1px solid var(--fluent-card-border);
-}
-
-.panel-heading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.panel-actions {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-  gap: 2px;
-}
-
-.panel-title {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--td-text-color-primary);
-}
-
 .plugin-body {
   flex: 1;
   min-height: 0;
@@ -179,9 +174,11 @@ onBeforeUnmount(destroySortable)
   overflow-y: auto;
 }
 
-.plugin-count {
-  font-size: 12px;
-  color: var(--td-text-color-placeholder);
+// 勾选框：点它只做多选，不触发整行的「选中插件」
+.plugin-check {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .plugin-item {

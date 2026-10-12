@@ -2,7 +2,7 @@
 
 ## 实现思路
 
-九个一级页面（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理（见[存储管理页面](./02-storage-page.md)）、影视墙详情（见[影视墙页面](./04-media-wall-page.md)）、演员详情（见[演员页面](./05-actor-pages.md)）、工具搜索（见下文「工具」）与刮削进度详情（见[刮削进度与详情页](./03-scrape-detail-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（按类别分影片信息 / 演员信息 / 翻译三个 tab；导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），概览接了任务与刮削模块 IPC（任务统计 / 分页记录 / 当前任务快照 / 进度推送 / 取消 / 继续），影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「还原刮削前」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料）。
+九个一级页面（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理（见[存储管理页面](./02-storage-page.md)）、影视墙详情（见[影视墙页面](./04-media-wall-page.md)）、演员详情（见[演员页面](./05-actor-pages.md)）、工具搜索（见下文「工具」）与刮削进度详情（见[刮削进度与详情页](./03-scrape-detail-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（按类别分影片信息 / 演员信息 / 翻译三个 tab；导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），概览接了任务与刮削模块 IPC（任务统计 / 分页记录 / 当前任务快照 / 进度推送 / 取消 / 继续）与演员补全队列的快照 + 进度推送，影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「还原刮削前」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料 / 批量补全）。
 
 页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
@@ -33,10 +33,10 @@
 
 ## 概览
 
-- 数据来源：`dbApi.task.stats()` 取任务统计，`dbApi.task.list` / `count` 取刮削记录（分页）；主进程侧 `scrapeApi.listTasks(1)` 取最近一条任务作为「当前任务」，`onProgress` 订阅进度，`cancel` / `resume` 作用于它。
-- 结构：7 张统计卡片（总数 / 等待中 / 进行中 / 已成功 / 已失败 / 已取消 / 已中断）（`components/StatCard.vue`，props `{ label, value }`）+「当前刮削进度」卡片（`components/ScrapeProgressCard.vue`：任务 / 目录 / 更新时间、进度条与已处理 · 失败 · 计划，底部是取消 / 继续按钮，没有任务时提示「在影视墙的资料库抽屉里可发起整库刮削」）+「刮削记录」表（`components/ScrapeTaskTable.vue`：任务名 / 状态 / 已处理 · 计划 / 失败 / 更新时间 + 分页，默认每页 20 条，可选 20 / 50 / 100）。
+- 数据来源：`dbApi.task.stats()` 取任务统计，`dbApi.task.list` / `count` 取刮削记录（分页）；主进程侧 `scrapeApi.listTasks(1)` 取最近一条任务作为「当前任务」，`onProgress` 订阅进度，`cancel` / `resume` 作用于它；演员补全队列走另一条链路 `actorApi.scrapeStatus()`（挂载快照）+ `actorApi.onScrapeProgress`（`actor:progress` 全量状态推送）。
+- 结构：7 张统计卡片（总数 / 等待中 / 进行中 / 已成功 / 已失败 / 已取消 / 已中断）（`components/StatCard.vue`，props `{ label, value }`）+「当前刮削进度」卡片（`components/ScrapeProgressCard.vue`：任务 / 目录 / 更新时间、进度条与已处理 · 失败 · 计划，底部是取消 / 继续按钮，没有任务时提示「在影视墙的资料库抽屉里可发起整库刮削」）+「演员资料补全」卡片（`components/ActorScrapeProgressCard.vue`：当前演员 / 更新时间、进度条与已处理 · 失败 · 排队中 · 计划，只读；没有任务时空态「当前没有演员补全任务」，状态标签在补全中 / 有失败 / 已完成 / 空闲之间切换）+「刮削记录」表（`components/ScrapeTaskTable.vue`：任务名 / 状态 / 已处理 · 计划 / 失败 / 更新时间 + 分页，默认每页 20 条，可选 20 / 50 / 100）。
 - 表格列：名称 / 状态 / 进度 / 更新时间。状态用带主题色的标签（`TASK_STATUS_THEMES` 按 `TaskStatus` 取色），进度显示 `finished / total`，更新时间用 dayjs 格式化为 `YYYY-MM-DD HH:mm`。
-- **点记录表任意一行**进刮削进度详情（`/overview/scrape?taskId=…`，整行可点，光标为手型）；取消 / 继续留在进度卡片，详情页保持只读。详见[刮削进度与详情页](./03-scrape-detail-page.md)。
+- **点记录表任意一行**进刮削进度详情（`/overview/scrape?taskId=…`，整行可点，光标为手型）；取消 / 继续留在进度卡片，详情页保持只读。演员补全卡片没有动作按钮（队列不支持取消），进度是主进程内存态、重启清零。详见[刮削进度与详情页](./03-scrape-detail-page.md)。
 
 ## 影视墙
 
@@ -53,10 +53,11 @@
 ## 插件
 
 - 插件页是**一个入口 + 三个 tab**（影片信息 / 演员信息 / 翻译，类别与契约见 [../plugin/03-plugin-categories.md](../plugin/03-plugin-categories.md)）：外壳 `pages/plugin/PluginHomePage.vue` 只放 `t-tabs` 条、旧版插件提示与 `<router-view>`（自身不套 `page-layout`，避免双层页头），三个 tab 分别路由到 `plugin/movie/MoviePluginPage.vue` / `plugin/actor/ActorPluginPage.vue` / `plugin/translate/TranslatePluginPage.vue`；每个类别页都复用 `components/PluginManagerView.vue`（`props: { kind }`，左列表 + 右详情，自身不套 `page-layout`、不再有标题 / 说明页头）、`components/PluginList.vue`（插件列表，左）与 `components/PluginDetail.vue`（概览 + 启停 + 编辑代码 + 删除 + 配置区块，右）。
-- 左栏不是卡片：`PluginList.vue` 是透明的 `<aside>`，只用一条右侧分隔线（`--fluent-sidebar-border`）与右栏分区，自身带 40px 高的「已安装插件 + 数量 + 刷新 / 导入」头（两个按钮 emit `refresh` / `import-plugins`，由 `PluginManagerView` 执行），露出主容器的亚克力材质。
-- 列表项固定单行：最左是拖拽手柄（`MoveIcon`，悬停提示「按住任意位置拖动即可调整顺序」），接着名称 +（内置插件）「内置」标签 + 单行省略的描述，描述完整内容与详情页「说明」一样通过 `t-tooltip` 悬停查看；右侧用 `size="small"` 的状态标签显示「已启用 / 已停用」与「待填写变量 / 加载失败」。
-- 拖拽排序用 sortablejs：容器取**第一个列表项的父节点**（不假设 tdesign 内部层级——`t-list` 外层若再包一层 `ul`，容器取错会让 Sortable 静默失效），**整行都可拖**（没有位移的点击不会触发原生拖拽，仍按点击处理，即选中插件；手柄只是视觉提示）。拖完先就地重排本地列表，再走 `plugin:<类别>:reorder`（如 `plugin:movie:reorder`）写回该类别目录下的 `plugins.json`；主进程返回的完整列表作为最终顺序，失败则报错并重新拉取列表还原。
-- 状态在 `composables/usePluginManager.ts`（`usePluginManager(kind)`，按类别各持一份模块级状态；列表、选中持久化到 localStorage、启停、排序、导入、删除、源码读写、`applySummary` 就地更新单条摘要）里；IPC 走 `api/plugin.ts` 的 `pluginBridge(kind)`（`pluginApi.movie` / `.actor` / `.translate`）。搜索与影片详情原来挂在插件页，现已整体迁到工具箱，见下文「工具」。
+- 左栏不是卡片：`PluginList.vue` 是透明的 `<aside>`，只用一条右侧分隔线（`--fluent-sidebar-border`）与右栏分区，自身带 40px 高的面板头 `components/PluginListHeader.vue`——「全选复选框 + 已安装插件 + 数量 + 刷新 / 导入」（事件 `refresh` / `import-plugins` / `toggle-all` 上抛，由 `PluginManagerView` 执行），露出主容器的亚克力材质。
+- 列表项固定单行：最左是勾选框（多选用，点它 `.stop` 只切换勾选、不会连带选中插件），接着是拖拽手柄（`MoveIcon`，悬停提示「按住任意位置拖动即可调整顺序」），再是名称 +（内置插件）「内置」标签 + 单行省略的描述，描述完整内容与详情页「说明」一样通过 `t-tooltip` 悬停查看；右侧用 `size="small"` 的状态标签显示「已启用 / 已停用」与「待填写变量 / 加载失败」。
+- 批量操作用选中项驱动：勾选状态在 `composables/usePluginSelection.ts`（纯 UI 状态、不落 localStorage，列表刷新后自动淘汰已不存在的 ID），有选中项时面板头下方出现一条批量操作条（启用 / 停用 / 删除 / 取消，同为 `PluginListHeader.vue` 的第二个根节点），事件经 `PluginList` 上抛 ID 数组；`PluginManagerView` 负责确认弹窗与内置插件剔除（内置插件不可删除），`usePluginManager` 的 `setEnabledMany` / `removeMany` **串行**逐个落盘（`plugins.json` 是「读 → 改 → 写」，并发会互相覆盖；插件数量只有个位数）后统一刷新，失败项聚合提示。
+- 拖拽排序用 sortablejs：容器取**第一个列表项的父节点**（不假设 tdesign 内部层级——`t-list` 外层若再包一层 `ul`，容器取错会让 Sortable 静默失效），**整行都可拖**（没有位移的点击不会触发原生拖拽，仍按点击处理，即选中插件；手柄只是视觉提示），勾选框区域用 `filter: '.plugin-check'` + `preventOnFilter: false` 排除在拖拽外且不拦它的 mousedown。拖完先就地重排本地列表，再走 `plugin:<类别>:reorder`（如 `plugin:movie:reorder`）写回该类别目录下的 `plugins.json`；主进程返回的完整列表作为最终顺序，失败则报错并重新拉取列表还原。
+- 状态在 `composables/usePluginManager.ts`（`usePluginManager(kind)`，按类别各持一份模块级状态；列表、选中持久化到 localStorage、启停 / 批量启停、排序、导入、删除 / 批量删除、源码读写、`applySummary` 就地更新单条摘要）里；IPC 走 `api/plugin.ts` 的 `pluginBridge(kind)`（`pluginApi.movie` / `.actor` / `.translate`）。搜索与影片详情原来挂在插件页，现已整体迁到工具箱，见下文「工具」。
 - 环境变量在插件页右栏的**配置区块**（`components/PluginConfigPanel.vue`）填写：只在插件声明了环境变量（`hasEnv`）时渲染，内置插件与没写 `env` 的脚本插件都不会出现空区域；选中插件后按声明表渲染多行文本域，保存以插件为单位；环境变量一律按敏感处理，明文永不回传，文本域留空表示保持已保存的值。保存成功后用主进程返回的 `PluginSummary` 上抛（`PluginDetail` 的 `changed` → 页面的 `applySummary`），列表上的「待填写变量」标签即时更新，不整表刷新。
 - 安装（导入 / 保存源码）时会在沙箱里执行一次脚本，读取 `env` 声明并写入索引，不联网、不调用四个方法；声明表即配置区块的数据源。
 - 影片详情是命令式抽屉（现位于 `pages/tools/search/`）：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
@@ -105,7 +106,7 @@
 | --- | --- |
 | 存储-上传 / 下载 | **入口已随存储页只读改造下线**（`PathDialog` 整套删除）。将来恢复上传 / 下载时再按本行做法接本机文件 / 目录选择器（dialog 域 IPC 已就绪） |
 | 设置-翻译服务 | 翻译服务实现（当前只有开关与目标语言） |
-| 刮削 | 按条目挑片入口（`scrape:browse` / `scrape:start` 通道保留、渲染层暂无调用方）；消费插件产出的「下载配置」并真正下载（含封面角标、NFO 生成、命名落盘） |
+| 刮削 | 按条目挑片入口（`scrape:browse` / `scrape:start` 通道保留、渲染层暂无调用方）；消费插件产出的「下载配置」并真正下载（含封面角标、NFO 生成、命名落盘）；演员补全队列的**取消 / 逐位结果历史**（当前只有概览页的内存态进度，不落库） |
 | 工具 | 在线番号解析、批量重命名、NFO 校验等工具；搜索工具（`/tools/search`）已接入 |
 | 插件 | 在线插件仓库 / 远程更新；插件请求走代理；子进程级隔离（`utilityProcess`）；编辑器语法高亮；内置离线数据包的增量更新与后台下载（当前只提示、由用户手动触发）；环境变量的「清空 / 单独重置」交互 |
 | 全局 | 暗色模式（`theme.less` 目前只有亮色一套） |

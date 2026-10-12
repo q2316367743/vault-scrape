@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron'
+import { ipcRenderer, type IpcRendererEvent } from 'electron'
 import type {
   ActorDetailRequest,
   ActorDetailResult,
@@ -13,7 +13,8 @@ import type {
   ActorSaveResult,
   ActorScrapeMissingResult,
   ActorScrapeRequest,
-  ActorScrapeResult
+  ActorScrapeResult,
+  ActorScrapeStatus
 } from '@common/types/actor'
 import { ActorChannels } from './actorChannels'
 
@@ -58,7 +59,20 @@ export const actorApi = {
 
   /** 批量抓取资料不全的演员 */
   scrapeMissing: (): Promise<ActorResult<ActorScrapeMissingResult>> =>
-    ipcRenderer.invoke(ActorChannels.scrapeMissing)
+    ipcRenderer.invoke(ActorChannels.scrapeMissing),
+
+  /** 读补全队列的当前状态（挂载时拉一次快照，之后靠进度事件覆盖） */
+  scrapeStatus: (): Promise<ActorResult<ActorScrapeStatus>> =>
+    ipcRenderer.invoke(ActorChannels.scrapeStatus),
+
+  /** 订阅补全队列进度，返回取消订阅函数 */
+  onScrapeProgress: (listener: (status: ActorScrapeStatus) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, payload: ActorScrapeStatus): void => listener(payload)
+    ipcRenderer.on(ActorChannels.progress, handler)
+    return () => {
+      ipcRenderer.removeListener(ActorChannels.progress, handler)
+    }
+  }
 }
 
 export type ActorApi = typeof actorApi
