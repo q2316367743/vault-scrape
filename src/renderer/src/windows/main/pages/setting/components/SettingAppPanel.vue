@@ -14,7 +14,7 @@
     <t-list-item>
       <t-list-item-meta
         title="NSFW 保护"
-        description="开启后，标记为 NSFW 的存储会隐藏列表、搜索与详情页的敏感图片"
+        description="总开关：开启后，标记为 NSFW 的存储与资料库会隐藏列表、搜索与详情页的敏感图片；关闭时一律显示"
       />
       <template #action>
         <div class="setting-field"><t-switch v-model="setting.nsfwProtection" /></div>

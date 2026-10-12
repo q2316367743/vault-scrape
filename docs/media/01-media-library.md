@@ -285,7 +285,7 @@
 | 字段 | 默认 | 作用 |
 | --- | --- | --- |
 | `type` | `'movie'` | 库类型（「影视」/「剧集」）；决定扫描用哪份后缀清单与**条目粒度**——影视库一个视频一条影片、剧集库一整部剧一条剧集，**建库后不可修改** |
-| `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：墙面卡片与详情页按「全局 NSFW 开关 + 存储 `nsfw` 标记 + 库级 `nsfwProtection`」任一命中即遮罩（`MediaWallItem.nsfwProtected` 由墙面下发） |
+| `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：总开关（应用设置 `nsfwProtection`）是前提，开启时命中「存储 `nsfw` 标记」或「库级 `nsfwProtection`」任一即遮罩，**总开关关闭时本标记不生效**（`MediaWallItem.nsfwProtected` 由墙面下发，渲染层与总开关、连接标记合并成 `protect`） |
 | `minFileSizeMb` | `0` | 小于该体积（MB）的视频不参与扫描与刮削；`0` = 不过滤。表单里是数字输入（步进 100） |
 | `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息 |
 | `moveEnabled` | `false` | 是否把影片移到 `moveDirectory`（开不开都会先落进影片自己的同名文件夹） |

@@ -43,7 +43,8 @@
  * 契约：
  * - 剧集卡多一枚「N 季 M 集」标签、不显示番号（剧集没有番号，`item.num` 恒为空串）；
  * - 封面只走 `item.coverUrl`（`storage://` 协议），没有封面时显示占位，不自己拼路径；
- * - NSFW 保护按「全局开关 + 存储 nsfw 标记 + 所属资料库的 nsfwProtection」判定，任一命中即遮罩；
+ * - NSFW 保护以总开关为前提，命中「存储 nsfw 标记」或「所属资料库的 nsfwProtection」任一即遮罩，
+ *   总开关关闭时一律显示；
  * - 点击整张卡片跳详情页，参数只带 `itemId`（影片身份），播放与更细的信息都在那边；
  *   卡片内其它可点击元素（如遮罩按钮）必须自己阻止冒泡。
  */
@@ -63,9 +64,11 @@ const props = defineProps<{
 }>()
 
 const router = useRouter()
-const { active } = useNsfwProtection(computed(() => props.connection))
-/** 全局开关 + 存储标记命中，或所属资料库自己要求按敏感内容处理 */
-const protect = computed(() => active.value || props.item.nsfwProtected)
+/** 最终遮罩口径：总开关为前提，存储标记或库级 nsfwProtection 命中即遮罩（见 `useNsfwProtection`） */
+const { protect } = useNsfwProtection(
+  computed(() => props.connection),
+  () => props.item.nsfwProtected
+)
 /** 剧集卡的第二枚标签：N 季 M 集；影片返回空串，模板里不渲染 */
 const episodeSummary = computed(() =>
   props.item.type === 'series' ? `${props.item.seasonCount} 季 ${props.item.episodeCount} 集` : ''

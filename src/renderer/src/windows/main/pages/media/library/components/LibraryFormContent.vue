@@ -59,7 +59,10 @@
       <span class="form-label">NSFW 保护</span>
       <div class="form-control form-control-inline">
         <t-switch v-model="nsfwProtection" />
-        <span class="form-note">开启后，库内影片的图片默认隐藏，需要点击才显示（存储的 nsfw 标记同样生效）</span>
+        <span class="form-note">
+          开启后，本库影片按敏感内容处理（图片默认隐藏、点击才显示）；需先打开应用设置里的 NSFW
+          保护总开关，存储的 nsfw 标记同样生效
+        </span>
       </div>
     </div>
 

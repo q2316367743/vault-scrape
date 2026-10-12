@@ -135,7 +135,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
   的整数。校验失败抛 `invalidArgument`（中文提示）。
 - 读取失败（文件损坏 / JSON 非法）一律 `console.error` 后回落空列表，不阻塞启动；逐条归一化时 `id` 或 `name` 为空的记录会被丢弃。
 - 连接上 **只剩一个策略字段** `nsfw: boolean`：标记为敏感数据源，只有标记过的存储才会被 NSFW 保护处理（渲染层用
-  `useNsfwProtection(connection)` 判定）。 **`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从
+  `useNsfwProtection(connection)` 判定；**总开关（应用设置 `nsfwProtection`）关着时该标记不产生任何遮罩**，见[设置项清单](../setting/02-setting-items.md)）。 **`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从
   `FileConnection`、连接草稿与落盘形状里删除**：刮削器是资料库自己的配置（见[资料库](../media/01-media-library.md)
   ），一个存储可以被多个资料库复用、各自选不同的刮削器；存储页的连接弹窗（`ConnectionPolicyField.vue`）因此也只剩 NSFW 开关，旧的
   `useScraperOptions` 只再被资料库表单复用。

@@ -5,7 +5,7 @@
  * - 只认主进程给的结果：`itemId` 由播放窗口的装载结果（`player:load` / `player:switch`）决定，不读路由；
  * - 侧栏比详情页**轻**：不搬详情页那套「展示口径」（封面块 / 剧照墙 / 信息格），
  *   只折算封面、标题与几项关键元信息，避免播放窗口被详情页的模块拖住；
- * - NSFW 判定与详情页同一套规则（全局开关 + 该存储 nsfw 标记 + 所属资料库的 nsfwProtection），
+ * - NSFW 判定与详情页同一套规则（以总开关为前提，命中该存储 nsfw 标记或所属资料库的 nsfwProtection），
  *   用的是共享的 `useNsfwProtection`；
  * - 换集不在这里落状态：`select` 只改本地高亮，真正的换集由窗口层重新 `open`（主进程是权威）。
  */
@@ -51,8 +51,8 @@ export function usePlaySidebar(): PlaySidebar {
   const connection = computed(
     () => connections.value.find((item) => item.id === detail.value?.item.connectionId) ?? null
   )
-  const { active } = useNsfwProtection(connection)
-  const protect = computed(() => active.value || detail.value?.item.nsfwProtected === true)
+  /** 最终遮罩口径：总开关为前提，存储标记或库级 nsfwProtection 命中即遮罩 */
+  const { protect } = useNsfwProtection(connection, () => detail.value?.item.nsfwProtected === true)
 
   const title = computed(() => {
     const item = detail.value?.item
