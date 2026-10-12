@@ -3,13 +3,14 @@ import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { appendLog } from '$/db/repo/logRepo'
-import { bindWindowState } from '$/modules/appWindow/appWindowIpc'
+import { bindAppWindow, bindWindowState } from '$/modules/appWindow/appWindowIpc'
 import { disposeFileClients } from '$/modules/file/fileClientManager'
 import { disposeMediaPlayServer } from '$/modules/media/mediaPlayServer'
 import { runOfflineStartupCheck } from '$/modules/offline/offlineCheck'
 import { stopSession } from '$/modules/player/playerSession'
 import { markInterruptedOnStartup } from '$/modules/scrape/scrapeRunner'
 import { registerMediaProtocol, registerMediaScheme } from '$/modules/media/mediaProtocol'
+import { createTray, markQuitting, showMainWindow } from '$/modules/tray/tray'
 import { registerIpc } from '$/registerIpc'
 
 // 自定义协议必须在 app ready 之前登记为特权协议，否则渲染层的 storage:// 会被拦截
@@ -57,6 +58,10 @@ function createWindow(): void {
   })
 
   bindWindowState(mainWindow)
+  bindAppWindow(mainWindow)
+
+  // 托盘常驻：菜单只有「打开」「退出」，并接管「关闭 = 隐藏」的窗口语义（见 modules/tray）
+  createTray(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
@@ -116,11 +121,16 @@ app.whenReady().then(() => {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    // 窗口还在但被「关闭」隐藏过：Dock 图标恢复后点它要把窗口找回来，不能当成已打开
+    else showMainWindow()
   })
 })
 
 // 退出前释放文件模块的连接（WebDAV/SMB 会话、句柄）、收掉 mpv 与回环播放服务
 app.on('before-quit', () => {
+  // 先解除「关闭 = 隐藏」的拦截，再让各窗口正常关闭；托盘「退出」之外的退出路径（Cmd+Q、
+  // 系统注销）也必须走这里，否则窗口关闭会被当成隐藏、进程退不掉
+  markQuitting()
   void disposeFileClients()
   void disposeMediaPlayServer()
   void stopSession()

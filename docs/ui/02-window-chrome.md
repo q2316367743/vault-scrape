@@ -51,7 +51,7 @@
 | --- | --- | --- | --- |
 | `appWindow:minimize` | 渲染层 → 主进程 `invoke` | `minimize()` | `Promise<void>` |
 | `appWindow:toggleMaximize` | `invoke` | `toggleMaximize()` | `Promise<boolean>`（目标态，`true` = 已最大化） |
-| `appWindow:close` | `invoke` | `close()` | `Promise<void>` |
+| `appWindow:close` | `invoke` | `close()` | `Promise<void>`（主进程把主窗口的 `close` 拦成「隐藏到托盘」，见 [04-tray-and-dock.md](./04-tray-and-dock.md)） |
 | `appWindow:isMaximized` | `invoke` | `isMaximized()` | `Promise<boolean>` |
 | `appWindow:setThemeSource` | `invoke` | `setThemeSource(source)` | `Promise<void>`，`source: 'light' \| 'dark' \| 'system'` |
 | `appWindow:maximizedChanged` | 主进程 → 渲染层 `send` | `onMaximizedChange(listener)` | `() => void`（退订函数） |
@@ -90,6 +90,19 @@ macOS 的 vibrancy 与 Windows 的 acrylic 由**主进程**的系统主题决定
 | 窗口材质的深浅跟随 | 渲染层档位由 `AppTheme.ts` 的 `themeMode` 决定，主进程只做 `nativeTheme.themeSource` 落值 |
 | 标题栏高度、红黄绿灯位置 | `AppTitleBar.vue` 的 `.title-bar` 高度、`.title-bar.is-mac` 的 `padding-left` **与** `platformWindowOptions()` 的 `trafficLightPosition` 需一起改 |
 | 窗口按钮尺寸 | `AppTitleBar.vue` 中 `.window-button` 的 46×40 |
+| 换应用 / 托盘图标 | 源图放进 `resources/`，各文件的用途见「图标资源」 |
+
+## 图标资源
+
+| 文件 | 用途 |
+| --- | --- |
+| `resources/icon.png` | 应用图标源图（256×256 logo）。主进程只在 Linux 把它当 `BrowserWindow` 的 `icon`（`src/main/index.ts` 的 `process.platform === 'linux' ? { icon } : {}`）；macOS 的窗口图标取打包后的 `icns`，Windows 取 exe 内嵌图标 |
+| `resources/logo16.png` + `logo16@2x.png` | 托盘图标（16pt / Retina 32px，macOS 标成模板图），详见 [04-tray-and-dock.md](./04-tray-and-dock.md) |
+| `resources/logo{32,64,128,256}.png` | 同一个 logo 的其它尺寸源图，留给打包图标与文档使用，代码里没有引用 |
+| `build/icon.icns`、`build/icon.ico`、`build/icon.png` | **打包用的**应用图标（`electron-builder.yml` 的 `directories.buildResources: build`），当前仍是旧图标；要换成 logo 需要一张 ≥512（macOS 的 `icns` 最好有 1024 的 `@2x`）的源图 |
+
+- 托盘必须用小图：macOS 按原始像素摆放托盘图标，512 / 256 的图会把整个托盘区铺满。
+- `resources/**` 已在 `electron-builder.yml` 的 `asarUnpack` 里，`?asset` 生成的运行时路径与 `@2x` 同目录约定在打包后同样成立。
 
 ## 已知限制
 
@@ -103,4 +116,5 @@ macOS 的 vibrancy 与 Windows 的 acrylic 由**主进程**的系统主题决定
 ## 注意事项
 
 - 只做 `yarn typecheck`，不跑 `dev` / `build` 作为验证手段。
+- 主窗口的「关闭」不是退进程：主进程把 `close` 拦成 `hide()`，恢复入口是托盘「打开」，Dock 显隐与托盘契约见 [04-tray-and-dock.md](./04-tray-and-dock.md)。
 - 新增 TDesign 组件（如本项目新引入的 `TTooltip`）必须**手工**补进 `src/renderer/src/renderer/components.d.ts` 的两处列表：该文件由 `unplugin-vue-components` 在 dev/build 时生成，不跑构建就不会自动更新，缺失会导致 `typecheck` 失败。

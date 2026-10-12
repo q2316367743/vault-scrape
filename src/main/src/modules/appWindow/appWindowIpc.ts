@@ -4,6 +4,22 @@ import { AppWindowChannels, type WindowThemeSource } from '~/modules/appWindow/a
 /** 合法取值白名单：渲染层入参不可信，非法值交给 Electron 会直接抛错 */
 const THEME_SOURCES: readonly WindowThemeSource[] = ['light', 'dark', 'system']
 
+/** 应用主窗口：托盘要能看见它（显示 / 聚焦），窗口域里只留这一个引用 */
+let appWin: BrowserWindow | null = null
+
+/** 登记应用主窗口；窗口关闭后自动置空，调用方不必自己解绑 */
+export function bindAppWindow(win: BrowserWindow): void {
+  appWin = win
+  win.on('closed', () => {
+    if (appWin === win) appWin = null
+  })
+}
+
+/** 当前应用主窗口；已关闭或还没建时返回 null */
+export function mainWindow(): BrowserWindow | null {
+  return appWin && !appWin.isDestroyed() ? appWin : null
+}
+
 /** 从 IPC 事件反查发起调用的窗口：多窗口时各自操作自己 */
 function senderWindow(event: IpcMainInvokeEvent): BrowserWindow | null {
   return BrowserWindow.fromWebContents(event.sender)
