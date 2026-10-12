@@ -46,13 +46,19 @@
  * - 返回语义与 `SubPageLayout` 一致，是 `router.back()`（历史为空时兜底 `/media`），页面不要再放返回按钮；
  * - `collapsed` 为真（标题滚出去了）时：整条落半透明底色 + 毛玻璃、标题淡入（单行省略号，靠 `title` 看全）、
  *   「更多」从「图标 + 文字」的药丸收成一枚圆形图标按钮，与返回同形，把宽度让给标题；
- * - 「更多」里是「重新读取」「还原刮削前」：前者**始终可用**（详情没读出来时它就是重试入口），
- *   后者只在详情读出来（`loaded`）后出现——没有详情时无从谈起；
+ * - 「更多」里是「重新读取」「还原刮削前」，详情已读到时最上面还有「手动匹配」：前两者始终可用
+ *   （详情没读出来时「重新读取」就是重试入口），「手动匹配」与「还原刮削前」只在详情读出来（`loaded`）后出现；
  * - `busy`（读取中 / 还原中）时「更多」自己转圈、菜单项全部禁用，避免连点；动作只 `emit`，取数与还原都留给页面；
  * - 「还原刮削前」是危险操作，菜单项用 `theme: 'error'` 标红；二次确认与后果说明在页面的确认框里。
  */
 import { computed, h } from 'vue'
-import { ChevronLeftIcon, MoreIcon, RefreshIcon, RollbackIcon } from 'tdesign-icons-vue-next'
+import {
+  ChevronLeftIcon,
+  MoreIcon,
+  RefreshIcon,
+  RollbackIcon,
+  SearchIcon
+} from 'tdesign-icons-vue-next'
 import type { DropdownOption } from 'tdesign-vue-next'
 import { useSafeBack } from '@/composables'
 
@@ -67,19 +73,26 @@ const props = defineProps<{
   title: string
 }>()
 
-const emit = defineEmits<{ reload: []; restore: [] }>()
+const emit = defineEmits<{ reload: []; restore: []; match: [] }>()
 
 const goBack = useSafeBack('/media')
 
 const options = computed<DropdownOption[]>(() => {
-  const items: DropdownOption[] = [
-    {
-      content: '重新读取',
-      value: 'reload',
-      prefixIcon: () => h(RefreshIcon),
+  const items: DropdownOption[] = []
+  if (props.loaded) {
+    items.push({
+      content: '手动匹配',
+      value: 'match',
+      prefixIcon: () => h(SearchIcon),
       disabled: props.busy
-    }
-  ]
+    })
+  }
+  items.push({
+    content: '重新读取',
+    value: 'reload',
+    prefixIcon: () => h(RefreshIcon),
+    disabled: props.busy
+  })
   if (props.loaded) {
     items.push({
       content: '还原刮削前',
@@ -96,6 +109,7 @@ const options = computed<DropdownOption[]>(() => {
 function onAction(option: DropdownOption): void {
   if (option.value === 'reload') emit('reload')
   if (option.value === 'restore') emit('restore')
+  if (option.value === 'match') emit('match')
 }
 </script>
 

@@ -35,6 +35,17 @@ export default defineConfig({
     server: {
       port: 7743
     },
+    // 三个入口页：主窗口 index、播放窗口 play（左侧画面 + 右侧详情侧栏）、
+    // mpv 嵌入用的宿主页 host（Windows 恒有；macOS 只在设置里开了嵌入实验开关时有意义）
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          play: resolve('src/renderer/play.html'),
+          host: resolve('src/renderer/host.html')
+        }
+      }
+    },
     plugins: [
       vue(),
       vueJsx(),

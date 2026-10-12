@@ -14,7 +14,7 @@
 | `src/renderer/src/windows/main/main.ts` | 挂载 Vue 应用，注册 pinia 与 router |
 | `src/renderer/src/windows/main/App.vue` | 应用外壳：标题栏 + 侧栏 + 内容区 |
 | `src/renderer/src/windows/main/router.ts` | 路由表 |
-| `src/renderer/src/windows/main/pages/app/AppTitleBar.vue` | 自定义标题栏：折叠按钮、主题切换按钮、产品名、自绘窗口按钮 |
+| `src/renderer/src/components/app/AppTitleBar.vue` | 自定义标题栏（主窗口与播放窗口共用）：`title` prop、`leading` / `trailing` 插槽（主窗口在 `#leading` 放折叠按钮）、非 macOS 的自绘窗口按钮；主题切换已移到设置页 |
 | `src/renderer/src/windows/main/pages/app/AppSide.vue` | 侧栏容器与菜单数据 |
 | `src/renderer/src/components/menu/types.ts` | `SideMenuItem` 接口 |
 | `src/renderer/src/components/menu/SideMenu.vue` | 菜单列表容器 |

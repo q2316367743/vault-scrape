@@ -62,6 +62,18 @@ export interface ScrapeJobContext {
   client: FileClient
   signal: AbortSignal
   log: ScrapeRunLog
+  /**
+   * 手动匹配指定的候选：命中该插件时**跳过 search 与候选挑选**，直接用这个 id 取详情。
+   *
+   * 只有「手动匹配」会传它；批量任务不传，走正常的「search → pick → detail」。
+   */
+  forced?: ScrapeForcedMatch
+}
+
+/** 手动匹配的强制候选 */
+export interface ScrapeForcedMatch {
+  pluginId: string
+  movieId: string
 }
 
 export interface ScrapeJobOutcome {

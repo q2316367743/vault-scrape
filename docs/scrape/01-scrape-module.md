@@ -77,7 +77,7 @@ src/common/types/scrape/
 
 ## 4. 任务与调度（`scrapeRunner.ts`）
 
-- **同时在跑的任务只有一个**：第二次「开始」直接返回 `busy` 错误信封。
+- **同时在跑的任务只有一个**：第二次「开始」直接返回 `busy` 错误信封。这个「单例」由 `scrapeRunSlot.ts` 承载（`takeRunSlot(taskId)` / `releaseRunSlot()` / `currentRun()` / `isRunActive()`），**批量任务与详情页的手动匹配共用它**——谁在跑，另一方拿到的都是 `busy`（互斥而不是排队，手动匹配见 [手动匹配](../media/04-manual-match.md)）。
 - 并发度来自 `scrape.concurrency`（默认 3），用游标式 worker 池消费待刮削队列；每处理 `scrape.restAfterCount` 个文件（默认 50，0 表示不休息）插入 `scrape.restDuration` 秒（默认 60）的休息，请求之间的节奏延迟由 HTTP 客户端按 `scrape.requestDelay` 处理。
 - 每个文件的状态变化都**先写 `scrape_file` 再广播** `scrape:progress`（任务快照 + 本次变化的文件）。
 - `cancel(taskId)` 把任务置为 `paused`，未处理的文件仍是 `pending`，因此可以「继续」；`resume(taskId)` 只把 `pending` 的文件重新入队，并沿用该任务启动时记下的刮削器绑定（`taskScrapers: Map<taskId, string[]>`）与所属库（`taskLibraries: Map<taskId, libraryId>`）。这两份映射在内存里，**应用重启后丢失**：继续旧任务时先用 `findLibraryByPath(task.connectionId, task.dirPath)` 按 `(connectionId, dirPath)` 找回所属资料库，再回落该库的 `scrapers`；连库都找不到时抛 `pluginMissing`「找不到任务所属的资料库，请重新选择刮削器」。
@@ -122,6 +122,7 @@ src/common/types/scrape/
 
 1. **本地优先**（库级 `localFirst` 为真时）：`scrapeLocalMeta.readLocalMeta(client, { dirPath, originalBase, fanartDirName })` 读同目录的本地 NFO（候选 `${原基名}.nfo` → `movie.nfo`，用 `parseNfoXml` 解析，解析不出就当作没有）与本地图片（固定名 / `{原基名}-` 前缀名 / 与影片同名的图 / `extrafanart` 下的全部图片，按 `LocalImage.kind` 归类）。`needRemote = 没有可用本地详情 || 某个启用 kind 本地没有 || 本地 NFO 缺关键信息（needsRemoteInfo：缺简介、缺演员、片商 / 厂牌 / 系列全空）`——命中才联网，且**只补缺的**：`mergeDetail(本地, 远程)` 逐字段以本地非空值优先。本地详情够用且不缺资源时，结果行插件列写「本地 NFO」，一次网络请求都不发。
 2. **跨影片信息插件补全**：按可用插件顺序，第一个插件先 `search(keyword)` → `pickCandidate(candidates, num, keyword)` 选候选 → `detail(movieId)`；拿到详情后，只对「仍缺失的、且被下载选项勾选的」封面类（`thumb` / `poster` / `fanart` / `banner` / `logo`，走 `covers`）与花絮类（`still` / `trailer`，走 `extras`）请求资源。`isSatisfied(detail, assets, enabled)` 计入本地已就位的 kind，命中即 `break`——即「A 插件只刮到 NFO、B 插件补封面」的补全语义，同时提前停止避免多余请求。单个插件抛错只 `log.warn` 后继续下一个插件，不让一个坏插件毁掉整个文件。到最后一个插件都没有可信详情时：结果行 `failed`、消息 `未找到匹配的刮削结果`，文件留在原目录不动（原 `file.moveAfterFailure` 与 `path.failedOutputDir` 已随设置瘦身删除）。
+    **强制候选**：`ScrapeJobContext.forced = { pluginId, movieId }`（`scrapeJobTypes.ts`）非空且命中当前插件时，**跳过 `search` 与候选挑选**，直接用该 `movieId` 调 `detail`，其余（`covers` / `extras` 补全、`isSatisfied` 提前停止）不变。只有详情页的「手动匹配」会传它（`scrapeManualMatch.matchItemManually`，见 [手动匹配](../media/04-manual-match.md)），影片与剧集共用同一个 `collectFromPlugins`，所以两条流水线都支持。
    **候选匹配口径**（`scrapeMatcher.ts`）：`num` 非空时先找 `isSameNum` 相等的候选；**对不上不再直接判失败**，而是与没有 `num` 时同路走**标题判定**——唯一候选 → 候选标题包含关键词 → 关键词包含候选标题（`normalizeNum` 后 ≥3 字符才算，多条命中取**标题最长**的一条）。这条回落是给**没有番号概念**的插件（如 [TMDB](../plugin/05-tmdb-plugin.md)）留的路：`Inception.2010.1080p.BluRay.mkv` 会被宿主猜出番号 `INCEPTION 2010`（见 §3），而插件候选不带番号，硬卡番号就永远匹配不上；副作用是番号对不上的成人站点插件也会转向标题判定。
 3. **命名（一定会重命名，没有开关）**：`base = resolveVideoBase(detail, originalBase, naming)` = `renderTemplate(naming.fileTemplate, detail, naming)` → `sanitizeName` → `truncateName(..., naming.fileNameMaxLength)`，为空时回落到原文件名；再按 `naming.partStyle` 用 `normalizePartToken(partTokenOf(原文件名), partStyle)` 把分盘标记（CD/PART/DISC）附在末尾，避免模板同名导致 CD1/CD2 互相覆盖。`base` 同时决定文件夹名、影片文件名与 NFO 文件名。
 4. **资源落盘**：
@@ -182,12 +183,14 @@ src/common/types/scrape/
 | `scrape:getTask` | `{ taskId }` | `{ task, files }` |
 | `scrape:listTasks` | `{ limit? }` | 最近任务列表 |
 | `scrape:running` | — | 主进程是否有任务在跑 |
+| `scrape:match` | `{ itemId, pluginId, movieId }` | `ScrapeMatchResult`（同步等待整条流水线跑完） |
 | `scrape:progress` | 主进程 → 渲染层推送 | `{ task, file }` |
 
 - 所有 invoke 都返回信封 `ScrapeResult<T>`（`{ ok: true, data }` / `{ ok: false, code, message }`），**不跨 IPC 抛异常**：`contextBridge` 传递自定义错误的附加属性不可靠。
 - 错误码见 `src/common/types/scrape/error.ts`：`busy` / `notFound` / `invalidArgument` / `unsupported` / `pluginMissing` / `downloadFailed` / `writeFailed` / `moveFailed` / `nfoFailed` / `cancelled` / `unknown`，每个都有中文文案；渲染层只按 `code` 做逻辑判断，不解析 `message`。
 - 资料库**不新增 `scrape:*` 通道**：库侧在主进程内部调 `startScrapeTaskForEntries()`，因此任务列表、进度事件、取消 / 继续全部复用这一套；`scrape:browse` 只用来拿逐级目录（读的是 `mediaWall.browseLibrary`，见 [资料库](../media/01-media-library.md)），渲染层当前没有调用方。
 - 资料库自己的入口在 `library` 域：`library:scan` / `library:cancelScan` / `library:scrape { libraryId }` / `library:progress`，契约与错误码见 [资料库](../media/01-media-library.md)。
+- `scrape:match` 是**单条即时刮削**，不写 `task` / `scrape_file`，也不广播 `scrape:progress`；它在主进程内调 `matchItemManually()`，返回值就是 `ScrapeJobOutcome` 的投影（`status` / `pluginId` / `title` / `message` / `finalPath`），失败原因同样走 `describeScrapeError` 的中文文案。批量任务在跑时返回 `busy`，反之手动匹配在跑时批量任务也拿到 `busy`（共用运行槽位）。完整交互与注意事项见 [手动匹配](../media/04-manual-match.md)。
 
 ## 8. 手工验证清单
 
@@ -216,3 +219,9 @@ src/common/types/scrape/
 18. **剧集产物与关键字口径**：刮一部目录名带年份的剧（如 `Some Show 2019/`）→ 搜索关键词应是**去掉年份的剧集目录名** `Some Show`（可在插件日志里核对），产物为 `tvshow.nfo` + `Season 01/season.nfo` + `Show S01E01.mkv` / `Show S01E01.nfo` + `Show S01E01-thumb.jpg`（季目录与集文件名都按命名模板，集 NFO 与集文件同名），剧集目录按 `{title} ({year})` 改名；`tvshow.nfo` 末尾能看到还原记录（剧集根记原剧集目录名与原目录、集 NFO 记原集文件名与原目录）。
 19. **剧集刮削与还原闭环**：把剧集（连同季目录）刮一遍再走「还原刮削前」→ 剧集目录改回原名、集文件改回原名并搬回旧季目录；**季目录名不回改**（旧季目录由集文件搬回时重建），刮削时新建的季目录搬空后会被当空目录删掉。剧集在资料库扫描侧的用例见 [资料库 §10](../media/01-media-library.md)、界面侧见 [影视墙页面 §8](../page/04-media-wall-page.md)。
 20. **番号对不上时的回落**（§5.2 候选匹配口径）：给影片库配上没有番号概念的插件（如 [TMDB](../plugin/05-tmdb-plugin.md)），放进 `Inception.2010.1080p.BluRay.mkv`（宿主会猜出番号 `INCEPTION 2010`）→ 应正常匹配候选并刮出中文标题 / 简介 / 封面，而不是「未找到匹配的刮削结果」；再放一个插件里查不到的文件（如 `没有这部电影.2024.mkv`）→ 仍应失败，说明回落没有退化成乱猜。剧集侧对应场景：剧集目录名比插件标题长（`The Office US` / `The Last of Us 最后生还者`）时应命中同剧候选。
+21. **手动匹配**（详情页「更多 → 手动匹配」，见 [手动匹配](../media/04-manual-match.md)）：
+    - 影片库配 TMDB：输入**纯数字** tmdbid → 应只出一条候选（走 `detail` 直查 + `covers` 补封面，不发 `search`）；点「使用所选」后详情页标题 / 简介 / 封面更新、磁盘上出现与自动刮削同形的产物（同名文件夹 + NFO + 图片，位置按库的「移动文件」设置）；已有旧 `poster.jpg` 时也应被新封面覆盖（手动匹配忽略「保留已有图片」）。
+    - 同一输入框填关键字 → 走 `search` 出多条候选，多插件时结果合并、每行标注来源插件。
+    - 受保护的条目（NSFW 命中）→ 输入框占位符是番号，搜索只走 `search`；列表封面仍按保护口径打码。
+    - 资料库 `scrapers` 为空或插件都停用 → 弹窗只显示「去资料库配置」的提示，**不出现搜索框**。
+    - 先启动一次整库刮削，再开手动匹配 → 立即提示「已有刮削任务在运行，请先等待或取消」；反过来在手动匹配跑的时候启动整库刮削也应同样被挡。

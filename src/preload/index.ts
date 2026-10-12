@@ -8,6 +8,7 @@ import { fileApi } from '~/modules/file/file'
 import { libraryApi } from '~/modules/library/library'
 import { mediaApi } from '~/modules/media/media'
 import { offlineApi } from '~/modules/offline/offline'
+import { playerApi } from '~/modules/player/player'
 import { pluginApi } from '~/modules/plugin/plugin'
 import { scrapeApi } from '~/modules/scrape/scrape'
 import { settingApi } from '~/modules/setting/setting'
@@ -22,6 +23,7 @@ const preload = {
   library: libraryApi,
   media: mediaApi,
   offline: offlineApi,
+  player: playerApi,
   plugin: pluginApi,
   scrape: scrapeApi,
   setting: settingApi

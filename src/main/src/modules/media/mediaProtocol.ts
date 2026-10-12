@@ -409,7 +409,14 @@ async function handleFilePreviewRequest(target: FilePreviewTarget, request: Requ
   return await serveFile(cached, info)
 }
 
-async function handleMediaRequest(request: Request): Promise<Response> {
+/**
+ * 处理一条 `storage://` 请求。
+ *
+ * 契约：这是协议处理器与回环播放服务（`mediaPlayServer`）共用的唯一入口——
+ * 播放服务把 `http://127.0.0.1:<port>/p/<token>/...` 拼回 `storage://` 后交给这里，
+ * 因此 Range 读取、播放期路径自愈、远端缓存不需要第二套实现。
+ */
+export async function handleMediaRequest(request: Request): Promise<Response> {
   const preview = parseFilePreviewUrl(request.url)
   if (preview) {
     try {

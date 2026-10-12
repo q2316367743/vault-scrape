@@ -19,6 +19,8 @@ export const ScrapeChannels = {
   listTasks: 'scrape:listTasks',
   /** 主进程当前是否有任务在跑（窗口重开后据此恢复按钮状态） */
   running: 'scrape:running',
+  /** 手动匹配：按用户选中的候选刮削单条，等它跑完再返回 */
+  match: 'scrape:match',
   /** 主进程 → 渲染层单向推送：任务快照 + 本次变化的文件 */
   progress: 'scrape:progress'
 } as const

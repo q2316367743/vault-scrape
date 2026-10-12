@@ -17,6 +17,7 @@ import {
   scrapeFail,
   scrapeOk,
   type ScrapeFileItem,
+  type ScrapeMatchResult,
   type ScrapeResult,
   type ScrapeTaskSnapshot
 } from '@common/types/scrape'
@@ -25,6 +26,7 @@ import type { TaskItem } from '@common/types/task'
 import { startLibraryScrapeByIds } from '$/modules/library/libraryScrapeDispatch'
 import { browseLibrary } from '$/modules/media/mediaBrowse'
 import { ScrapeChannels } from '~/modules/scrape/scrapeChannels'
+import { matchItemManually } from './scrapeManualMatch'
 import {
   cancelScrapeTask,
   getScrapeFileList,
@@ -73,6 +75,22 @@ function readTaskId(payload: unknown): string {
   return taskId
 }
 
+/** 手动匹配：条目 ID + 选中的刮削器 + 选中的候选 ID */
+function readMatchRequest(payload: unknown): {
+  itemId: string
+  pluginId: string
+  movieId: string
+} {
+  const source = payloadOf(payload)
+  const itemId = readString(source, 'itemId', '').trim()
+  const pluginId = readString(source, 'pluginId', '').trim()
+  const movieId = readString(source, 'movieId', '').trim()
+  if (itemId.length === 0) throw new ScrapeError('invalidArgument', '缺少媒体条目 ID')
+  if (pluginId.length === 0) throw new ScrapeError('invalidArgument', '缺少刮削器 ID')
+  if (movieId.length === 0) throw new ScrapeError('invalidArgument', '缺少候选 ID')
+  return { itemId, pluginId, movieId }
+}
+
 export function registerScrapeIpc(): void {
   /** 浏览资料库目录：目录 + 影片（渲染层暂无入口，通道保留） */
   ipcMain.handle(ScrapeChannels.browse, (_event, payload: unknown) =>
@@ -115,4 +133,13 @@ export function registerScrapeIpc(): void {
 
   /** 渲染层挂载后用它判断按钮状态：任务在主进程跑，窗口重开也不会误判为空闲 */
   ipcMain.handle(ScrapeChannels.running, () => handle<boolean>(() => isScrapeRunning()))
+
+  /**
+   * 手动匹配：只刮这一条，跑完才回包（与批量任务共用运行槽位，忙时返回 `busy`）。
+   *
+   * 进度不走 `scrape:progress`：它属于单条前台交互，弹窗靠 await 拿结果。
+   */
+  ipcMain.handle(ScrapeChannels.match, (_event, payload: unknown) =>
+    handle<ScrapeMatchResult>(() => matchItemManually(readMatchRequest(payload)))
+  )
 }

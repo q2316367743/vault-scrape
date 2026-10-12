@@ -3,6 +3,8 @@ import type { MediaBrowseEntry } from '@common/types/media'
 import type {
   ScrapeBrowseRequest,
   ScrapeFileItem,
+  ScrapeMatchRequest,
+  ScrapeMatchResult,
   ScrapeProgressEvent,
   ScrapeResult,
   ScrapeStartRequest,
@@ -45,6 +47,14 @@ export const scrapeApi = {
 
   /** 主进程是否有任务在跑：任务不受窗口开关影响，因此状态从主进程读 */
   running: (): Promise<ScrapeResult<boolean>> => ipcRenderer.invoke(ScrapeChannels.running),
+
+  /**
+   * 手动匹配：用选中的候选刮削单条，**等它跑完才返回**（前台交互，需要即时结果）。
+   *
+   * 与批量任务互斥：已有刮削在跑时返回 `busy` 信封。
+   */
+  match: (request: ScrapeMatchRequest): Promise<ScrapeResult<ScrapeMatchResult>> =>
+    ipcRenderer.invoke(ScrapeChannels.match, request),
 
   /** 订阅任务进度，返回取消订阅函数 */
   onProgress: (listener: (event: ScrapeProgressEvent) => void): (() => void) => {

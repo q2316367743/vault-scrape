@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>vault-scrape 播放</title>
+    <!--
+      `media-src` 必须显式允许两件事：
+      - `storage:`：存储页预览仍走私有协议；
+      - `http://127.0.0.1:*`：播放窗口吃的是主进程回环播放服务的地址（`http://127.0.0.1:<port>/p/<token>/…`），
+        不写就会回落到 `default-src 'self'`，内置播放器一律加载失败（mpv 是外部进程，不受 CSP 约束）。
+      https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: storage:; media-src 'self' storage: http://127.0.0.1:*"
+    />
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/windows/play/main.ts"></script>
+  </body>
+</html>

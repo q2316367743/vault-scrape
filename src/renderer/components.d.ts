@@ -12,8 +12,11 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
+    AppPlayerBadge: typeof import('./src/components/app/AppPlayerBadge.vue')['default']
+    AppTitleBar: typeof import('./src/components/app/AppTitleBar.vue')['default']
     CheckboxSelect: typeof import('./src/components/CheckboxSelect.vue')['default']
     DirectoryPickerField: typeof import('./src/components/DirectoryPickerField.vue')['default']
+    MediaEpisodeList: typeof import('./src/components/media/MediaEpisodeList.vue')['default']
     MediaPlayer: typeof import('./src/components/media/MediaPlayer.vue')['default']
     MediaWallCard: typeof import('./src/components/media/MediaWallCard.vue')['default']
     PageLayout: typeof import('./src/components/PageLayout/PageLayout.vue')['default']
@@ -47,10 +50,12 @@ declare module 'vue' {
     TListItemMeta: typeof import('tdesign-vue-next')['ListItemMeta']
     TLoading: typeof import('tdesign-vue-next')['Loading']
     TPagination: typeof import('tdesign-vue-next')['Pagination']
+    TPopup: typeof import('tdesign-vue-next')['Popup']
     TProgress: typeof import('tdesign-vue-next')['Progress']
     TRadioButton: typeof import('tdesign-vue-next')['RadioButton']
     TRadioGroup: typeof import('tdesign-vue-next')['RadioGroup']
     TSelect: typeof import('tdesign-vue-next')['Select']
+    TSlider: typeof import('tdesign-vue-next')['Slider']
     TSpace: typeof import('tdesign-vue-next')['Space']
     TSwitch: typeof import('tdesign-vue-next')['Switch']
     TTable: typeof import('tdesign-vue-next')['Table']
@@ -66,8 +71,11 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
+  const AppPlayerBadge: typeof import('./src/components/app/AppPlayerBadge.vue')['default']
+  const AppTitleBar: typeof import('./src/components/app/AppTitleBar.vue')['default']
   const CheckboxSelect: typeof import('./src/components/CheckboxSelect.vue')['default']
   const DirectoryPickerField: typeof import('./src/components/DirectoryPickerField.vue')['default']
+  const MediaEpisodeList: typeof import('./src/components/media/MediaEpisodeList.vue')['default']
   const MediaPlayer: typeof import('./src/components/media/MediaPlayer.vue')['default']
   const MediaWallCard: typeof import('./src/components/media/MediaWallCard.vue')['default']
   const PageLayout: typeof import('./src/components/PageLayout/PageLayout.vue')['default']
@@ -101,10 +109,12 @@ declare global {
   const TListItemMeta: typeof import('tdesign-vue-next')['ListItemMeta']
   const TLoading: typeof import('tdesign-vue-next')['Loading']
   const TPagination: typeof import('tdesign-vue-next')['Pagination']
+  const TPopup: typeof import('tdesign-vue-next')['Popup']
   const TProgress: typeof import('tdesign-vue-next')['Progress']
   const TRadioButton: typeof import('tdesign-vue-next')['RadioButton']
   const TRadioGroup: typeof import('tdesign-vue-next')['RadioGroup']
   const TSelect: typeof import('tdesign-vue-next')['Select']
+  const TSlider: typeof import('tdesign-vue-next')['Slider']
   const TSpace: typeof import('tdesign-vue-next')['Space']
   const TSwitch: typeof import('tdesign-vue-next')['Switch']
   const TTable: typeof import('tdesign-vue-next')['Table']

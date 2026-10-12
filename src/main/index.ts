@@ -5,7 +5,9 @@ import icon from '../../resources/icon.png?asset'
 import { appendLog } from '$/db/repo/logRepo'
 import { bindWindowState } from '$/modules/appWindow/appWindowIpc'
 import { disposeFileClients } from '$/modules/file/fileClientManager'
+import { disposeMediaPlayServer } from '$/modules/media/mediaPlayServer'
 import { runOfflineStartupCheck } from '$/modules/offline/offlineCheck'
+import { stopSession } from '$/modules/player/playerSession'
 import { markInterruptedOnStartup } from '$/modules/scrape/scrapeRunner'
 import { registerMediaProtocol, registerMediaScheme } from '$/modules/media/mediaProtocol'
 import { registerIpc } from '$/registerIpc'
@@ -117,9 +119,11 @@ app.whenReady().then(() => {
   })
 })
 
-// 退出前释放文件模块的连接（WebDAV/SMB 会话、句柄）
+// 退出前释放文件模块的连接（WebDAV/SMB 会话、句柄）、收掉 mpv 与回环播放服务
 app.on('before-quit', () => {
   void disposeFileClients()
+  void disposeMediaPlayServer()
+  void stopSession()
 })
 
 // Quit when all windows are closed, except on macOS. There, it's common

@@ -52,8 +52,8 @@
 
 ## 插件
 
-- 插件页是**一个入口 + 三个 tab**（影片信息 / 演员信息 / 翻译，类别与契约见 [../plugin/03-plugin-categories.md](../plugin/03-plugin-categories.md)）：外壳 `pages/plugin/PluginHomePage.vue` 只放 `t-tabs` 条、旧版插件提示与 `<router-view>`（自身不套 `page-layout`，避免双层页头），三个 tab 分别路由到 `plugin/movie/MoviePluginPage.vue` / `plugin/actor/ActorPluginPage.vue` / `plugin/translate/TranslatePluginPage.vue`；每个类别页都复用 `components/PluginManagerView.vue`（`props: { kind }`，负责页头标题 / 说明、刷新与导入按钮、左右的 `components/PluginList.vue`（插件列表，左）与 `components/PluginDetail.vue`（概览 + 启停 + 编辑代码 + 删除 + 配置区块，右））。
-- 左栏不是卡片：`PluginList.vue` 是透明的 `<aside>`，只用一条右侧分隔线（`--fluent-sidebar-border`）与右栏分区，自身带 40px 高的「已安装插件 + 数量」头，露出主容器的亚克力材质。
+- 插件页是**一个入口 + 三个 tab**（影片信息 / 演员信息 / 翻译，类别与契约见 [../plugin/03-plugin-categories.md](../plugin/03-plugin-categories.md)）：外壳 `pages/plugin/PluginHomePage.vue` 只放 `t-tabs` 条、旧版插件提示与 `<router-view>`（自身不套 `page-layout`，避免双层页头），三个 tab 分别路由到 `plugin/movie/MoviePluginPage.vue` / `plugin/actor/ActorPluginPage.vue` / `plugin/translate/TranslatePluginPage.vue`；每个类别页都复用 `components/PluginManagerView.vue`（`props: { kind }`，左列表 + 右详情，自身不套 `page-layout`、不再有标题 / 说明页头）、`components/PluginList.vue`（插件列表，左）与 `components/PluginDetail.vue`（概览 + 启停 + 编辑代码 + 删除 + 配置区块，右）。
+- 左栏不是卡片：`PluginList.vue` 是透明的 `<aside>`，只用一条右侧分隔线（`--fluent-sidebar-border`）与右栏分区，自身带 40px 高的「已安装插件 + 数量 + 刷新 / 导入」头（两个按钮 emit `refresh` / `import-plugins`，由 `PluginManagerView` 执行），露出主容器的亚克力材质。
 - 列表项固定单行：最左是拖拽手柄（`MoveIcon`，悬停提示「按住任意位置拖动即可调整顺序」），接着名称 +（内置插件）「内置」标签 + 单行省略的描述，描述完整内容与详情页「说明」一样通过 `t-tooltip` 悬停查看；右侧用 `size="small"` 的状态标签显示「已启用 / 已停用」与「待填写变量 / 加载失败」。
 - 拖拽排序用 sortablejs：容器取**第一个列表项的父节点**（不假设 tdesign 内部层级——`t-list` 外层若再包一层 `ul`，容器取错会让 Sortable 静默失效），**整行都可拖**（没有位移的点击不会触发原生拖拽，仍按点击处理，即选中插件；手柄只是视觉提示）。拖完先就地重排本地列表，再走 `plugin:<类别>:reorder`（如 `plugin:movie:reorder`）写回该类别目录下的 `plugins.json`；主进程返回的完整列表作为最终顺序，失败则报错并重新拉取列表还原。
 - 状态在 `composables/usePluginManager.ts`（`usePluginManager(kind)`，按类别各持一份模块级状态；列表、选中持久化到 localStorage、启停、排序、导入、删除、源码读写、`applySummary` 就地更新单条摘要）里；IPC 走 `api/plugin.ts` 的 `pluginBridge(kind)`（`pluginApi.movie` / `.actor` / `.translate`）。搜索与影片详情原来挂在插件页，现已整体迁到工具箱，见下文「工具」。

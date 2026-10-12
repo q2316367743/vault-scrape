@@ -1,16 +1,20 @@
-# 影片信息插件实例：TMDB（themoviedb.org）
+# TMDB 插件实例：影片信息 + 演员信息（themoviedb.org）
 
-本文记录一个真实站点的**影片信息插件**（`kind: movie`）落地口径：TMDB（The Movie Database）。它同时是
-「**电影 + 剧集都能刮**」的参考实现——剧集走 [剧集支持](../media/02-series-support.md) 的多季多集三层产物。
+本文记录一个真实站点的两个插件落地口径：TMDB（The Movie Database）的**影片信息插件**（`kind: movie`）与
+**演员信息插件**（`kind: actor`）。影片侧是「**电影 + 剧集都能刮**」的参考实现——剧集走
+[剧集支持](../media/02-series-support.md) 的多季多集三层产物；演员侧是「**只按姓名检索 JSON API、不解析 HTML**」的参考实现。
 
-协议本体（`meta` / 四方法 / `env` / `ctx` / 沙箱白名单 / 错误码）见 [plugin/01-plugin-module.md](./01-plugin-module.md)，
-类别划分见 [plugin/03-plugin-categories.md](./03-plugin-categories.md)；候选匹配由宿主负责，口径见
+协议本体（`meta` / 方法 / `env` / `ctx` / 沙箱白名单 / 错误码）见 [plugin/01-plugin-module.md](./01-plugin-module.md)，
+类别划分与演员抓取的四个触发场景见 [plugin/03-plugin-categories.md](./03-plugin-categories.md)；候选匹配由宿主负责，口径见
 [刮削模块 §5.2](../scrape/01-scrape-module.md)。
 
-插件文件在 `script/movie/tv/tmdb.js`，而 `.gitignore` 忽略 `script/`（本机参考脚本不进仓库），所以**本文件是该插件在仓库里唯一的书面记录**：
+两个插件文件分别是 `script/movie/tv/tmdb.js`（影片信息，§1–§7）与 `script/actor/tmdb.js`（演员信息，§8），
+而 `.gitignore` 忽略 `script/`（本机参考脚本不进仓库），所以**本文件是这两个插件在仓库里唯一的书面记录**：
 站点口径、字段取舍、与宿主的耦合点都写在这里，改插件前先看这里，改完同步这里。
 
-## 0. 总览
+## 0. 总览：两个插件
+
+**影片信息插件**（`kind: movie`，§1–§7）：
 
 | 项 | 值 |
 | --- | --- |
@@ -24,6 +28,20 @@
 | 图片 | `poster`（w500）、`fanart`（w1280）、`still`（w780，影片取背景图、**剧集按集**） |
 | 剧集分集 | `detail.episodes[]`，逐季请求 `/tv/{id}/season/{n}` |
 | 预告片 | **不产出**（见 §4） |
+
+**演员信息插件**（`kind: actor`，见 §8）：
+
+| 项 | 值 |
+| --- | --- |
+| 插件文件 | `script/actor/tmdb.js`（约 380 行，纯 JS，结尾一句 `definePlugin({ … })`） |
+| `meta.id` | `tmdb`——与影片插件**同 id 但不同类别**，宿主按类别各存一份（索引、源码、缓存、环境变量都分开） |
+| `meta.kind` | `actor` |
+| 实现方法 | `actor`（必填）+ `actorAssets`（可选，实现了才生效） |
+| 数据源 | TMDB v3 REST：`/search/person` + `/person/{id}`（纯 JSON，**不解析 HTML**、不需要 cheerio） |
+| 鉴权 | 与影片插件同口径（`apiReadAccessToken` 优先，否则 `apiKey`），但**凭据是另一份配置，要在此类别里再填一次** |
+| 产出内容 | 别名、性别、生日、出生地（国家 / 州省 / 城市）、职业（`tagline`）、简介、来源页 |
+| 图片 | `poster`（头像，w500）；`still`（图集：其余写真 + `tagged_images` 电影剧照，w500 / w780） |
+| 不产出 | 身高 / 三围 / 罩杯（TMDB 没有）、标签（`tags` 宿主从不写进演员资料） |
 
 ## 1. 鉴权：两项都选填，调用时才校验
 
@@ -185,7 +203,80 @@ TMDB 有两套凭据，插件把两面都留着，`env` 里**两项都 `required
 7. **超时**：单次方法调用默认 ≥30s（`callTimeoutMs()`）；剧集分集是「1 次 search + 1 次 detail + N 次 season」，N 大时要靠 `maxSeasons` 兜。
 8. **无需 `env` 的插件不显示配置区块**：本插件声明了 7 项，所以插件页右栏会出现配置区块（明文不回显、密文存 safeStorage）。
 
-## 8. 已知限制与本期不做
+## 8. 演员信息插件（`script/actor/tmdb.js`）
+
+类别 `actor` 与影片类别的差异：**只按姓名检索**（`actor(name, env, ctx)` 的第一个参数就是姓名，宿主从 `media_cast` 里取），
+没有候选列表、没有 `num`；命中与否由「能不能给出合法资料」决定（§8.5 第 1 条）。
+
+### 8.1 调用链与缓存
+
+一次「抓这个演员」最多调两个方法：`actor`（必填）→ `actorAssets`（可选），两者拿到同一个姓名，所以插件用
+**模块级缓存**避免重复请求——`pluginRegistry` 按源码 mtime 缓存编译结果，同一 vm context 会跨多次 invoke 复用，
+模块级变量因此能活到下次抓取（见 [plugin/01 §6](./01-plugin-module.md)）：
+
+```txt
+actor(name)        ─┬─ 命中 personCache → 直接用
+actorAssets(name)  ─┘   否则 /search/person → /person/{id}?append_to_response=images,tagged_images,external_ids
+```
+
+- 缓存键 `normalizeName(name)`（NFKC + 小写 + 去空白与常见标点），上限 `CACHE_LIMIT = 16`，超限整体清空（不做 LRU）。
+- 缓存值是 `/person/{id}` 的响应，所以**一次抓取 = 2 次请求**（1 次搜索 + 1 次详情）；详情 404 时退回搜索条目本身。
+- 两次请求都带 `language`，简介 / 别名跟着它走；但**姓名本身不本地化**，`name` 恒为原名。
+
+### 8.2 挑人打分
+
+`/search/person` 的结果按「像不像这个名字」打分，而不是取第一条：
+
+| 情形 | 分值 |
+| --- | --- |
+| 本体姓名完全一致（`normalizeName` 后） | 100 |
+| `also_known_as` 别名完全一致 | 80 |
+| 本体姓名与查询互含 | 60 |
+| 别名与查询互含 | 50 |
+| `known_for_department === 'Acting'` 且分数 > 0 | +5 |
+
+排序键 `score * 1000 + min(round(popularity), 999)`——**同分靠人气决胜**（同名演员很常见）；全部候选 `score === 0` 时直接抛错，不做「取第一条」兜底。
+
+### 8.3 字段映射
+
+| `PluginActorDetail` | 来源 | 说明 |
+| --- | --- | --- |
+| `name` | `person.name` | 必填，缺失即抛错 |
+| `aliases` | `also_known_as` | 去掉与本体同名者，截 `ALIAS_LIMIT = 30` |
+| `gender` | `person.gender` | `1 → female`、`2 → male`、`3 → other`、`0 / 缺失 → 不写`（宿主只认这四个值） |
+| `birthday` | `birthday` | 取 `slice(0, 10)`，不匹配 `YYYY-MM-DD` 就不写 |
+| `birthCountry` / `birthProvince` / `birthCity` | `place_of_birth` | 按 `[，,]` 拆：1 段 → 城市；2 段 → 城市 + 国家；≥3 段 → 城市 + 中间段（join `, `）作州省 + 末段作国家；拆不开时整串进城市 |
+| `tagline` | `known_for_department` | 翻成中文职业（`Acting → 演员` 等，见 `DEPARTMENT_NAMES`） |
+| `overview` | `biography` | 截 `BIO_LIMIT = 3000` 字 |
+| `sourceUrl` | `id` | `https://www.themoviedb.org/person/{id}` |
+| `height` / `bust` / `waist` / `hip` / `cup` / `tags` | **不产出** | TMDB 没有三围；`tags` 宿主在合并时根本不看 |
+
+`birthCounty` 不产出（TMDB 只有「城市, 州省, 国家」三级）。
+
+### 8.4 图片：头像用 `poster`，其余一律 `still`
+
+类别 `actor` 只接受 `['poster', 'thumb', 'still']` 三种 kind（其余在归一化阶段丢弃），语义是 **`poster` = 头像、
+`thumb` / `still` = 图集**；宿主把第一条 `poster` 存成头像（已有头像则跳过），其余按 `scrape.actorImageLimit` 限张存成图集
+（`0` = 不存图），所以插件只发 `poster` + `still`：
+
+- **头像**：`profile_path`；缺失时退回 `images.profiles` 里投票最高的那张（按 `vote_average` 降序去重）。
+- **图集**：其余 `profiles`（名字 `写真 N`，`PROFILE_SIZE = 'w500'`）+ `tagged_images.results[].file_path`
+  （名字取 `media.title` / `media.name`，`STILL_SIZE = 'w780'`），按 path 去重、跳过已被头像用掉的那张。
+- 张数：`maxPhotos`（默认 20）限**图集**张数，另硬上限 50；头像不计入。
+
+### 8.5 与宿主 / 影片插件的耦合点
+
+1. **查不到必须抛错，不能返回空资料**：`buildActorPlugin` 把归一化失败（`name` 为空）当 `invokeFailed`；
+   而宿主只有「插件抛错」时才 `warn` 并换下一个插件。返回空对象会被当成**命中**，反而堵住其它演员插件。
+2. **凭据是另一份配置**：插件按类别独立存储（`meta.id` 相同也互不影响），`apiReadAccessToken` / `apiKey` 要在
+   **演员类别里再填一次**——TMDB 密钥通用，复制即可。
+3. **姓名口径**：宿主写进 `media_cast` 的是影片插件 `detail.actors` 的名字（TMDB 的英文名），按英文名检索最准；
+   手工改成中文名后要靠 `also_known_as` 命中（TMDB 的中文别名并不完整）。
+4. **只抓「没抓过 / 没头像 / 没生日」的演员**，批量补全上限 200 人（`ACTOR_SCRAPE_MISSING_LIMIT`），
+   所以首次同步大批影片时不会一次打爆 API，但要分几轮才补齐。
+5. **超时无压力**：一次抓取只有 2 次请求，远低于单次调用超时（≥30s），不需要像影片插件那样限季数。
+
+## 9. 已知限制与本期不做
 
 - **没有番号**：`search` / `detail` 都不返回 `num`，成人影片库的番号匹配只能靠宿主回落（§7.1）。
 - **不产预告片**：YouTube 观看页不是可下载直链（§4）。
@@ -194,17 +285,23 @@ TMDB 有两套凭据，插件把两面都留着，`env` 里**两项都 `required
 - **不做成人内容**：`include_adult=false`，成人结果跳过。
 - **只支持 TMDB 一种数据源**：不带 `external_ids` 反查（IMDb id 只来自 `external_ids`，宿主也没地方用）。
 - **不做本地化降级**：`language` 拿不到中文时 TMDB 会回落英文（接口行为），插件不额外重试。
+- **演员没有三围**：TMDB 不提供身高 / 三围 / 罩杯，演员插件不产出这些字段（成人演员插件才有）。
+- **演员图集全看 TMDB 收录**：冷门演员可能一张 `tagged_images` 都没有，`profile_path` 也可能为空（此时退回投票最高的一张）。
+- **演员姓名不本地化**：`/search/person` 的 `name` 恒为原名，中文名只在 `also_known_as` 里，中文名可能命中不了。
 
-## 9. 关键文件
+## 10. 关键文件
 
 | 文件 | 作用 |
 | --- | --- |
-| `script/movie/tv/tmdb.js` | 插件本体（`script/` 被 gitignore，本机参考脚本） |
+| `script/movie/tv/tmdb.js` | 影片信息插件本体（`kind: movie`；`script/` 被 gitignore，本机参考脚本） |
+| `script/actor/tmdb.js` | 演员信息插件本体（`kind: actor`，与影片插件互相独立） |
 | [src/main/src/modules/scrape/scrapeMatcher.ts](../../src/main/src/modules/scrape/scrapeMatcher.ts) | 候选匹配：影片番号 → 标题判定回落、剧集年份池 + 标题判定 |
 | [src/main/src/modules/scrape/scrapeJobPlan.ts](../../src/main/src/modules/scrape/scrapeJobPlan.ts) | 影片流水线的插件调用顺序（`search` → `detail` → `covers` / `extras`） |
 | [src/main/src/modules/scrape/scrapeSeriesJob.ts](../../src/main/src/modules/scrape/scrapeSeriesJob.ts) | 剧集流水线：分集对齐、逐集剧照落盘 |
 | [src/common/types/plugin/movie.ts](../../src/common/types/plugin/movie.ts) | `PluginMovieCandidate` / `PluginMovieDetail` / `PluginEpisode` 契约 |
-| [src/common/types/plugin/normalize.ts](../../src/common/types/plugin/normalize.ts) | vm 返回值归一化与 `PLUGIN_LIST_LIMIT` 截断 |
+| [src/common/types/plugin/normalize.ts](../../src/common/types/plugin/normalize.ts) | vm 返回值归一化与 `PLUGIN_LIST_LIMIT` 截断；演员资料 / 图片 kind 的白名单 |
+| [src/main/src/modules/actor/actorScrape.ts](../../src/main/src/modules/actor/actorScrape.ts) | 演员抓取流水线：调用插件、逐字段合并、头像 / 图集落盘 |
+| [src/common/types/plugin/actor.ts](../../src/common/types/plugin/actor.ts) | `PluginActorDetail` 契约与 `PLUGIN_ACTOR_ASSET_KINDS` |
 | [docs/plugin/01-plugin-module.md](./01-plugin-module.md) | 插件协议本体（先读它） |
 | [docs/scrape/01-scrape-module.md](../scrape/01-scrape-module.md) | 刮削流水线与候选匹配口径 |
 | [docs/media/02-series-support.md](../media/02-series-support.md) | 剧集多季多集三层模型与还原口径 |

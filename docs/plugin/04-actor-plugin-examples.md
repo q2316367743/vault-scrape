@@ -19,6 +19,10 @@
 
 两个文件都在 `script/actor/`，而 `.gitignore` 明确忽略 `script/`（本地参考用的站点脚本不进仓库），所以**本文件是这两个插件在仓库里唯一的书面记录**，站点口径与字段取舍都写在这里。
 
+> 第三个范例（本篇不展开）：`script/actor/tmdb.js`（TMDB）是「**只调 JSON API、不解析 HTML**」的写法，见
+> [plugin/05-tmdb-plugin.md](./05-tmdb-plugin.md) §8——按姓名检索 `/search/person` 打分挑人、`actor` 与 `actorAssets`
+> 共用模块级缓存（一次抓取只有 2 次请求）、头像用 `poster` 图集用 `still`，且**查不到必须抛错而不是返回空资料**。
+
 通用骨架（两个插件一致）：纯 JS、无 `import`，脚本以 `definePlugin({ ... })` 结尾；`meta` 只填 `id / kind / name / version / author / description / homepage`；失败一律 `throw new Error('中文原因')` —— 宿主侧
 `actorScrape` 只把它记为一条 `warn` 日志（「插件 X 获取「Y」的资料失败：…」），不影响影片刮削主流程，所以错误文案要写清站点侧原因。
 

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 /**
- * 播放器：artplayer 的 Vue 外壳（影视墙详情页与存储页预览共用）。
+ * 播放器：artplayer 的 Vue 外壳（存储页的文件预览用）。
+ *
+ * 契约里不含「外部命令 + 状态回传」：播放窗口的内置后端要接主进程命令、要按 `PlayerState` 回传状态，
+ * 那套逻辑在 `windows/play/composables/usePlaySession.ts` 里自建 artplayer 实例，不复用本组件。
  *
  * 契约：
  * - `url` 变化（换片 / 换文件 / 重新读取）时销毁重建，避免上一部影片的缓冲与错误残留；

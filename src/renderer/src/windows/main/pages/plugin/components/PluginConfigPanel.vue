@@ -96,9 +96,6 @@ watch(() => props.plugin.id, () => void load(), { immediate: true })
       <span class="head-spacer" />
       <t-button size="small" variant="text" :loading="loading" @click="load">刷新</t-button>
     </div>
-    <p class="panel-tip">
-      环境变量由插件自行声明，保存在 ~/.vault-scrape/plugin/&lt;类别&gt;/plugins.json（加密存放）
-    </p>
 
     <t-loading :loading="loading" size="small">
       <t-empty

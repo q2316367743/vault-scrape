@@ -34,3 +34,18 @@ export function formatDuration(minutes: number): string {
   if (hours === 0) return `${rest} 分钟`
   return rest === 0 ? `${hours} 小时` : `${hours} 小时 ${rest} 分钟`
 }
+
+/**
+ * 秒数 → 播放时钟（`mm:ss`，超过一小时是 `h:mm:ss`）。
+ *
+ * 与 `formatDuration` 不同：播放位置永远显示数字（`0:00` 是正常值），
+ * 只有拿不到有限数（NaN / 负数）时才回落 `0:00`。
+ */
+export function formatClock(seconds: number): string {
+  const total = Number.isFinite(seconds) && seconds > 0 ? Math.floor(seconds) : 0
+  const pad = (value: number): string => String(value).padStart(2, '0')
+  const hours = Math.floor(total / 3600)
+  const minutes = Math.floor((total % 3600) / 60)
+  const rest = total % 60
+  return hours > 0 ? `${hours}:${pad(minutes)}:${pad(rest)}` : `${minutes}:${pad(rest)}`
+}

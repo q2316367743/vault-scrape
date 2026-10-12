@@ -1,43 +1,32 @@
 <template>
-  <page-layout :title="title" :description="description" :padded="false">
-    <template #extra>
-      <t-button variant="outline" :loading="loading" @click="refresh">
-        <template #icon><refresh-icon /></template>
-        刷新
-      </t-button>
-      <t-button theme="primary" @click="onImport">
-        <template #icon><add-icon /></template>
-        导入插件
-      </t-button>
-    </template>
-
-    <div class="plugin-body">
-      <plugin-list
-        :plugins="plugins"
-        :active-id="activeId"
-        :loading="loading"
-        @select="select"
-        @reorder="onReorder"
-      />
-      <plugin-detail
-        v-if="active"
-        :plugin="active"
-        :kind="kind"
-        @edit="onEdit"
-        @remove="onRemove"
-        @enabled="onEnabled"
-        @changed="onChanged"
-      >
-        <!-- 类别专属内容（如影片类别的离线数据包面板）由所属页面提供 -->
-        <template #extra><slot name="detail-extra" /></template>
-      </plugin-detail>
-      <t-empty
-        v-else
-        class="plugin-empty"
-        description="左侧还没有可管理的插件，先导入一个本机 .js 脚本"
-      />
-    </div>
-  </page-layout>
+  <div class="plugin-body">
+    <plugin-list
+      :plugins="plugins"
+      :active-id="activeId"
+      :loading="loading"
+      @select="select"
+      @reorder="onReorder"
+      @refresh="refresh"
+      @import-plugins="onImport"
+    />
+    <plugin-detail
+      v-if="active"
+      :plugin="active"
+      :kind="kind"
+      @edit="onEdit"
+      @remove="onRemove"
+      @enabled="onEnabled"
+      @changed="onChanged"
+    >
+      <!-- 类别专属内容（如影片类别的离线数据包面板）由所属页面提供 -->
+      <template #extra><slot name="detail-extra" /></template>
+    </plugin-detail>
+    <t-empty
+      v-else
+      class="plugin-empty"
+      description="左侧还没有可管理的插件，先导入一个本机 .js 脚本"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -45,15 +34,13 @@
  * 插件管理视图：左列表 + 右详情（概览 + 配置），供三个类别页复用。
  *
  * 契约：只按 `kind` 取对应类别的状态与通道，页面本身不感知具体是哪一个类别；
- * 导入重名走命令式确认弹窗覆盖；配置保存后由详情上抛最新摘要，这里就地更新列表状态，不整表刷新。
+ * 自身不套 page-layout（页头由外壳的 tab 条承担），标题栏与「刷新 / 导入」都下沉到
+ * 左列表 `PluginList` 的面板头；导入重名走命令式确认弹窗覆盖；配置保存后由详情上抛
+ * 最新摘要，这里就地更新列表状态，不整表刷新。
  */
-import { computed, onMounted } from 'vue'
+import { onMounted } from 'vue'
 import { DialogPlugin, MessagePlugin } from 'tdesign-vue-next'
-import { AddIcon, RefreshIcon } from 'tdesign-icons-vue-next'
-import PageLayout from '@/components/PageLayout/PageLayout.vue'
 import {
-  PLUGIN_KIND_DESCRIPTIONS,
-  PLUGIN_KIND_LABELS,
   type PluginImportResult,
   type PluginKind,
   type PluginSummary
@@ -65,9 +52,6 @@ import PluginDetail from './PluginDetail.vue'
 import PluginList from './PluginList.vue'
 
 const props = defineProps<{ kind: PluginKind }>()
-
-const title = computed(() => `${PLUGIN_KIND_LABELS[props.kind]}插件`)
-const description = computed(() => PLUGIN_KIND_DESCRIPTIONS[props.kind])
 
 const {
   plugins,

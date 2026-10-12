@@ -7,6 +7,7 @@ import type { FileApi } from './src/modules/file/file'
 import type { LibraryApi } from './src/modules/library/library'
 import type { MediaApi } from './src/modules/media/media'
 import type { OfflineApi } from './src/modules/offline/offline'
+import type { PlayerApi } from './src/modules/player/player'
 import type { PluginApi } from './src/modules/plugin/plugin'
 import type { ScrapeApi } from './src/modules/scrape/scrape'
 import type { SettingApi } from './src/modules/setting/setting'
@@ -23,6 +24,7 @@ declare global {
       library: LibraryApi
       media: MediaApi
       offline: OfflineApi
+      player: PlayerApi
       plugin: PluginApi
       scrape: ScrapeApi
       setting: SettingApi

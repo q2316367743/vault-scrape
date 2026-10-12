@@ -35,11 +35,11 @@
 
 ## 自定义标题栏
 
-组件 `src/renderer/src/windows/main/pages/app/AppTitleBar.vue`，与 `AppSide.vue` 同级——它是外壳部件，不放 `src/renderer/src/components/`。
+组件 `src/renderer/src/components/app/AppTitleBar.vue`：**主窗口与播放窗口共用**（播放窗口见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）。它原来是「外壳部件、只给主窗口用」，本轮上移到 `components/app/`——两个渲染入口都要它，几何与窗口按钮语义必须只有一份。主窗口在 `#leading` 插槽里放折叠按钮，`#afterTitle` 里放「正在播放」标签（`components/app/AppPlayerBadge.vue`，没开播放窗口时不渲染；见[播放窗口与 mpv 播放](../media/03-mpv-playback.md) §7.1）。
 
 - **几何**：高 40px 通栏，整条 `-webkit-app-region: drag`（同时写 `app-region: drag`）；其中的按钮显式声明 `no-drag`，否则点击会被窗口拖动吞掉。macOS 下 `.title-bar.is-mac` 用 `padding-left: 80px` 给红黄绿灯让位。
-- **内容**：左侧折叠按钮（`MenuFoldIcon` / `MenuUnfoldIcon` 切换）+ 主题切换按钮（`ModeLightIcon` / `ModeDarkIcon` / `DesktopIcon` 对应亮色 / 深色 / 跟随系统，点击出 `t-dropdown` 三选一）+ 产品名 `vault-scrape`；非 macOS 时右侧三个 46×40 的自绘按钮（`MinusIcon` / `Fullscreen1Icon`↔`FullscreenExit1Icon` / `CloseIcon`），关闭键悬停用 `--td-error-color` + `--td-text-color-anti` 还原 Windows 11 语义。
-- **主题按钮**：几何与折叠按钮共用 `.bar-toggle, .theme-toggle { width: 32px; height: 32px; padding: 0 }` 与同一条 `no-drag` 声明；不套 `t-tooltip`——`t-dropdown` 与 `t-tooltip` 都会接管触发元素的引用，两层弹层互抢同一个按钮会出问题，档位名称交给下拉面板与 `aria-label` 承担。三档的状态与配色见 [01-renderer-shell.md](./01-renderer-shell.md) 的「深色模式」。
+- **内容**：左侧是 `leading` 插槽（主窗口放折叠按钮，`MenuFoldIcon` / `MenuUnfoldIcon` 切换，32×32、外面套 `t-tooltip`）+ 产品名（`title` prop：主窗口用默认 `vault-scrape`，播放窗口传当前影片名）+ `afterTitle` 插槽（紧挨产品名，主窗口放「正在播放」胶囊；`trailing` 在 `bar-fill` 之后、会被推到右侧，不跟着标题走）+ `trailing` 插槽；非 macOS 时右侧三个 46×40 的自绘按钮（`MinusIcon` / `Fullscreen1Icon`↔`FullscreenExit1Icon` / `CloseIcon`），关闭键悬停用 `--td-error-color` + `--td-text-color-anti` 还原 Windows 11 语义。
+- **主题切换已不在标题栏**：它现在只在「设置 → 应用设置」的 `t-radio-group` 里（`src/renderer/src/global/AppTheme.ts` 的 `themeMode` / `setThemeMode`，三档亮色 / 深色 / 跟随系统，状态与配色见 [01-renderer-shell.md](./01-renderer-shell.md) 的「深色模式」）。保留一条教训：`t-dropdown` 与 `t-tooltip` 都会接管触发元素的引用，两层弹层互抢同一个按钮会出问题——若以后把主题档位做回标题栏，要照这条办。
 - **最大化状态**：系统标题栏隐藏后渲染层无法自行感知最大化，只能由主进程驱动。`bindWindowState(win)` 监听窗口 `maximize` / `unmaximize`，经 `appWindow:maximizedChanged` 单向推送；渲染层 `onMaximizedChange(listener)` 订阅并返回退订函数，组件 `onUnmounted` 时必须调用。
 - **样式压制**：窗口按钮用 `t-button variant="text"`，几何与关闭键悬停态写在 `.window-buttons .window-button` 父级选择器下，靠层叠特异性（而非 `!important`）压过 TDesign 自带样式。
 

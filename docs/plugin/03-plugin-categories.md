@@ -70,8 +70,8 @@ pluginApi.legacy()   // 只读：旧版平铺插件目录里的残留 .js
 pages/plugin/
 ├── PluginHomePage.vue          # tab 条（值取自路由参数）+ 旧版残留提示 + <router-view>
 ├── components/                 # 三个类别共用
-│   ├── PluginManagerView.vue   # 左列表 + 右详情（props: kind），页头按钮与导入流程都在这
-│   ├── PluginList.vue          # 与类别无关
+│   ├── PluginManagerView.vue   # 左列表 + 右详情（props: kind），不自带页头，导入流程与确认弹窗在这
+│   ├── PluginList.vue          # 与类别无关；面板头放「刷新 / 导入」，事件上抛给管理视图
 │   ├── PluginDetail.vue        # 概览 + 配置区块；`#extra` 插槽留给类别专属面板
 │   ├── PluginConfigPanel.vue   # 环境变量填写
 │   └── PluginLegacyAlert.vue   # 旧版平铺目录残留提示

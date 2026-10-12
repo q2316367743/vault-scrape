@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>vault-scrape 画面宿主</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    />
+    <style>
+      /* 宿主页只当透明的点击接盘：mpv 的子窗口不接收输入，点击落在这张纸上 */
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/windows/host/main.ts"></script>
+  </body>
+</html>

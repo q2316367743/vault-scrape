@@ -147,7 +147,18 @@ export async function collectFromPlugins(
   for (const plugin of context.plugins) {
     if (context.signal.aborted) throw new ScrapeError('cancelled')
     try {
-      if (!detail) {
+      const forced =
+        context.forced && context.forced.pluginId === plugin.id ? context.forced : null
+      if (forced) {
+        // 手动匹配：用户已经选好候选，跳过 search 与挑选，直接取这一条的详情
+        const found = readDetail(
+          await moviePlugins.invokePlugin(plugin.id, 'detail', { movieId: forced.movieId })
+        )
+        if (found) {
+          detail = found
+          pluginId = plugin.id
+        }
+      } else if (!detail) {
         const candidates = readCandidates(
           await moviePlugins.invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })
         )

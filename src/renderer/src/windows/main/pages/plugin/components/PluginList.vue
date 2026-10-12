@@ -1,8 +1,21 @@
 <template>
   <aside class="plugin-list">
     <div class="panel-head">
-      <span class="panel-title">已安装插件</span>
-      <span class="plugin-count">{{ plugins.length }}</span>
+      <div class="panel-heading">
+        <span class="panel-title">已安装插件</span>
+        <span class="plugin-count">{{ plugins.length }}</span>
+      </div>
+      <div class="panel-actions">
+        <t-tooltip content="刷新" placement="top-right">
+          <t-button variant="text" size="small" :loading="loading" @click="emit('refresh')">
+            <template #icon><refresh-icon /></template>
+          </t-button>
+        </t-tooltip>
+        <t-button theme="primary" size="small" @click="emit('import-plugins')">
+          <template #icon><add-icon /></template>
+          导入
+        </t-button>
+      </div>
     </div>
 
     <div ref="bodyRef" class="plugin-body">
@@ -49,7 +62,7 @@
             </div>
           </t-list-item>
         </t-list>
-        <t-empty v-else description="还没有插件，点击右上角「导入插件」选择本机 .js 脚本" />
+        <t-empty v-else description="还没有插件，点击右上角「导入」选择本机 .js 脚本" />
       </t-loading>
     </div>
   </aside>
@@ -57,7 +70,7 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { MoveIcon } from 'tdesign-icons-vue-next'
+import { AddIcon, MoveIcon, RefreshIcon } from 'tdesign-icons-vue-next'
 import Sortable, { type SortableEvent } from 'sortablejs'
 import type { PluginSummary } from '@common/types/plugin'
 
@@ -71,6 +84,10 @@ const emit = defineEmits<{
   select: [id: string]
   /** 拖拽结束后的完整 ID 顺序（含被拖动项的新位置） */
   reorder: [ids: string[]]
+  /** 面板头上的「刷新」，由管理视图重新拉取列表 */
+  refresh: []
+  /** 面板头上的「导入」，由管理视图走完整的导入 / 覆盖确认流程 */
+  'import-plugins': []
 }>()
 
 const bodyRef = ref<HTMLElement | null>(null)
@@ -128,10 +145,25 @@ onBeforeUnmount(destroySortable)
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   flex-shrink: 0;
   height: 40px;
-  padding: 0 12px;
+  padding: 0 8px 0 12px;
   border-bottom: 1px solid var(--fluent-card-border);
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.panel-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
 }
 
 .panel-title {

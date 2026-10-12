@@ -37,14 +37,7 @@ import type {
   ScrapeSettingsSnapshot
 } from './scrapeJobTypes'
 import { createScrapeRunLog } from './scrapeLogFile'
-
-/** 运行中的任务：内存态只保存取消句柄与调度队列，真相以 sqlite 为准 */
-interface RunningTask {
-  taskId: string
-  controller: AbortController
-}
-
-let running: RunningTask | null = null
+import { currentRun, isRunActive, releaseRunSlot, takeRunSlot } from './scrapeRunSlot'
 
 /**
  * 任务的刮削器与资料库绑定（内存态）。
@@ -74,7 +67,7 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 }
 
 /** 某个资料库可用的刮削器；`configuredCount` 用于区分「一个没装」和「装了但没勾」 */
-interface LibraryPlugins {
+export interface LibraryPlugins {
   list: ScrapePluginRef[]
   configuredCount: number
 }
@@ -86,7 +79,8 @@ interface LibraryPlugins {
  * （该库不刮削），此时直接返回空数组，由调用方按「未配置刮削器」处理。
  * 无论勾选顺序如何，命中顺序只看插件页排序。
  */
-function usablePlugins(scraperIds: readonly string[]): LibraryPlugins {
+/** 资料库里配的刮削器 ∩ 当前可用插件（顺序按插件页），供任务与手动匹配共用 */
+export function usablePlugins(scraperIds: readonly string[]): LibraryPlugins {
   const all = moviePlugins
     .listPluginSummaries()
     .filter((plugin: PluginSummary) => plugin.enabled && plugin.loadError.length === 0)
@@ -106,7 +100,8 @@ function assertUsablePlugins(scraperIds: readonly string[]): ScrapePluginRef[] {
     : new ScrapeError('pluginMissing', '资料库配置的刮削器均不可用，请重新选择')
 }
 
-function snapshotSettings(): ScrapeSettingsSnapshot {
+/** 快照当前设置：任务与手动匹配都按同一份口径执行流水线 */
+export function snapshotSettings(): ScrapeSettingsSnapshot {
   const setting = loadSetting()
   return {
     scrape: setting.scrape,
@@ -121,7 +116,7 @@ function snapshotSettings(): ScrapeSettingsSnapshot {
  *
  * `connectionId` 用来挑出该连接下的资料库目录，清理空目录时不会误删它们。
  */
-function libraryPolicy(library: MediaLibrary, connectionId: string): ScrapeLibraryPolicy {
+export function libraryPolicy(library: MediaLibrary, connectionId: string): ScrapeLibraryPolicy {
   return {
     libraryId: library.id,
     localFirst: library.localFirst,
@@ -306,8 +301,7 @@ async function execute(
   pending: readonly ScrapeFileItem[],
   scraperIds: readonly string[]
 ): Promise<void> {
-  const controller = new AbortController()
-  running = { taskId: task.id, controller }
+  const controller = takeRunSlot(task.id)
   const log = createScrapeRunLog(task.name)
   const plugins = assertUsablePlugins(scraperIds)
   const policy = libraryPolicy(library, task.connectionId)
@@ -339,7 +333,7 @@ async function execute(
     setTaskStatus(task.id, 'failed', { message })
     hardFailure = true
   } finally {
-    running = null
+    releaseRunSlot()
     taskScrapers.delete(task.id)
     taskLibraries.delete(task.id)
   }
@@ -385,7 +379,7 @@ export interface ScrapeEntriesRequest {
  * 与其它入口一样**不等待**刮削完成，立即返回任务快照。
  */
 export function startScrapeTaskForEntries(request: ScrapeEntriesRequest): ScrapeTaskSnapshot {
-  if (running) throw new ScrapeError('busy')
+  if (currentRun()) throw new ScrapeError('busy')
   const connectionId = request.connectionId.trim()
   const libraryId = request.libraryId.trim()
   const dirPath = normalizeRemotePath(request.dirPath)
@@ -435,10 +429,11 @@ export function startScrapeTaskForEntries(request: ScrapeEntriesRequest): Scrape
 export function cancelScrapeTask(taskId: string): ScrapeTaskSnapshot {
   const task = getScrapeTask(taskId)
   if (task.status !== 'running') throw new ScrapeError('invalidArgument', '任务当前不在运行')
-  if (!running || running.taskId !== taskId) {
+  const run = currentRun()
+  if (!run || run.taskId !== taskId) {
     return setTaskStatus(taskId, 'paused', { message: '任务已取消' })
   }
-  running.controller.abort()
+  run.controller.abort()
   return setTaskStatus(taskId, 'paused', { message: '正在取消…' })
 }
 
@@ -449,7 +444,7 @@ export function cancelScrapeTask(taskId: string): ScrapeTaskSnapshot {
  * 拿它的刮削器与策略继续——与首次启动完全同一条路径。
  */
 export function resumeScrapeTask(taskId: string): ScrapeTaskSnapshot {
-  if (running) throw new ScrapeError('busy')
+  if (currentRun()) throw new ScrapeError('busy')
   const task = getScrapeTask(taskId)
   if (task.status === 'running') throw new ScrapeError('busy', '任务正在运行')
   const pending = listScrapeFile(taskId).filter(
@@ -480,5 +475,5 @@ export function markInterruptedOnStartup(): number {
 
 /** 当前是否有任务在跑（渲染层可据此禁用「开始」） */
 export function isScrapeRunning(): boolean {
-  return running !== null
+  return isRunActive()
 }

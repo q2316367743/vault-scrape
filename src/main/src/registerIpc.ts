@@ -6,6 +6,7 @@ import { registerFileIpc } from './modules/file/fileIpc'
 import { registerLibraryIpc } from './modules/library/libraryIpc'
 import { registerMediaIpc } from './modules/media/mediaIpc'
 import { registerOfflineIpc } from './modules/offline/offlineIpc'
+import { registerPlayerIpc } from './modules/player/playerIpc'
 import { registerPluginIpc } from './modules/plugin/pluginIpc'
 import { registerScrapeIpc } from './modules/scrape/scrapeIpc'
 import { registerSettingIpc } from './modules/setting/settingIpc'
@@ -20,6 +21,7 @@ export function registerIpc(): void {
   registerLibraryIpc()
   registerMediaIpc()
   registerOfflineIpc()
+  registerPlayerIpc()
   registerPluginIpc()
   registerScrapeIpc()
   registerSettingIpc()
