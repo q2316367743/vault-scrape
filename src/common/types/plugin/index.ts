@@ -65,6 +65,14 @@ export {
 } from './define'
 
 export {
+  PLUGIN_TRANSLATE_LANGUAGES,
+  isTranslateLanguage,
+  normalizeTranslateResult,
+  type PluginTranslateRequest,
+  type PluginTranslateResult
+} from './translate'
+
+export {
   PLUGIN_KINDS,
   PLUGIN_KIND_DESCRIPTIONS,
   PLUGIN_KIND_LABELS,

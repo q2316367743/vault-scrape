@@ -11,7 +11,7 @@
 | 必填项冲突 | 四个影片方法（`search` / `detail` / `covers` / `extras`）必填，于是「只能拿到演员资料、拿不到影片信息」的站点写不出插件 | 影片类与演员类各自有方法表：演员插件**不需要**实现任何影片方法，反之亦然 |
 | 触发场景模糊 | 演员资料什么时候抓不清楚：影片刮削顺手抓？进演员页抓？ | 演员抓取归「演员信息插件」，四个触发场景明确（见第 5 节）；影片刮削只认「影片信息插件」 |
 
-翻译功能尚未实现，但同样会是一种独立能力，所以本期**只预留 `translate` 类别**（方法表为空，只支持启停与环境变量配置），不实现任何翻译调用。
+翻译是与刮削并列的独立能力，所以从一开始就单列 `translate` 类别：给一段文本与目标语言、拿回译文，与影片 / 演员的字段、触发时机没有任何交集。契约、语言码与现成站点见 [09-translate-plugins.md](./09-translate-plugins.md)。
 
 ## 2. 三类契约一览
 
@@ -19,7 +19,7 @@
 | --- | --- | --- | --- | --- |
 | `movie` | 影片信息 | `search` / `detail` / `covers` / `extras` | — | 资料库刮削（`scrapeJobPlan.ts` / `scrapeRunner.ts`）、工具箱搜索页、资料库表单的「刮削器」候选 |
 | `actor` | 演员信息 | `actor` | `actorAssets` | 演员抓取链路（`actorScrape.ts`）的四个触发场景 |
-| `translate` | 翻译 | — | — | 暂无调用方（预留类别，任何调用都被 `invalidArgument` 拒绝） |
+| `translate` | 翻译 | `translate` | — | 暂无调用方（契约与插件已落地，但还没有业务侧去调它） |
 
 方法表是 `src/common/types/plugin/kind.ts` 里的 `PLUGIN_KIND_METHODS`：`{ required, optional, all }`。`all` 用 IPC 边界校验待测方法，`required` / `optional` 在编译期校验。**实现了别的类别的方法会被拒绝**，提示「…插件不能实现其它类别的方法：…，请拆成独立插件」——这是刻意的：一个脚本想包两份能力，就该拆成两个插件。
 
@@ -43,11 +43,11 @@ preload 桥按类别暴露：
 ```ts
 pluginApi.movie      // PluginBridge + search / detail / covers / extras 四个 invoke 快捷方法
 pluginApi.actor      // PluginBridge
-pluginApi.translate  // PluginBridge
+pluginApi.translate  // PluginBridge + translate 一个 invoke 快捷方法
 pluginApi.legacy()   // 只读：旧版平铺插件目录里的残留 .js
 ```
 
-`PluginBridge` 是九项通用操作的集合（`list` / `readCode` / `saveCode` / `import` / `remove` / `setEnabled` / `reorder` / `getEnv` / `saveEnv`）。渲染层统一通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`；`movie` 桥多出的四个快捷方法只有工具箱搜索页在用，`actor` / `translate` 桥不暴露无调用方的方法。
+`PluginBridge` 是九项通用操作的集合（`list` / `readCode` / `saveCode` / `import` / `remove` / `setEnabled` / `reorder` / `getEnv` / `saveEnv`）。渲染层统一通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`；`movie` 桥的四个快捷方法只有工具箱搜索页在用，`translate` 桥的 `translate(id, { text, from?, to })` 目前没有调用方，`actor` 桥不暴露无调用方的方法（演员调用由主进程的刮削链路直接完成）。
 
 ## 5. 演员抓取的四个触发场景
 

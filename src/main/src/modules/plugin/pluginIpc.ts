@@ -70,9 +70,15 @@ function readInvokePayload(payload: unknown): PluginInvokePayload {
   const keyword = readString(source, 'keyword', '')
   const movieId = readString(source, 'movieId', '')
   const actorName = readString(source, 'actorName', '')
+  const text = readString(source, 'text', '')
+  const from = readString(source, 'from', '')
+  const to = readString(source, 'to', '')
   if (keyword.length > 0) result.keyword = keyword
   if (movieId.length > 0) result.movieId = movieId
   if (actorName.length > 0) result.actorName = actorName
+  if (text.length > 0) result.text = text
+  if (from.length > 0) result.from = from
+  if (to.length > 0) result.to = to
   return result
 }
 

@@ -25,6 +25,7 @@ import {
   normalizeEnvFields,
   normalizeDetail,
   normalizeMeta,
+  normalizeTranslateResult,
   type ActorPlugin,
   type MoviePlugin,
   type PluginDefinition,
@@ -35,6 +36,7 @@ import {
   type PluginKind,
   type PluginMeta,
   type PluginMethod,
+  type PluginTranslateRequest,
   type TranslatePlugin
 } from '@common/types/plugin'
 import { readString, toSource } from '@common/types/setting/shared'
@@ -50,6 +52,13 @@ export type PluginLogSink = (level: LogLevel, message: string, detail?: string) 
 /** 插件方法的统一签名：入参是关键字 / 影片 ID / 演员姓名，外加环境变量与宿主上下文 */
 export type PluginHandler = (
   input: string,
+  env: PluginEnvValue,
+  ctx: PluginContext
+) => unknown
+
+/** 翻译方法的签名：入参是对象（`{ text, from?, to }`），与其余方法的字符串入参区分开 */
+export type PluginTranslateHandler = (
+  request: PluginTranslateRequest,
   env: PluginEnvValue,
   ctx: PluginContext
 ) => unknown
@@ -139,9 +148,9 @@ function createSandbox(log: PluginLogSink): {
  * 这里必须断言：vm realm 里的函数在宿主侧只有 `Function` 类型，
  * 不断言就拿不到具体签名（RL-03 禁止的是「不必要」的断言）。
  */
-function readHandler(source: Record<string, unknown>, method: PluginMethod): PluginHandler | null {
+function readHandler<T>(source: Record<string, unknown>, method: PluginMethod): T | null {
   const value = source[method]
-  return typeof value === 'function' ? (value as PluginHandler) : null
+  return typeof value === 'function' ? (value as T) : null
 }
 
 /** 插件定义里实际实现的方法，未实现的一律不挂 */
@@ -152,22 +161,25 @@ interface PluginHandlers {
   extras?: PluginHandler
   actor?: PluginHandler
   actorAssets?: PluginHandler
+  translate?: PluginTranslateHandler
 }
 
 function readHandlers(source: Record<string, unknown>): PluginHandlers {
   const handlers: PluginHandlers = {}
-  const search = readHandler(source, 'search')
-  const detail = readHandler(source, 'detail')
-  const covers = readHandler(source, 'covers')
-  const extras = readHandler(source, 'extras')
-  const actor = readHandler(source, 'actor')
-  const actorAssets = readHandler(source, 'actorAssets')
+  const search = readHandler<PluginHandler>(source, 'search')
+  const detail = readHandler<PluginHandler>(source, 'detail')
+  const covers = readHandler<PluginHandler>(source, 'covers')
+  const extras = readHandler<PluginHandler>(source, 'extras')
+  const actor = readHandler<PluginHandler>(source, 'actor')
+  const actorAssets = readHandler<PluginHandler>(source, 'actorAssets')
+  const translate = readHandler<PluginTranslateHandler>(source, 'translate')
   if (search) handlers.search = search
   if (detail) handlers.detail = detail
   if (covers) handlers.covers = covers
   if (extras) handlers.extras = extras
   if (actor) handlers.actor = actor
   if (actorAssets) handlers.actorAssets = actorAssets
+  if (translate) handlers.translate = translate
   return handlers
 }
 
@@ -234,6 +246,20 @@ function buildActorPlugin(meta: PluginMeta, handlers: PluginHandlers): ActorPlug
   return plugin
 }
 
+/** 在宿主 realm 里重建翻译插件：译文同样走一次归一化，空译文直接报错 */
+function buildTranslatePlugin(meta: PluginMeta, handlers: PluginHandlers): TranslatePlugin {
+  const translate = handlers.translate
+  if (!translate) throw new PluginError('invalidPlugin', '翻译插件缺少必需方法：translate')
+  return {
+    meta,
+    translate: async (request, env, ctx) => {
+      const result = normalizeTranslateResult(await translate(request, env, ctx))
+      if (!result) throw new PluginError('invokeFailed', '插件返回的译文不合法（text 必填）')
+      return result
+    }
+  }
+}
+
 function buildPlugin(
   kind: PluginKind,
   meta: PluginMeta,
@@ -241,8 +267,7 @@ function buildPlugin(
 ): PluginDefinition {
   if (kind === 'movie') return buildMoviePlugin(meta, handlers)
   if (kind === 'actor') return buildActorPlugin(meta, handlers)
-  const translate: TranslatePlugin = { meta }
-  return translate
+  return buildTranslatePlugin(meta, handlers)
 }
 
 /**

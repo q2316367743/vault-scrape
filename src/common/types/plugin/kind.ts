@@ -5,7 +5,8 @@
  * - 类别由插件 `meta.kind` 显式声明；缺失或非法一律加载失败（旧插件必须补上 kind 再导入）；
  * - 宿主只认该类别的 `all` 方法表：缺 `required` 或实现了别类方法都在编译期报 `invalidPlugin`；
  * - 同一 id 允许在不同类别里各存一份（目录、索引、IPC 通道都按类别隔离）；
- * - `translate` 目前只预留类别，方法表为空，任何调用都会被拒绝。
+ * - 三类的方法入参形状不同：影片 / 演员是一个字符串，翻译是一个
+ *   `{ text, from?, to }` 对象（见 `./translate`）。
  */
 import type { PluginMethod } from './define'
 
@@ -23,7 +24,7 @@ export const PLUGIN_KIND_LABELS: Readonly<Record<PluginKind, string>> = {
 export const PLUGIN_KIND_DESCRIPTIONS: Readonly<Record<PluginKind, string>> = {
   movie: '导入本机 JS 影片插件：按番号搜索影片，抓取详情、封面与花絮。',
   actor: '导入本机 JS 演员插件：按姓名抓取演员资料与头像图集。',
-  translate: '翻译插件类别（预留）：暂未定义可调用方法，只支持启停与环境变量配置。'
+  translate: '导入本机 JS 翻译插件：给定文本与目标语言，返回译文。'
 }
 
 export interface PluginKindMethodTable {
@@ -45,7 +46,7 @@ function methodTable(
 export const PLUGIN_KIND_METHODS: Readonly<Record<PluginKind, PluginKindMethodTable>> = {
   movie: methodTable(['search', 'detail', 'covers', 'extras'], []),
   actor: methodTable(['actor'], ['actorAssets']),
-  translate: methodTable([], [])
+  translate: methodTable(['translate'], [])
 }
 
 export function isPluginKind(value: unknown): value is PluginKind {

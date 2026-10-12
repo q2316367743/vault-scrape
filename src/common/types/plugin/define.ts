@@ -6,7 +6,7 @@
  * - 插件按类别分开，`meta.kind` 决定它属于哪一类、宿主用哪张方法表校验（见 `./kind`）：
  *   `movie` = 影片信息（`search` / `detail` / `covers` / `extras` 四个方法全部必填）、
  *   `actor` = 演员信息（`actor` 必填，`actorAssets` 可选）、
- *   `translate` = 翻译（类别预留，暂无方法）；
+ *   `translate` = 翻译（`translate` 必填，入参是 `{ text, from?, to }` 对象）；
  * - 插件用 `env: [...]` 声明自己需要的环境变量（账号、Cookie、站点地址等），
  *   安装时宿主会在沙箱里执行一次脚本、读取这份声明并生成填写表单；
  * - 方法签名统一为 `(入参, env, ctx)`，返回 Promise，宿主负责归一化与超时保护；
@@ -17,6 +17,7 @@ import type { PluginActorDetail } from './actor'
 import type { PluginAsset } from './asset'
 import type { PluginEnvField, PluginEnvValue, PluginMeta } from './manifest'
 import type { PluginMovieCandidate, PluginMovieDetail } from './movie'
+import type { PluginTranslateRequest, PluginTranslateResult } from './translate'
 
 export interface PluginRequestOptions {
   url: string
@@ -80,8 +81,15 @@ export interface ActorPlugin extends PluginBase {
   actorAssets?(name: string, env: PluginEnvValue, ctx: PluginContext): Promise<PluginAsset[]>
 }
 
-/** 翻译插件：类别预留，暂时只有 meta 与环境变量声明 */
-export type TranslatePlugin = PluginBase
+/** 翻译插件：唯一方法 `translate`，对象入参、对象返回 */
+export interface TranslatePlugin extends PluginBase {
+  /** 1. 把一段文本翻译成目标语言 */
+  translate(
+    request: PluginTranslateRequest,
+    env: PluginEnvValue,
+    ctx: PluginContext
+  ): Promise<PluginTranslateResult>
+}
 
 /** 三类插件的定义联合 */
 export type PluginDefinition = MoviePlugin | ActorPlugin | TranslatePlugin
@@ -89,7 +97,14 @@ export type PluginDefinition = MoviePlugin | ActorPlugin | TranslatePlugin
 /** 宿主注入沙箱的定义函数 */
 export type DefinePlugin = <T extends PluginDefinition>(definition: T) => T
 
-export type PluginMethod = 'search' | 'detail' | 'covers' | 'extras' | 'actor' | 'actorAssets'
+export type PluginMethod =
+  | 'search'
+  | 'detail'
+  | 'covers'
+  | 'extras'
+  | 'actor'
+  | 'actorAssets'
+  | 'translate'
 
 /** 全部方法名（不分类别；类别方法表见 `./kind` 的 `PLUGIN_KIND_METHODS`） */
 export const PLUGIN_METHOD_NAMES: readonly PluginMethod[] = [
@@ -98,7 +113,8 @@ export const PLUGIN_METHOD_NAMES: readonly PluginMethod[] = [
   'covers',
   'extras',
   'actor',
-  'actorAssets'
+  'actorAssets',
+  'translate'
 ]
 
 export interface PluginInvokePayload {
@@ -108,6 +124,12 @@ export interface PluginInvokePayload {
   movieId?: string
   /** method 为 actor / actorAssets 时必填 */
   actorName?: string
+  /** method 为 translate 时必填：待翻译文本 */
+  text?: string
+  /** method 为 translate 时可选：源语言，缺省自动识别；非法值按缺省处理 */
+  from?: string
+  /** method 为 translate 时必填：目标语言 */
+  to?: string
 }
 
 export type PluginInvokeData =
@@ -115,3 +137,4 @@ export type PluginInvokeData =
   | PluginMovieDetail
   | PluginAsset[]
   | PluginActorDetail
+  | PluginTranslateResult

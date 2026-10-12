@@ -9,7 +9,9 @@ import type {
   PluginMovieCandidate,
   PluginMovieDetail,
   PluginResult,
-  PluginSummary
+  PluginSummary,
+  PluginTranslateRequest,
+  PluginTranslateResult
 } from '@common/types/plugin'
 import { PLUGIN_LEGACY_CHANNEL, channelsOf } from './pluginChannels'
 
@@ -49,7 +51,7 @@ function createBridge(kind: PluginKind): PluginBridge {
 
 /**
  * 影片信息插件桥：四个调用快捷方法（工具页的「插件测试」用）。
- * 演员与翻译桥不额外暴露方法：演员调用由主进程的刮削链路直接完成，界面不直接调。
+ * 演员桥不额外暴露方法：演员调用由主进程的刮削链路直接完成，界面不直接调。
  */
 function createMovieBridge() {
   const base = createBridge('movie')
@@ -67,13 +69,30 @@ function createMovieBridge() {
   }
 }
 
+/**
+ * 翻译插件桥：一个调用快捷方法，入参是 `{ text, from?, to }`。
+ * 翻译目前没有业务调用方，方法先备着，等有调用方时不用再改这一层。
+ */
+function createTranslateBridge() {
+  const base = createBridge('translate')
+  const channels = channelsOf('translate')
+  return {
+    ...base,
+    translate: (
+      id: string,
+      request: PluginTranslateRequest
+    ): Promise<PluginResult<PluginTranslateResult>> =>
+      ipcRenderer.invoke(channels.invoke, { id, method: 'translate', ...request })
+  }
+}
+
 export const pluginApi = {
   /** 影片信息插件：搜索 / 详情 / 封面 / 花絮 */
   movie: createMovieBridge(),
   /** 演员信息插件：演员资料与头像图集 */
   actor: createBridge('actor'),
-  /** 翻译插件：类别预留，暂无方法可调用 */
-  translate: createBridge('translate'),
+  /** 翻译插件：文本进、译文出 */
+  translate: createTranslateBridge(),
   /** 旧版平铺插件目录的残留检查（插件页提示用） */
   legacy: (): Promise<PluginResult<PluginLegacyNotice>> =>
     ipcRenderer.invoke(PLUGIN_LEGACY_CHANNEL)
@@ -83,3 +102,6 @@ export type PluginApi = typeof pluginApi
 
 /** 影片信息插件桥的完整形状（含四个调用快捷方法），供渲染层组合式声明类型 */
 export type MoviePluginApi = ReturnType<typeof createMovieBridge>
+
+/** 翻译插件桥的完整形状（含 translate 调用快捷方法） */
+export type TranslatePluginApi = ReturnType<typeof createTranslateBridge>

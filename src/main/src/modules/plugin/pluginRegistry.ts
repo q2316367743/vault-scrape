@@ -16,6 +16,7 @@ import {
   PluginError,
   comparePluginVersion,
   describePluginError,
+  isTranslateLanguage,
   readEnvFilledMask,
   type PluginEnvDraft,
   type PluginEnvField,
@@ -25,7 +26,8 @@ import {
   type PluginInvokePayload,
   type PluginKind,
   type PluginMethod,
-  type PluginSummary
+  type PluginSummary,
+  type PluginTranslateRequest
 } from '@common/types/plugin'
 import { appendLog } from '$/db/repo/logRepo'
 import { loadSetting } from '$/modules/setting/settingStore'
@@ -93,7 +95,25 @@ function argumentOf(method: PluginMethod, payload: PluginInvokePayload): string 
 function describeMissingArgument(method: PluginMethod): string {
   if (method === 'search') return '缺少搜索关键字 keyword'
   if (method === 'actor' || method === 'actorAssets') return '缺少演员姓名 actorName'
+  if (method === 'translate') return '缺少待翻译文本 text 或目标语言 to'
   return '缺少影片 ID movieId'
+}
+
+/**
+ * 翻译入参：`text` 与 `to` 必填，`to` 必须是宿主支持的语言码；
+ * `from` 可选，非法值按「自动识别」处理。非 translate 方法返回 null。
+ */
+function translateRequestOf(
+  method: PluginMethod,
+  payload: PluginInvokePayload
+): PluginTranslateRequest | null {
+  if (method !== 'translate') return null
+  const text = payload.text?.trim() ?? ''
+  const to = payload.to ?? ''
+  if (text.length === 0 || !isTranslateLanguage(to)) return null
+  const request: PluginTranslateRequest = { text, to }
+  if (isTranslateLanguage(payload.from)) request.from = payload.from
+  return request
 }
 
 /**
@@ -345,8 +365,11 @@ export function createPluginRegistry(kind: PluginKind) {
     if (!stored.enabled) {
       throw new PluginError('invokeFailed', `插件 ${stored.name} 已停用，请先启用`)
     }
+    const request = translateRequestOf(method, payload)
     const argument = argumentOf(method, payload)
-    if (argument.length === 0) {
+    if (method === 'translate') {
+      if (!request) throw new PluginError('invalidArgument', describeMissingArgument(method))
+    } else if (argument.length === 0) {
       throw new PluginError('invalidArgument', describeMissingArgument(method))
     }
     const builtin = findBuiltinPlugin(kind, id)
@@ -369,6 +392,12 @@ export function createPluginRegistry(kind: PluginKind) {
     }
     const ctx = createPluginContext(kind, id)
     const task = (): Promise<PluginInvokeData> => {
+      if (method === 'translate') {
+        if (!('translate' in plugin) || !request) {
+          throw new PluginError('invokeFailed', `插件 ${stored.name} 未实现翻译方法`)
+        }
+        return plugin.translate(request, env, ctx)
+      }
       if (method === 'search') {
         if (!('search' in plugin)) throw new PluginError('invokeFailed', '插件未实现 search 方法')
         return plugin.search(argument, env, ctx)

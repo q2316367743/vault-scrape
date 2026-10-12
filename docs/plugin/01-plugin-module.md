@@ -40,14 +40,19 @@ definePlugin({
   actorAssets?(name, env, ctx): Promise<PluginAsset[]>
 })
 
-// 翻译插件（kind: 'translate'）：类别已预留，方法表暂为空
-definePlugin({ meta: { kind: 'translate', id, name, version }, env?: [ /* … */ ] })
+// 翻译插件（kind: 'translate'）：translate 必填，入参是对象
+definePlugin({
+  meta: { kind: 'translate', id, name, version },
+  env?: [ /* … */ ],
+  translate(request, env, ctx): Promise<PluginTranslateResult> // request = { text, from?, to }
+})
 ```
 
 - `meta.id` 必须是 kebab-case（`/^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/`），同时是源码文件名 `<id>.js`；同一 id 允许在不同类别里各存一份（命名空间按 `kind` 隔离）；
-- **方法表按类别校验**（`PLUGIN_KIND_METHODS`）：影片类缺 `search` / `detail` / `covers` / `extras` 之一、演员类缺 `actor`、或者实现了别的类别的方法，都报 `invalidPlugin` 且源码不落盘；翻译类两张表都为空，零方法合法，但任何调用都会被 `invalidArgument` 拒绝；
+- **方法表按类别校验**（`PLUGIN_KIND_METHODS`）：影片类缺 `search` / `detail` / `covers` / `extras` 之一、演员类缺 `actor`、翻译类缺 `translate`，或者实现了别的类别的方法，都报 `invalidPlugin` 且源码不落盘；
 - 脚本「以 `definePlugin(...)` 结尾」和「没有返回值但调用过 definePlugin」两种写法都支持（宿主同时记录调用槽与顶层完成值）；
-- 每个方法的第二个参数都是 `env`：插件自己声明、用户在插件页配置区块填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节。
+- 每个方法的第二个参数都是 `env`：插件自己声明、用户在插件页配置区块填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节；
+- 三类的方法入参形状不同：影片 / 演员是一个字符串（关键字 / 影片 ID / 演员姓名），翻译是一个 `{ text, from?, to }` 对象、返回 `{ text }`，语言码用宿主的 5 种（见 [09-translate-plugins.md](./09-translate-plugins.md)）。
 
 ### 2.1 返回类型（`@common/types/plugin`）
 
@@ -146,7 +151,7 @@ interface PluginAsset {
 1. `new vm.Script(source)` 解析语法，失败即 `evalFailed`，不落盘；
 2. 在 `node:vm` 沙箱里**执行一次顶层代码**（超时 5 秒），拿到 `definePlugin(...)` 的返回值；
 3. 校验 `meta`——`id` 是 kebab-case、`name` / `version` 非空、**`kind` 必须是 `movie` / `actor` / `translate` 之一**，缺失或非法即 `invalidPlugin`；同时校验 `meta.kind` 与「正在导入的类别」一致，不一致的报「插件声明的类别是「X」，不能在「Y」类别里加载或导入」；
-4. 按该类别的 `PLUGIN_KIND_METHODS` 校验方法：缺必需方法、或实现了别类方法都报 `invalidPlugin`（翻译类两张表为空，零方法合法）；
+4. 按该类别的 `PLUGIN_KIND_METHODS` 校验方法：缺必需方法、或实现了别类方法都报 `invalidPlugin`（三个类别各自有必需方法，见 §2）；
 5. 读取 `env` 数组并归一化（丢弃非法项、截断超量、去重），把结果缓存进该类别的 `plugins.json` 的 `envFields`；
 6. 只有以上全部通过才写盘；声明表随之出现在插件页右栏的配置区块，由用户填写取值。
 
@@ -302,7 +307,7 @@ interface PluginResponse {
 | `plugin:<类别>:reorder` | `{ ids }` | `PluginSummary[]`（按传入顺序重排；未出现的 id 保持原有相对顺序追加到末尾） |
 | `plugin:<类别>:getEnv` | `{ id }` | `PluginEnvSnapshot`（`fields` + `filled`，无明文） |
 | `plugin:<类别>:saveEnv` | `{ id, draft }` | `PluginSummary` |
-| `plugin:<类别>:invoke` | `{ id, method, keyword?, movieId?, actorName? }` | `PluginMovieCandidate[]` / `PluginMovieDetail` / `PluginAsset[]` / `PluginActorDetail` |
+| `plugin:<类别>:invoke` | `{ id, method, keyword?, movieId?, actorName?, text?, from?, to? }` | `PluginMovieCandidate[]` / `PluginMovieDetail` / `PluginAsset[]` / `PluginActorDetail` / `PluginTranslateResult`（`translate` 方法用 `text` / `from?` / `to`，`to` 必须是宿主 5 种语言码之一，否则 `invalidArgument`） |
 | `plugin:legacy` | — | `{ dir, files }`（旧版平铺目录的残留 `.js`，只读探测） |
 
 `<类别>` 是 `movie` / `actor` / `translate`；`invoke` 的 `method` 必须属于该类别的方法表，否则 `invalidArgument`——`translate` 类别的方法表目前为空，任何调用都会被拒。
@@ -377,7 +382,7 @@ interface PluginEnvField {
 
 ## 10. 完整示例插件
 
-下面是一个**影片信息插件**（`kind: 'movie'`）。保存为 `~/.vault-scrape/plugin/movie/example-site.js` 后可在插件页「影片信息」tab 导入（本文件即导入源）。演员信息插件只需实现 `actor` / `actorAssets`（见 §2.5），翻译插件目前无需实现任何方法。
+下面是一个**影片信息插件**（`kind: 'movie'`）。保存为 `~/.vault-scrape/plugin/movie/example-site.js` 后可在插件页「影片信息」tab 导入（本文件即导入源）。演员信息插件只需实现 `actor` / `actorAssets`（见 §2.5）；翻译插件只需实现 `translate`，写法与三家现成站点见 [09-translate-plugins.md](./09-translate-plugins.md)。
 
 ```js
 definePlugin({
@@ -512,4 +517,4 @@ definePlugin({
 - 插件多文件打包、TypeScript 插件、代码编辑器语法高亮；
 - 子进程级隔离（`utilityProcess`）；
 - 旧版平铺插件的自动迁移（补上 `meta.kind` 重新导入即可，旧文件只会被提示、不会加载）；
-- 翻译类别的实际调用能力（只预留了类别，方法表为空）。
+- 翻译结果的业务调用方（翻译插件本身已可用：契约、沙箱调用与 3 个站点实现见 [09-translate-plugins.md](./09-translate-plugins.md)，但目前没有谁去调它）。
