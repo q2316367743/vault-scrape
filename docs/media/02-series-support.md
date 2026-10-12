@@ -109,8 +109,8 @@ episodeItemId(connectionId, path)                               // sha1('episode
 
 `src/main/src/modules/library/libraryScrape.ts` 的文件头写明两条候选口径：
 
-- **影片库**：候选是视频文件（`scrapedAt === 0` 的 `movie` 条目），关键词按文件名解析番号、做体积过滤（`minFileSizeMb`）、按「同目录 + 同番号」去重；
-- **剧集库**：候选是**剧集目录**（`scrapedAt === 0` 的 `series` 条目，`listPendingSeriesItems`），`collectSeriesCandidates` 组装：
+- **影片库**：候选是视频文件（`scrapedAt === 0` **且 `has_nfo = 0`** 的 `movie` 条目，有 NFO 的视为已刮过、只能详情页手动刮），关键词按文件名解析番号、做体积过滤（`minFileSizeMb`）、按「同目录 + 同番号」去重；
+- **剧集库**：候选是**剧集目录**（`scrapedAt === 0` **且 `has_nfo = 0`** 的 `series` 条目，`listPendingSeriesItems`；剧集目录下已有 `tvshow.nfo` 的整部剧只在详情页手动刮），`collectSeriesCandidates` 组装：
 
   ```ts
   { itemId, connectionId, path: item.path, name: item.name,

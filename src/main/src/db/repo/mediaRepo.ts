@@ -342,13 +342,18 @@ export interface MediaItemRestoreInput {
  * 清除刮削回写的元数据，把条目退回「扫描过、还没刮」的状态。
  *
  * 契约：只动刮削列（元数据一律回空、`scrapedAt = 0`），展示名与番号还原成传入的磁盘取值
- * （还原流程传还原后的文件名）；扫描拥有的列（path/type/parentId/hasNfo）一律不改，
- * `path` 由还原流程自己用 `updateItem` 更新，`hasNfo` 由下次扫描纠正。
+ * （还原流程传还原后的文件名）；扫描拥有的列（path/type/parentId）一律不改，
+ * `path` 由还原流程自己用 `updateItem` 更新。
+ *
+ * `hasNfo` 是唯一的例外：调用方（还原流程）刚把这个条目的 NFO 候选全删了，所以一并归零，
+ * 让它立刻回到待刮削候选（否则要等下次扫描才纠正）。同目录兄弟条目可能还留着自己的
+ * `<文件名>.nfo`，那些条目的 `hasNfo` 继续等下次扫描。
  */
 export function clearItemMetadata(itemId: string, restore: MediaItemRestoreInput): void {
   db()
     .update(mediaItemTable)
     .set({
+      hasNfo: 0,
       name: restore.name,
       sortName: '',
       num: restore.num,
@@ -506,7 +511,13 @@ export function maxSourceIndexedAt(): number {
   return row?.value ?? 0
 }
 
-/** 库里仍然没刮削过、且已经有媒体源的影片条目（刮削候选） */
+/**
+ * 库里仍然没刮削过、且已经有媒体源的影片条目（刮削候选）。
+ *
+ * `has_nfo = 1`（扫描时已按 `movie.nfo` / `<目录名>.nfo` / `<视频文件名>.nfo` 判过）
+ * 视为「已有元数据」，不进批量候选：这类影片只能从详情页手动刮，避免批量任务把它们
+ * 重刮一遍、覆盖掉磁盘上已有的 NFO。
+ */
 export function listPendingMovieItems(libraryId: string): MediaItemRow[] {
   return db()
     .select()
@@ -515,7 +526,8 @@ export function listPendingMovieItems(libraryId: string): MediaItemRow[] {
       and(
         eq(mediaItemTable.libraryId, libraryId),
         eq(mediaItemTable.type, 'movie'),
-        eq(mediaItemTable.scrapedAt, 0)
+        eq(mediaItemTable.scrapedAt, 0),
+        eq(mediaItemTable.hasNfo, 0)
       )
     )
     .orderBy(asc(mediaItemTable.path))

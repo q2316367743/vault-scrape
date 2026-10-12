@@ -91,7 +91,7 @@
 
 条目侧三张表（`media_item` 32 列 / `media_source` 12 列 / `media_image` 9 列）的逐列以 `src/main/src/db/schema/mediaItem.ts` 等 schema 与 `resources/drizzle/` 迁移 SQL 为准；其中 `season_number` / `episode_number` 两列由剧集增量迁移 `0001_familiar_lifeguard.sql` 引入（基线里 `media_item` 是 26 列），`maker` / `label` / `series` / `director` 四列由详情页元信息落库的增量迁移 `0002_soft_masked_marvel.sql` 引入（`TEXT NOT NULL DEFAULT ''`，详见[数据存储](../data/01-sqlite-storage.md)）。
 
-`media_item.has_nfo`（在基线迁移 `0000_moaning_black_panther.sql` 里）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo`、**目录型条目按目录名命名的 `.nfo`** 或与视频同名的 `.nfo` 就置 1（剧集库三层另见 §4.6）。它现在只是「磁盘上有没有 NFO」的事实标记，**不参与任何界面判定**——影视墙不按刮削与否分类，旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线（`has_nfo` 列保留，避免改动表结构与迁移）；**刮削队列**仍只看 `scrapedAt === 0`（见 §5）。
+`media_item.has_nfo`（在基线迁移 `0000_moaning_black_panther.sql` 里）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo`、**目录型条目按目录名命名的 `.nfo`** 或与视频同名的 `.nfo` 就置 1（剧集库三层另见 §4.6）。它只表示「磁盘上有没有 NFO」，影视墙**不按它做分类**——旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线。但它**参与刮削队列的候选判定**：批量刮削只处理 `scrapedAt === 0` **且 `has_nfo = 0`** 的条目，「磁盘上已有 NFO」= 已经刮过、不再自动 / 批量重刮，只能在详情页手动刮（见 §5）。唯一的写入口例外是「还原刮削前」（`clearItemMetadata` 会一并把 `has_nfo` 归零，因为调用方刚把该条目的 NFO 都删了，见[影视墙页面](../page/04-media-wall-page.md)）。
 
 契约类型（`src/common/types/library/index.ts`）：
 
@@ -99,7 +99,7 @@
 - `MediaLibrary`：`{ id, name, type, scrapers, paths: MediaLibraryPath[], nsfwProtection, minFileSizeMb, localFirst, moveEnabled, moveDirectory, lastScanAt, lastScrapeAt, createdAt, updatedAt }`——**顶层没有 `connectionId` / `rootPath`**，目录在 `paths` 里；`path` 一律是**连接内绝对路径**（`/` = 连接根）。
 - `MediaLibraryPath`：`{ id, connectionId, path }`；草稿里是 `MediaLibraryPathDraft`（无 `id`）。
 - `MediaLibraryDraft`：`id` 缺省 = 新建；`type` 也在这里。
-- `MediaLibrarySummary extends MediaLibrary`：多出 `videoCount`（**影视库 `countMovieItems`、剧集库 `countSeriesItems`**——影视库数影片、剧集库数剧集，整部剧集算一条）与 **`coverUrls: string[]`**——封面拼贴用的最多 4 张 `storage://` 地址，按**最近添加**排序，空数组时卡片退化成文字封面（`libraryStore.coverUrlsOf()`，常量 `COVER_URL_LIMIT = 4`；条目来源同样按库类型二选一）。
+- `MediaLibrarySummary extends MediaLibrary`：多出 `videoCount`（**影视库 `countMovieItems`、剧集库 `countSeriesItems`**——影视库数影片、剧集库数剧集，整部剧集算一条）与 **`coverUrls: string[]`**——封面拼贴用的最多 4 张 `storage://` 地址，按**最近添加**排序；不足 4 张时继续取同一条目的其它图片、剧集库再补各季海报，凑不满就按实际张数返回，空数组时卡片退化成文字封面（`libraryStore.coverUrlsOf()`，常量 `COVER_URL_LIMIT = 4`；条目来源按库类型二选一）。**注意**：这里与 NSFW 无关——NSFW 库的 `coverUrls` 照常返回，是否展示由渲染层按全局 NSFW 开关决定（见 [影视墙页面](../page/04-media-wall-page.md)）。
 - `LibraryScanResult`：`{ library, indexedFiles, indexedVideos, removedItems, skippedDirs, pending, message, autoScrape, autoScrapeSkipped }`——注意是 `removedItems`（被清掉的条目数），不是旧的 `removedFiles`。
 - `LibraryProgressEvent`：`{ libraryId, phase: 'scan', scannedDirs, indexedFiles, currentPath, finished, cancelled }`。
 - `LibraryTaskResult`：`{ taskId, total }`。
@@ -178,7 +178,7 @@
 | --- | --- | --- |
 | 1 | 设置里关掉了开关（`scrape.autoScrapeAfterScan`，见 [设置项清单](../setting/02-setting-items.md)） | 设置中已关闭「扫描后自动刮削」 |
 | 2 | `library.scrapers.length === 0`（空刮削器 = 不刮削） | 该资料库未配置刮削器，已跳过刮削 |
-| 3 | 没有 `scrapedAt = 0` 的条目（`pending === 0`；影片库数影片、剧集库数剧集，整部剧集算一条） | 没有待刮削的条目 |
+| 3 | 没有 `scrapedAt = 0` **且 `has_nfo = 0`** 的条目（`pending === 0`；影片库数影片、剧集库数剧集，整部剧集算一条） | 没有待刮削的条目 |
 | 4 | 已有刮削任务在运行（`isScrapeRunning()`） | 已有刮削任务在运行，可稍后手动刮削 |
 
 四条都不命中时启动刮削并把任务快照放进 `autoScrape`（`ScrapeTaskSnapshot | null`）；启动本身抛错时把中文原因写进 `autoScrapeSkipped`。
@@ -238,8 +238,8 @@
 
 ## 5. 刮削（`libraryScrape.ts`）
 
-- **候选**：本库里 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）。`collectCandidates(library)` 先做**体积过滤**：库级 `minFileSizeMb > 0` 时，媒体源体积小于该阈值的跳过（`source.size > 0 && size < minBytes`；读不到体积的 `0` 放行，避免把未知当小文件），与扫描的体积过滤同一口径；`pendingEntries(libraryId)` 顺便做去重：同目录 + 同番号只留第一条，其余带上 `duplicateOf = 先出现者的名称`（任务里会被置为 `skipped`）。番号以 `extractKeyword(item.name)` 的解析结果为准，解析为空才退回条目上的 `num`。
-- **剧集库的候选是剧集目录**：`libraryScrapeDispatch.pendingEntries` 在 `type === 'tv'` 时改走 `pendingSeriesEntries` → `collectSeriesCandidates(library)`：取本库 `scrapedAt === 0` 的 **series 条目**（`listPendingSeriesItems` + `seriesStatsOf`），关键词用 `seriesKeywordOf(item.name)`（**剧集目录名**清洗后去掉结尾年份），`num` 恒为空串；**不做体积过滤**（扫描阶段已按同一门槛筛过）、**剧集之间不去重**。计划与启动同样按 `(connectionId, owningPath)` 分组、一次只跑一组；空计划报「资料库里没有待刮削的剧集」，按 id 刮削报「所选剧集已不在待刮削列表中」「请至少选择一个待刮削的剧集」。任务行的 `path` 就是**剧集目录**，一次任务处理整个剧集（见 [剧集支持 §4](./02-series-support.md)）。
+- **候选**：本库里 `scrapedAt === 0` **且 `has_nfo = 0`** 的**影片**条目（`listPendingMovieItems`）。**有 NFO 的影片（`movie.nfo` / `<目录名>.nfo` / `<文件名>.nfo` 任一存在，由扫描维护 `has_nfo`）不进批量候选，只能在详情页手动刮**，见 [手动匹配](./04-manual-match.md)。`collectCandidates(library)` 先做**体积过滤**：库级 `minFileSizeMb > 0` 时，媒体源体积小于该阈值的跳过（`source.size > 0 && size < minBytes`；读不到体积的 `0` 放行，避免把未知当小文件），与扫描的体积过滤同一口径；`pendingEntries(libraryId)` 顺便做去重：同目录 + 同番号只留第一条，其余带上 `duplicateOf = 先出现者的名称`（任务里会被置为 `skipped`）。番号以 `extractKeyword(item.name)` 的解析结果为准，解析为空才退回条目上的 `num`。
+- **剧集库的候选是剧集目录**：`libraryScrapeDispatch.pendingEntries` 在 `type === 'tv'` 时改走 `pendingSeriesEntries` → `collectSeriesCandidates(library)`：取本库 `scrapedAt === 0` **且 `has_nfo = 0`** 的 **series 条目**（`listPendingSeriesItems` + `seriesStatsOf`）——剧集目录下已有 `tvshow.nfo` 的整部剧集不进批量候选，只能在剧集详情页手动刮，关键词用 `seriesKeywordOf(item.name)`（**剧集目录名**清洗后去掉结尾年份），`num` 恒为空串；**不做体积过滤**（扫描阶段已按同一门槛筛过）、**剧集之间不去重**。计划与启动同样按 `(connectionId, owningPath)` 分组、一次只跑一组；空计划报「资料库里没有待刮削的剧集」，按 id 刮削报「所选剧集已不在待刮削列表中」「请至少选择一个待刮削的剧集」。任务行的 `path` 就是**剧集目录**，一次任务处理整个剧集（见 [剧集支持 §4](./02-series-support.md)）。
 - **空刮削器 = 不刮削**：`runPlan()` 在 `plan.library.scrapers.length === 0` 时抛 `LibraryError('pluginMissing', '该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择')`。不会再回落到存储的刮削器（连接上已没有该字段）。配了但都不可用时仍是 `资料库配置的刮削器均不可用，请重新选择`。
 - **任务名**：`资料库 · <库名称>`。
 - **一次只跑一组**：`planLibraryScrape(libraryId, itemIds?)` 按 `(connectionId, 所属根目录)` 把候选分组（任务表只支持一个「连接 + 目录」，同一任务只能有一个 `dirPath` 基准），**只取条目最多的那一组**启动，其余条目保持 `scrapedAt = 0` 留待下次（要再点一次「刮削」才会轮到下一组）。没有可跑的组时返回 `null`：`library:scrape` 报 `notFound`「资料库里没有待刮削的影片」，按 id 刮削报「所选影片已不在待刮削列表中」。
@@ -248,7 +248,7 @@
 - **进度复用刮削模块**：库侧不新增 `scrape:*` 进度通道，任务列表、`scrape:progress`、取消 / 继续全部走[刮削模块](../scrape/01-scrape-module.md)。
 - **重启后的「继续」**：`taskScrapers` / `taskLibraries` 是内存映射，重启即丢；`resumeScrapeTask` 先用 `findLibraryByPath(task.connectionId, task.dirPath)` 按 `(connectionId, dirPath)` 找回所属库，再回落该库的 `scrapers`；找不到库时抛 `pluginMissing`「找不到任务所属的资料库，请重新选择刮削器」。
 - **新建库默认勾选内置离线包**：表单只在新库里 `scrapers` 为空、且候选项包含 `R18_OFFLINE_PLUGIN_ID`（`'r18-offline'`，定义在 `src/common/types/plugin/builtin.ts`）时默认勾上它；该内置插件属**影片信息**类别（`kind: 'movie'`），插件不可用（未启用 / 加载失败）时保持不勾，不替用户写一个不可用的 id。
-- 资料库不重复下载：取消 / 失败的文件仍是 `pending`，`scrapedAt` 保持 0，所以下次扫描后的待刮削列表里还会出现。
+- 资料库不重复下载：取消 / 失败的文件没写回元数据、也没写 NFO，仍是 `scrapedAt = 0` 且 `has_nfo = 0`，所以下次扫描后的待刮削列表里还会出现。
 
 ## 6. IPC 契约与错误码
 
@@ -318,7 +318,7 @@
 - **两种库类型、且不能改**：`LIBRARY_TYPES` 是 `'movie'` / `'tv'`，新增类型需要同时补 `LIBRARY_TYPE_LABELS` 与 `DEFAULT_LIBRARY_EXTENSIONS`；已有库的类型锁死是刻意设计（改类型会让已索引条目变成孤儿）。
 - **剧集库的已知限制**：剧集库不支持「优先本地 NFO」（`localFirst`）、不做体积过滤、剧集之间不去重；「还原刮削前」**季目录名不回改**（旧季目录由集文件搬回时重建，规范化后的季目录按空目录删掉）；渲染层没有剧集库的目录浏览入口（`mediaBrowse.ts` 只认影片库）。清单见 [剧集支持 §10](./02-series-support.md)。
 - **没有增量扫描，也没有实时监控**：每次扫描都把整库重新走一遍，靠 `scanId` 对比来做清理；磁盘变动必须手动点「扫描」才会反映。唯一例外是 §4.5 的**播放期路径自愈**：只在起播 `stat` 报「文件不存在」时按文件名 + 字节数找回一次，不改条目、不做全库扫描。
-- **没有库封面列**：`library` 表没有封面字段；首页资料库卡片的四宫格是**影片封面拼贴**（`MediaLibrarySummary.coverUrls`，最多 4 张、按最近添加排序），不是库自己的封面。
+- **没有库封面列**：`library` 表没有封面字段；首页资料库卡片的四宫格是**影片封面拼贴**（`MediaLibrarySummary.coverUrls`，最多 4 张、按最近添加排序；不足 4 张用同一条目的其它图片、剧集库再补各季海报凑满），不是库自己的封面。**NSFW 库不展示这张拼贴**：卡片在全局 NSFW 开关开启时直接按无封面渲染（图标占位），主进程照常返回 `coverUrls`（判断在渲染层，见 [影视墙页面](../page/04-media-wall-page.md)）。
 - 路径冲突统一报 `invalidArgument`：同库重复报「媒体目录重复添加」，同库嵌套报「媒体目录不能互相嵌套：A 与 B」，跨库重叠报「媒体目录与资料库「N」的 X 重叠，请改用不重叠的目录」——旧的 `findPathOwner` 精确归属规则与 `pathOverlap` 错误码都已移除。
 - 扫描上限是**全局计数**（`listed > 200_000` 即停），触顶时结果可能不完整，只给 `truncated` 提示、不做断点续扫。
 - **多版本只播主版本**：详情页本期固定播放 `primarySourceOf` 选出的主版本（无版本标签优先，其次路径 / 名称序第一），版本切换 UI 留后续；媒体源列表本身已经完整入库。
@@ -340,13 +340,13 @@
 10. 重扫不丢元数据：刮削成功一个影片后手动再扫一次，标题 / 封面都还在（只刷新了媒体源的大小与时间）。
 11. 磁盘上删掉一个视频后再扫描：该影片从墙上消失，提示里的「清理 N 个失效条目」与 `removedItems` 对得上；库内其它影片不受影响。
 12. 目录级封面：在影片所在目录放 `poster.jpg` 与 `fanart.jpg`，扫描后影视墙该影片（或它所在目录的子项）应显示封面；把这两个文件删掉再扫，封面消失。
-13. 首页封面拼贴：给库里最近的几个影片刮出封面后回首页，该库卡片显示最多 4 张的四宫格（按最近添加排序）；不足 4 张按实际张数，没有封面时显示文字占位。
+13. 首页封面拼贴：给库里最近的几个影片刮出封面后回首页，该库卡片显示最多 4 张的四宫格（按最近添加排序）；不足 4 张用同一条目的其它图片（剧集库再补各季海报）继续凑，凑不满按实际张数显示，一张都没有时显示文字占位；把某个库设为 NSFW 并在设置里打开 NSFW 总开关 → 该卡片不显示任何封面（图标占位），关掉总开关后封面恢复。
 13.5 目录型条目 + 多版本：`库/片名 (2009)/` 里放 `片名 (2009).mkv` 与 `片名 (2009) - 1080p.mkv` → 墙上只有**一部**影片，条目名 = 目录名，进详情能播放主版本（无标签那个）；把 `- 1080p` 那个删掉再扫，条目还在、元数据不丢。
 13.6 花絮不入库：影片目录里放 `sample.mkv`，再建一个 `trailers/` 子目录放视频 → 扫描后墙上只有正片，影片数不含这两个。
-13.7 扫描读 NFO：给未刮削的影片目录写一个 `<movie>` 根的 `movie.nfo`（含 `<title>` / `<plot>` / `<actor>`）→ 扫描后详情页标题与简介来自 NFO、演员列表有数据，且该条目**仍是待刮削**（`scraped_at` 还是 0）；把同一份内容写成 `<tvshow>` 根放进影片目录 → 不再被当成影片元数据。
+13.7 扫描读 NFO：给未刮削的影片目录写一个 `<movie>` 根的 `movie.nfo`（含 `<title>` / `<plot>` / `<actor>`）→ 扫描后详情页标题与简介来自 NFO、演员列表有数据，且该条目 `scraped_at` 仍是 0、`has_nfo` 变成 1 —— **不进批量候选**（点「刮削」会报「资料库里没有待刮削的影片」），只能在详情页「更多 → 手动匹配」里手动刮；把同一份内容写成 `<tvshow>` 根放进影片目录 → 不再被当成影片元数据。
 13.8 剧集 NFO 三类：剧集目录放 `<tvshow>` 根的 `tvshow.nfo`、季目录放 `<season>` 根的 `season.nfo`、集文件旁放 `<episodedetails>` 根的同名 NFO → 扫描后剧集 / 季 / 集三级详情都能读到简介与标题（即修掉「刮削写了 `tvshow.nfo`、扫描读不到」）。
 13.9 刮削目录型条目：对一个没按规则命名的目录型影片（`库/downloads/ABC-123/` 里有多个视频）刮削 → 目录被搬成 `片名 (年份)/`，**里面的视频文件名不动**，NFO 与图片落在同目录；重扫后仍是同一个条目（id 与元数据都在）。
-14. 自动刮削四种跳过原因（顺序固定）：设置里关掉「扫描后自动刮削」→「设置中已关闭「扫描后自动刮削」」；把库的刮削器全部取消后扫描 →「该资料库未配置刮削器，已跳过刮削」；没有任何未刮削影片 →「没有待刮削的影片」；已有任务在跑 →「已有刮削任务在运行，可稍后手动刮削」。四种情况**扫描结果都正常返回**（影片数、上次扫描照样更新）。
+14. 自动刮削四种跳过原因（顺序固定）：设置里关掉「扫描后自动刮削」→「设置中已关闭「扫描后自动刮削」」；把库的刮削器全部取消后扫描 →「该资料库未配置刮削器，已跳过刮削」；没有任何未刮削影片 →「没有待刮削的影片」（**已有 NFO 的影片不算待刮削**：库里只剩带 NFO 的影片时同样报这条）；已有任务在跑 →「已有刮削任务在运行，可稍后手动刮削」。四种情况**扫描结果都正常返回**（影片数、上次扫描照样更新）。
 15. 空刮削器不能刮削：抽屉里该行标签显示「不刮削」、「刮削」按钮禁用（悬停提示「该资料库未配置刮削器，不执行刮削」）；绕过界面直接调 `library:scrape` → 报「该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择」。
 16. 多媒体目录一次一组：给一个库挂两个目录、各放若干未刮削影片，点一次「刮削」→ 任务只包含条目最多的那一组，另一组条目 `scrapedAt` 仍为 0；再点一次「刮削」才轮到它。
 17. 改后缀影响扫描、但不影响已入库条目：把某个后缀从清单删掉再扫，该类型的媒体源被清理、条目从墙上消失；重新加回去再扫，文件重新入库（是**新条目**，原来的刮削元数据不会自动回来）。

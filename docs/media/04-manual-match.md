@@ -156,6 +156,7 @@ interface ScrapeMatchResult {
 - **`movieId` 是插件自己的 id**：TMDB 的候选 id 带 `movie-` / `tv-` 前缀，而 `detail` 返回的 `id` 是纯数字；
   弹窗把候选原始的 `candidate.id` 原样回传，不要在前端做去前缀处理。
 - **元数据回写**：流水线第 7 步会写 `providerIds: { [pluginId]: detail.id }`、`scraperId`、`scrapedAt`，
-  因此手动匹配后该条目即视为已刮削（不再出现在待刮削候选里）。
+  因此手动匹配后该条目即视为已刮削（`scrapedAt > 0` 就不再出现在待刮削候选里；磁盘上新写的 NFO 则由下次扫描把 `has_nfo` 置 1）。
+  反过来看，它也是**唯一**能给「磁盘上已有 NFO」的条目重新刮削的入口——那类条目被 `has_nfo` 排除在自动 / 批量队列之外（见 [资料库](./01-media-library.md) §5 与 [刮削模块 §3](../scrape/01-scrape-module.md)）。
 - **剧集**：整部剧一次处理，产物是 `tvshow.nfo` + `season.nfo` + 每集 NFO 与图片（见 [剧集支持](./02-series-support.md)）；
   手动匹配只换「选中的这一条剧」，改名口径与自动刮削一致。

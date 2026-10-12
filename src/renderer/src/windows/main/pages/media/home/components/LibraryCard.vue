@@ -19,6 +19,7 @@
  *
  * 契约：
  * - `coverUrls` 最多用 4 张（主进程已限量），为空时用图标占位；
+ * - NSFW 库（`nsfwProtection` 命中且总开关开启）不展示封面，一律走图标占位；
  * - 计数与网格同口径：影视库数影片、剧集库数剧集（整部剧集算一条），文案随之分说；
  * - 点击进入该库的内容页（`/media/library?libraryId=<id>`）。
  */
@@ -26,12 +27,15 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { CollectionIcon } from 'tdesign-icons-vue-next'
 import { libraryTypeLabel, type MediaLibrarySummary } from '@common/types/library'
+import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 
 const props = defineProps<{ library: MediaLibrarySummary }>()
 
 const router = useRouter()
 
-const covers = computed(() => props.library.coverUrls.slice(0, 4))
+/** 库卡片只有资料库上下文，没有单条存储，所以只传库级标记（见 `useNsfwProtection`） */
+const { protect } = useNsfwProtection(null, () => props.library.nsfwProtection)
+const covers = computed(() => (protect.value ? [] : props.library.coverUrls.slice(0, 4)))
 const typeText = computed(() => libraryTypeLabel(props.library.type))
 const countText = computed(
   () => `${props.library.type === 'tv' ? '剧集' : '影片'} ${props.library.videoCount} 部`

@@ -15,7 +15,7 @@ import {
   deleteSourcesByLibrary
 } from '$/db/repo/mediaCleanupRepo'
 import { countMovieItems, listItems, listMovieItems } from '$/db/repo/mediaRepo'
-import { countSeriesItems, listSeriesItems } from '$/db/repo/mediaSeriesRepo'
+import { countSeriesItems, listSeasonItems, listSeriesItems } from '$/db/repo/mediaSeriesRepo'
 import {
   deleteImagesByConnection,
   deleteImagesByLibrary,
@@ -24,7 +24,7 @@ import {
 } from '$/db/repo/mediaImageRepo'
 import type { MediaImageRow } from '$/db/schema/mediaImage'
 import { basenameRemotePath, isRemotePathInside } from '@common/types/file'
-import { buildMediaUrl } from '@common/types/media'
+import { buildMediaUrl, MEDIA_COVER_IMAGE_TYPE_ORDER } from '@common/types/media'
 import {
   deleteLibrariesByConnection as removeLibrariesByConnection,
   deleteLibrary,
@@ -160,25 +160,70 @@ function primaryImageOf(images: readonly MediaImageRow[]): Map<string, MediaImag
   return map
 }
 
+/** 条目 → 除主图以外的图片，按封面兜底顺序（缩略图 → 背景图 → 剧照 → 其他）排好 */
+function otherImagesOf(
+  images: readonly MediaImageRow[],
+  primary: ReadonlyMap<string, MediaImageRow>
+): Map<string, MediaImageRow[]> {
+  const map = new Map<string, MediaImageRow[]>()
+  for (const image of images) {
+    if (primary.get(image.itemId)?.id === image.id) continue
+    const list = map.get(image.itemId) ?? []
+    list.push(image)
+    map.set(image.itemId, list)
+  }
+  for (const list of map.values()) {
+    list.sort(
+      (left, right) =>
+        MEDIA_COVER_IMAGE_TYPE_ORDER.indexOf(left.type) -
+        MEDIA_COVER_IMAGE_TYPE_ORDER.indexOf(right.type)
+    )
+  }
+  return map
+}
+
+function coverUrlOf(image: MediaImageRow): string {
+  return buildMediaUrl(image.connectionId, image.id, basenameRemotePath(image.path))
+}
+
 /**
- * 库卡片的封面拼贴：按入库时间倒序取最近添加的 ≤4 张海报。
+ * 库卡片的封面拼贴：按入库时间倒序取最近添加的 ≤4 张图。
  *
- * 只用仓储函数（不能 import `mediaWall`，否则循环依赖）；封面规则与墙面一致：
- * 条目自己的 primary 图优先，没有就退回父目录条目的 primary 图。
- * 影视库拼影片的海报，剧集库拼剧集自己的海报（剧集目录级海报挂在剧集条目上）。
+ * 只用仓储函数（不能 import `mediaWall`，否则循环依赖）。两轮取图，条目顺序一致：
+ * 1. 主图：条目自己的 primary 图优先，没有就退回父目录条目的 primary 图（与墙面口径一致）；
+ * 2. 补足：主图不足 4 张时按封面兜底顺序追加条目自己的其余图片（背景图 / 剧照），
+ *    剧集库再带上各季的图——只有两三部剧的库也能铺满四宫格，不留空格。
  */
 function coverUrlsOf(library: MediaLibrary): string[] {
-  const images = primaryImageOf(listImagesByLibrary(library.id))
+  const rows = listImagesByLibrary(library.id)
+  const primary = primaryImageOf(rows)
+  const others = otherImagesOf(rows, primary)
   const entries = library.type === 'tv' ? listSeriesItems(library.id) : listMovieItems(library.id)
   const items = [...entries].sort((left, right) => right.dateAdded - left.dateAdded)
+
   const urls: string[] = []
   const seen = new Set<string>()
-  for (const item of items) {
-    const image = images.get(item.id) ?? (item.parentId.length > 0 ? images.get(item.parentId) : undefined)
-    if (!image || seen.has(image.id)) continue
+  const push = (image: MediaImageRow | undefined): void => {
+    if (!image || urls.length >= COVER_URL_LIMIT || seen.has(image.id)) return
     seen.add(image.id)
-    urls.push(buildMediaUrl(image.connectionId, image.id, basenameRemotePath(image.path)))
+    urls.push(coverUrlOf(image))
+  }
+  const pushAll = (list: readonly MediaImageRow[] | undefined): void => {
+    for (const image of list ?? []) push(image)
+  }
+
+  for (const item of items) {
+    push(primary.get(item.id) ?? (item.parentId.length > 0 ? primary.get(item.parentId) : undefined))
+  }
+  for (const item of items) {
     if (urls.length >= COVER_URL_LIMIT) break
+    pushAll(others.get(item.id))
+    if (item.parentId.length > 0) pushAll(others.get(item.parentId))
+    if (library.type !== 'tv') continue
+    for (const season of listSeasonItems(library.id, item.id)) {
+      push(primary.get(season.id))
+      pushAll(others.get(season.id))
+    }
   }
   return urls
 }

@@ -60,9 +60,16 @@ export function listSeriesItems(libraryId?: string): MediaItemRow[] {
     .all()
 }
 
-/** 库里还没刮削过的剧集（`scraped_at = 0` 且路径非空） */
+/**
+ * 库里还没刮削过的剧集（`scraped_at = 0`、`has_nfo = 0` 且路径非空）。
+ *
+ * `has_nfo = 1`（剧集目录下已有 `tvshow.nfo`）视为「已有元数据」，不进批量候选：
+ * 这类剧集只能从详情页手动刮，避免批量任务覆盖掉磁盘上已有的 NFO。
+ */
 export function listPendingSeriesItems(libraryId: string): MediaItemRow[] {
-  return listSeriesItems(libraryId).filter((row) => row.scrapedAt === 0 && row.path.length > 0)
+  return listSeriesItems(libraryId).filter(
+    (row) => row.scrapedAt === 0 && row.hasNfo === 0 && row.path.length > 0
+  )
 }
 
 export function countSeriesItems(libraryId: string): number {
