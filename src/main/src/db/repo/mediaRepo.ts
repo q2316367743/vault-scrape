@@ -31,6 +31,11 @@ export interface MediaItemMetadataInput {
   genres: string[]
   studios: string[]
   tags: string[]
+  /** 片商、厂牌、系列、导演：详情页分行展示的四个字段，不从 `studios` 里拆 */
+  maker: string
+  label: string
+  series: string
+  director: string
   providerIds: Record<string, string>
   scraperId: string
   scrapedAt: number
@@ -42,6 +47,33 @@ export interface MediaItemMetadata {
   studios: string[]
   tags: string[]
   providerIds: Record<string, string>
+}
+
+/**
+ * 扫描从磁盘 NFO 读到的元数据（用于「扫描读 NFO 落库」）。
+ *
+ * 与刮削回写（`MediaItemMetadataInput`）的区别：**只写传进来的字段**，不动
+ * `scraperId` / `scrapedAt`，也不清空没传的列 —— 扫描读 NFO 只是把「磁盘上已有的信息」
+ * 落到库里，条目仍算「没被本软件刮削过」（`scraped_at` 保持 0，继续排队等刮削）。
+ */
+export interface MediaItemScannedMetadataInput {
+  /** 展示名（NFO 的 `<title>`）；不传或空串就不改 */
+  title?: string
+  num?: string
+  originalTitle?: string
+  overview?: string
+  premiereDate?: string
+  productionYear?: number
+  runtimeMinutes?: number
+  genres?: string[]
+  studios?: string[]
+  tags?: string[]
+  /** 片商、厂牌、系列、导演：NFO 里读到才写 */
+  maker?: string
+  label?: string
+  series?: string
+  director?: string
+  providerIds?: Record<string, string>
 }
 
 /** 只允许扫描改写的条目列 */
@@ -240,6 +272,10 @@ export function updateItemMetadata(itemId: string, meta: MediaItemMetadataInput)
       genres: JSON.stringify(meta.genres),
       studios: JSON.stringify(meta.studios),
       tags: JSON.stringify(meta.tags),
+      maker: meta.maker,
+      label: meta.label,
+      series: meta.series,
+      director: meta.director,
       providerIds: JSON.stringify(meta.providerIds),
       scraperId: meta.scraperId,
       scrapedAt: meta.scrapedAt,
@@ -247,6 +283,51 @@ export function updateItemMetadata(itemId: string, meta: MediaItemMetadataInput)
     })
     .where(eq(mediaItemTable.id, itemId))
     .run()
+}
+
+/**
+ * 扫描读 NFO 回写元数据。
+ *
+ * 契约：只覆盖传进来的字段（空串 / 空数组 / 0 一律当成「没读到」跳过），
+ * 不动 `scraperId` / `scrapedAt`，条目仍算「没被本软件刮削过」。
+ */
+export function applyScannedMetadata(itemId: string, meta: MediaItemScannedMetadataInput): void {
+  const set: Partial<MediaItemRowInsert> = { updatedAt: Date.now() }
+  const text = (value: string | undefined): string | undefined => {
+    const trimmed = (value ?? '').trim()
+    return trimmed.length > 0 ? trimmed : undefined
+  }
+  const title = text(meta.title)
+  if (title !== undefined) {
+    set.name = title
+    set.sortName = title
+  }
+  const num = text(meta.num)
+  if (num !== undefined) set.num = num
+  const originalTitle = text(meta.originalTitle)
+  if (originalTitle !== undefined) set.originalTitle = originalTitle
+  const overview = text(meta.overview)
+  if (overview !== undefined) set.overview = overview
+  const premiereDate = text(meta.premiereDate)
+  if (premiereDate !== undefined) set.premiereDate = premiereDate
+  if ((meta.productionYear ?? 0) > 0) set.productionYear = meta.productionYear
+  if ((meta.runtimeMinutes ?? 0) > 0) set.runtimeMinutes = meta.runtimeMinutes
+  if ((meta.genres ?? []).length > 0) set.genres = JSON.stringify(meta.genres)
+  if ((meta.studios ?? []).length > 0) set.studios = JSON.stringify(meta.studios)
+  if ((meta.tags ?? []).length > 0) set.tags = JSON.stringify(meta.tags)
+  const maker = text(meta.maker)
+  if (maker !== undefined) set.maker = maker
+  const label = text(meta.label)
+  if (label !== undefined) set.label = label
+  const series = text(meta.series)
+  if (series !== undefined) set.series = series
+  const director = text(meta.director)
+  if (director !== undefined) set.director = director
+  if (Object.keys(meta.providerIds ?? {}).length > 0) {
+    set.providerIds = JSON.stringify(meta.providerIds)
+  }
+  if (Object.keys(set).length <= 1) return
+  db().update(mediaItemTable).set(set).where(eq(mediaItemTable.id, itemId)).run()
 }
 
 /** 「还原刮削前」要还原的取值：视频还原到位后的样子 */
@@ -282,6 +363,10 @@ export function clearItemMetadata(itemId: string, restore: MediaItemRestoreInput
       genres: '[]',
       studios: '[]',
       tags: '[]',
+      maker: '',
+      label: '',
+      series: '',
+      director: '',
       providerIds: '{}',
       scraperId: '',
       scrapedAt: 0,
@@ -313,7 +398,14 @@ export function listSourcesByLibrary(libraryId: string): MediaSourceRow[] {
 }
 
 export function listSourcesByItem(itemId: string): MediaSourceRow[] {
-  return db().select().from(mediaSourceTable).where(eq(mediaSourceTable.itemId, itemId)).all()
+  // 排序是契约的一部分：一个影片条目可以有多个版本（多个源），
+  // `primarySourceOf` 在没有「源路径 == 条目路径」时取第一条，顺序必须稳定
+  return db()
+    .select()
+    .from(mediaSourceTable)
+    .where(eq(mediaSourceTable.itemId, itemId))
+    .orderBy(asc(mediaSourceTable.path))
+    .all()
 }
 
 export function findSourceByPath(connectionId: string, path: string): MediaSourceRow | null {

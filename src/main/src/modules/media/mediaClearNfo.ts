@@ -5,7 +5,8 @@
  * - **还原依据是 NFO 里的「刮削前位置」记录**（`<originalfilename>` / `<originaldirectory>` /
  *   `<plantedfile>`，由 `@common/types/scrape/nfo.ts` 写入、`parseNfoRestore` 读回）：
  *   视频改回原文件名、移回原目录；`localFirst` 沿用过的本地图片搬回原来的文件名与目录，
- *   联网下载的图片与预告片直接删掉；
+ *   联网下载的图片与预告片直接删掉；**目录型条目**（条目路径是影片目录）只把整个目录搬回
+ *   `<originaldirectory>`，视频文件名从头到尾没被改过；
  * - **绝不覆盖**：还原目标已经存在时保持现状（文件留在影片目录里），只报「没还原」，
  *   不删、不覆盖任何同名文件；
  * - **没有记录也要清**：旧版本刮削的 NFO 里没有记录，那种情况退化成原来的口径
@@ -35,7 +36,7 @@ import { deleteImagesByItem } from '$/db/repo/mediaImageRepo'
 import { clearItemMetadata, getItem, listSourcesByItem } from '$/db/repo/mediaRepo'
 import type { MediaItemRow } from '$/db/schema/mediaItem'
 import { nfoCandidates, primarySourceOf } from '$/modules/media/mediaWall'
-import { refreshSourcePath } from '$/modules/scrape/scrapeJobApply'
+import { refreshItemDir, refreshSourcePath } from '$/modules/scrape/scrapeJobApply'
 import { clearSeriesNfo } from './mediaClearSeriesNfo'
 import {
   existsOrTrue,
@@ -73,7 +74,10 @@ async function clearMovieNfo(item: MediaItemRow): Promise<MediaClearNfoResult> {
   if (!source) throw new MediaError('notFound', '这部影片没有可用的媒体源')
 
   const client = await openClient(source.connectionId)
-  const dirPath = dirnameRemotePath(source.path)
+  // 目录型条目（条目路径就是影片目录、视频在它里面）与文件型条目的还原方式不同：
+  // 目录型整体搬回原位即可（刮削只改过目录名，没动视频文件名）
+  const dirTyped = normalizeRemotePath(item.path) !== normalizeRemotePath(source.path)
+  const dirPath = dirTyped ? item.path : dirnameRemotePath(source.path)
   const names = nfoCandidates(source)
   const record = await readRestore(client, dirPath, names)
   const removedNfo = await removeNfoFiles(client, dirPath, names)
@@ -81,25 +85,40 @@ async function clearMovieNfo(item: MediaItemRow): Promise<MediaClearNfoResult> {
   // 刮削写下的资源：本地沿用过的搬回原处，联网下载的直接删；目标被占用就原样留着
   const planted = await restorePlantedFiles(client, dirPath, record?.files ?? [])
 
-  // 视频改回原名、移回原目录；记录里的目标已存在时保持现状（绝不覆盖）
+  // 还原到刮削前的位置；记录里的目标已存在时保持现状（绝不覆盖）
   let finalPath = source.path
+  let finalDir = dirPath
   let restored = false
   if (record) {
-    const target = joinRemotePath(record.directory, record.fileName)
-    if (normalizeRemotePath(target) === normalizeRemotePath(source.path)) {
-      restored = true
-    } else if (
-      !(await existsOrTrue(client, target)) &&
-      (await moveFile(client, source.path, target))
-    ) {
-      await refreshSourcePath(client, source.connectionId, itemId, source.path, target)
-      finalPath = target
-      restored = true
+    if (dirTyped) {
+      const target = record.directory
+      if (normalizeRemotePath(target) === normalizeRemotePath(dirPath)) {
+        restored = true
+      } else if (
+        !(await existsOrTrue(client, target)) &&
+        (await moveFile(client, dirPath, target))
+      ) {
+        await refreshItemDir(client, source.connectionId, itemId, target)
+        finalDir = target
+        restored = true
+      }
+    } else {
+      const target = joinRemotePath(record.directory, record.fileName)
+      if (normalizeRemotePath(target) === normalizeRemotePath(source.path)) {
+        restored = true
+      } else if (
+        !(await existsOrTrue(client, target)) &&
+        (await moveFile(client, source.path, target))
+      ) {
+        await refreshSourcePath(client, source.connectionId, itemId, source.path, target)
+        finalPath = target
+        restored = true
+      }
     }
   }
 
-  // 还原口径与扫描一致：展示名 = 磁盘上的视频文件名（含扩展名），番号从该文件名解析
-  const fileName = basenameRemotePath(finalPath)
+  // 还原口径与扫描一致：目录型条目展示名 = 目录名，文件型条目 = 视频文件名（含扩展名）
+  const fileName = basenameRemotePath(dirTyped ? finalDir : finalPath)
   clearItemMetadata(itemId, { name: fileName, num: normalizeNum(extractKeyword(fileName).num) })
   deleteImagesByItem(itemId)
   deleteCastByItems([itemId])
@@ -107,7 +126,10 @@ async function clearMovieNfo(item: MediaItemRow): Promise<MediaClearNfoResult> {
   // 自己创建、现在已搬空的影片目录顺手删掉（资料库根目录与视频所在目录一律不删）
   const removedDirs: string[] = []
   const roots = libraryRoots(item.libraryId, source.connectionId)
-  if (normalizeRemotePath(dirPath) !== normalizeRemotePath(dirnameRemotePath(finalPath))) {
+  if (
+    !dirTyped &&
+    normalizeRemotePath(dirPath) !== normalizeRemotePath(dirnameRemotePath(finalPath))
+  ) {
     const removed = await removeEmptyDir(client, dirPath, roots)
     if (removed.length > 0) removedDirs.push(removed)
   }
@@ -118,7 +140,7 @@ async function clearMovieNfo(item: MediaItemRow): Promise<MediaClearNfoResult> {
     removedAssets: planted.removed,
     restoredAssets: planted.restored,
     restored,
-    path: finalPath,
+    path: dirTyped ? finalDir : finalPath,
     removedDirs
   }
 }

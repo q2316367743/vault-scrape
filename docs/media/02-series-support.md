@@ -1,6 +1,6 @@
 # 剧集支持（series / season / episode）
 
-剧集支持是资料库的第二种库类型：**影视库（`movie`）一个视频 = 一条影片，剧集库（`tv`）一整部剧 = 一条剧集**。
+剧集支持是资料库的第二种库类型：**影视库（`movie`）一部电影 = 一条影片（影片目录里的多版本视频合并成一条），剧集库（`tv`）一整部剧 = 一条剧集**。
 文档面向上游改动者：只要读这一篇，就能改扫描、刮削、读模型、详情页与「还原刮削前」任何一层。
 
 > 相关文档：[资料库（扫描 / 索引）](./01-media-library.md)、[刮削模块](../scrape/01-scrape-module.md)、[影视墙页面](../page/04-media-wall-page.md)、[SQLite 存储](../data/01-sqlite-storage.md)、[插件模块](../plugin/01-plugin-module.md)。
@@ -9,12 +9,12 @@
 
 | 维度 | 影视库 `movie` | 剧集库 `tv` |
 | --- | --- | --- |
-| 条目粒度 | 一个视频文件 = 一条 `media_item` | **一整部剧 = 一条** `media_item`（`type = 'series'`） |
+| 条目粒度 | 一部电影 = 一条 `media_item`（影片目录里的多个版本合并成一条 + 多条媒体源） | **一整部剧 = 一条** `media_item`（`type = 'series'`） |
 | 墙面卡片 | 一个视频一张卡 | 整部剧一张卡（`MediaWallItem.type = 'series'`，没有番号、没有 `playUrl`） |
 | 刮削任务行 | 一个视频一次（候选 = 待刮影片条目） | **一次处理整个剧集**（候选 = 待刮 `series` 条目，任务行 `path` 就是剧集目录） |
 | 搜索关键词 | 文件名 / 番号 | **剧集目录名**（`seriesKeywordOf`） |
 | 播放 | 条目自己的媒体源 | 由详情页的**选集状态**决定播哪一集 |
-| 刮削产物 | `<影片目录>/<基础名>.nfo` + 图片 | `tvshow.nfo` + `season.nfo` + 每集 NFO + 每集剧照 |
+| 刮削产物 | `<片名 (年份)>/<片名 (年份)>.mkv` + 同名 `.nfo` + 图片（目录型条目整体改名；多版本只改主版本） | `tvshow.nfo` + `season.nfo` + 每集 NFO + 每集剧照 |
 
 三条铁律（跨层一致）：
 
@@ -55,18 +55,19 @@ const isTv = library.type === 'tv'
 | --- | --- | --- |
 | `Show/S01E01.mkv`（剧集目录里直接放视频） | 直接含视频 | 一个 `series` 条目 + 一个**隐式季**条目（路径就是剧集目录，季号取文件名里的季号） |
 | `Show/Season 01/S01E01.mkv` | 含「季目录」子目录 | `series` + `season`（路径 = 季目录，`name` = 目录名） |
+| `Show/Season 01/S01E01.mkv` + `S01E01 - 1080p.mkv` | 文件名解析出**同一个 `(季, 集)`** | **合成一条 `episode`**：条目 `path` 取自然序第一个（主版本），每个文件各写一条 `media_source`（对齐 Jellyfin 的「同集多版本」） |
 | `Show/Season 01/CD1/…mkv`（季目录下更深一层） | 沿用父级季上下文 | **不新建条目**，集仍挂那一季 |
-| `Show/Extras/…`、`Featurettes`、`Sample`、`Behind the Scenes`、`Deleted Scenes`、`Interviews`、`Shorts`、`Trailers` | `isExtraVideoDir` 命中 | **整棵子树跳过**，里面的视频不入库 |
+| `Show/Extras/…`、`Featurettes`、`Sample`、`Behind the Scenes`、`Deleted Scenes`、`Interviews`、`Shorts`、`Trailers` | `isExtraVideoDir` 命中 | **整棵子树跳过**，里面的视频不入库（目录里的 `xxx-sample.mkv` 这类花絮文件也被 `extraKindOfName` 过滤） |
 | `Show/Specials/…`、`SP`、`OVA`、`OAD`、`特别篇`、`番外`、`特典` | `seasonNumberOfDir` → 0 | 正常建季条目，季号 0 |
 
-> ⚠️ 代码实况：`isExtraVideoDir` 的 `EXTRA_DIR_PATTERN`（`episode.ts:23-24`）**不含 `ova` / `oad`**，这两个词在 `SPECIAL_DIR_PATTERN`（`episode.ts:20`）里，所以 OVA / OAD 目录按「季 0」处理，不是跳过。`mediaSeriesIndexer.ts` 文件头注释把 OVA 列进花絮目录属笔误，以代码为准。
+> ⚠️ 代码实况：`EXTRA_DIR_PATTERN`（`src/common/types/media/mediaRules.ts:28`）**不含 `ova` / `oad`**，这两个词在 `SPECIAL_DIR_PATTERN`（`src/common/types/media/mediaRules.ts:25`）里，所以 OVA / OAD 目录按「季 0」处理，不是跳过。
 
 资料库根目录自己就是剧集目录时（库直接指向某个剧集文件夹）照常建剧集条目，但**刮削阶段不会给它改名**（见 §4.2 的 `libraryRoots` 判断）。
 
 ### 3.2 季号与集号
 
-- **季号**：目录名写明时以目录为准（`seasonNumberOfDir`：`Season 01` / `S1` / `Series 2` → 数字；`第2季` / `第二季` / `2季` → 数字，中文数字借 `chineseToNumber` 支持到 99；特别篇目录 → 0）；目录名没写（剧集目录里直接放视频）时用**文件名里的季号**。
-- **集号只认文件名**，`src/common/types/scrape/episode.ts:92` 的 `parseEpisodeName(fileName, fallbackSeason)`，优先级固定：
+- **季号**：目录名写明时以目录为准（`seasonNumberOfDir`，`src/common/types/media/mediaRules.ts:131`：`Season 01` / `S1` / `Series 2` → 数字；`第2季` / `第二季` / `2季` → 数字，中文数字借 `chineseToNumber` 支持到 99；特别篇目录 → 0）；目录名没写（剧集目录里直接放视频）时用**文件名里的季号**。
+- **集号只认文件名**：`src/common/types/media/mediaRules.ts:175` 的 `parseEpisodeNumbers(fileName, fallbackSeason): EpisodeNumber | null`（`EpisodeNumber{ season, episode }`；原来是剧集专属的 `src/common/types/scrape/episode.ts`，该文件已删除、规则统一进 `mediaRules.ts`），优先级固定：
 
   1. `S01E02` / `s1e2` / `S01.EP02`：`/(?:^|[^0-9a-z])s\s*0*(\d{1,2})[\s._-]*e(?:p)?\s*0*(\d{1,3})/i`（季号覆盖兜底季号）；
   2. `1x02`：`/(?:^|[^0-9a-z])0*(\d{1,2})\s*x\s*0*(\d{1,3})(?:[^0-9a-z]|$)/i`；
@@ -76,10 +77,12 @@ const isTv = library.type === 'tv'
   6. 全都不中就返回 `null` → 文件不入库，计入 `skippedVideos`。
 
 - **多集文件**（`S01E01E02`、`S01E01-E02`）按**第一集**处理（第 1 条规则先命中）。
-- **两列落在 `media_item` 上**：季号写 `media_item.season_number`、集号写 `media_item.episode_number`（`src/main/src/db/schema/mediaItem.ts`）。这两列是剧集支持唯一的表结构改动，由增量迁移 `resources/drizzle/0001_familiar_lifeguard.sql`（`ALTER TABLE media_item ADD season_number` / `ADD episode_number`，都 `DEFAULT 0 NOT NULL`）引入；`movie` / `folder` / `series` 两列恒 0，`season` 只用 `season_number`（特别篇 0），`episode` 两列都有值（`episode_number` 从 1 开始，`season_number = 0` 表示特别篇）。基线 `0000_moaning_black_panther.sql` 里 `media_item` 是 26 列，加完这两列是 28 列。
+- **两列落在 `media_item` 上**：季号写 `media_item.season_number`、集号写 `media_item.episode_number`（`src/main/src/db/schema/mediaItem.ts`）。这两列由增量迁移 `resources/drizzle/0001_familiar_lifeguard.sql`（`ALTER TABLE media_item ADD season_number` / `ADD episode_number`，都 `DEFAULT 0 NOT NULL`）引入；`movie` / `folder` / `series` 两列恒 0，`season` 只用 `season_number`（特别篇 0），`episode` 两列都有值（`episode_number` 从 1 开始，`season_number = 0` 表示特别篇）。基线 `0000_moaning_black_panther.sql` 里 `media_item` 是 26 列，加完这两列是 28 列；另有与剧集无关的 `0002_soft_masked_marvel.sql`（`maker` / `label` / `series` / `director` 四列，详情页元信息落库，见[数据存储](../data/01-sqlite-storage.md)），加完是 32 列。
 - **集条目的归属**：季目录里的集 `parent_id = 季条目`；剧集目录里直接放的集 `parent_id = 剧集条目`，但 `seasonNumber` 仍是真实季号 —— **读取侧（`mediaSeriesRepo.seriesStatsOf` / `loadSeriesDetail`）必须把这两种都算进同一季**。
 
 ### 3.3 确定性 ID 与「同类型」认领
+
+条目层（ID / 认领 / 写入）都在 `src/main/src/modules/media/mediaSeriesItems.ts`，`mediaSeriesIndexer.ts` 只管目录遍历、图片归属与清理。
 
 ```ts
 seriesItemId(libraryId, connectionId, dirPath)                  // sha1('series\n' + libraryId + '\n' + connectionId + '\n' + dirPath)
@@ -87,16 +90,18 @@ seasonItemId(libraryId, connectionId, dirPath, seasonNumber)    // sha1('season\
 episodeItemId(connectionId, path)                               // sha1('episode\n' + connectionId + '\n' + path)
 ```
 
-- 都是 `sha1(input).slice(0,32)`（32 位十六进制，与影片条目同一形态）。
+- 都是 `sha1(input).slice(0,32)`（32 位十六进制，与影片条目同一形态；`hashId` 定义在 `mediaScanCommon.ts`）。
 - 季 ID **带季号**，因为「剧集目录里直接放视频」时多个隐式季共用剧集目录这一条路径，只靠路径会撞 ID；集 ID **不含 libraryId**（与 `mediaSourceId` 同口径）。
-- `resolveItemId(connectionId, path, type, candidateId)`：先 `findItemByPath`（**要求 `type` 相同**），再 `getItem(candidateId)`（同样要求 `type` 相同），都没有才当新条目。所以同一路径从「剧集」变「季」不会复用旧行。
-- `ensureSeriesItem` 已存在时只 `updateItem(id, { parentId: '', hasNfo })`（**名字交给刮削**），新建时 `name = basenameRemotePath(dirPath)`；`ensureSeasonItem` 已存在时 `updateItem(id, { parentId, seasonNumber })`。
-- 刮削改名走 `replacePathPrefix`（见 §4.4），**id 与 parentId 一律不动**，重扫靠 `findItemByPath` 就地认领，既不会造重复、也不会丢已写好的元数据。
+- **身份认领**统一走 `findOwnedItem(connectionId, itemPath, videoPaths, type)`（`mediaScanCommon.ts:29`，影片与剧集共用），三层依次找：①按**条目路径** `findItemByPath`（要求 `type` 相同）；②按**关联视频路径**查 `media_source` 再取条目；③把关联视频路径当条目路径再查一次。都没有才用确定性 ID 造新条目 —— 所以「同一集的另一个版本被扫到」会认回同一条 `episode`，「同一视频换目录」也不会造重复。
+- 季的认领要**同时看路径与季号**：`ensureSeasonItem` 先 `findItemByPath` 且要求 `seasonNumber` 与本次一致，再退回按 `seasonItemId` 找，都没有才新建（`hasNfo` = 目录里有 `season.nfo` / `seasonNN.nfo`）。
+- `ensureSeriesItem` 已存在时只 `updateItem(id, { parentId: '', hasNfo })`（**名字交给刮削**），新建时 `name = basenameRemotePath(dirPath)`；`ensureSeasonItem` 已存在时 `updateItem(id, { parentId, seasonNumber, hasNfo })`。
+- 扫描只改**结构列**（`path` / `parentId` / `seasonNumber` / `episodeNumber` / `hasNfo`），**只有 `scrapedAt === 0` 时才顺带更新 `name`**：多版本合成一集时主版本路径变了要跟着改 `path`，但已刮削的集标题不能被重扫覆盖。
+- 刮削改名走 `replacePathPrefix`（见 §4.4），**id 与 parentId 一律不动**，重扫靠路径 / 媒体源就地认领，既不会造重复、也不会丢已写好的元数据。
 
 ### 3.4 扫描期的图片与 NFO
 
 - 与集同名（含带扩展名）的图当**集主图**；`<集名>-poster.jpg` 这类前缀名按 `imageTypeOfBaseName` 判用途、挂到集上；其余固定名（`poster` / `backdrop` / `banner` / `logo` / `fanart`…）挂**当前目录**的条目（剧集或季）；`extrafanart` / `extrathumbs` 里的图挂上一层条目（`extraArtAnchor`）。
-- `tvshow.nfo` / `season.nfo` 在扫描期**只作为 `hasNfo` 证据**；未刮削的剧集条目会 `backfillSeriesCastFromNfo`（从 `tvshow.nfo` 补一次参演名单），集的 `hasNfo` 用同目录同名 NFO 判定（`collectNfoBases` + `hasNfoEvidence`）。
+- **NFO 三层各自读入库**（`mediaNfoScan.ts`，**未刮削的条目才读**）：剧集目录的 `tvshow.nfo`、季目录的 `season.nfo`（或 `seasonNN.nfo`，`seasonNfoOf`）、与集文件同名的 `<集名>.nfo`（同一集多个版本逐个试，`importEpisodeNfo`）。读之前**按根元素校验种类**（要 `<tvshow>` / `<season>` / `<episodedetails>`，对不上就当没有 —— 这是修「`tvshow.nfo` 扫描不到」的根因所在：`parseNfoXml` 原先只认 `<movie>` 根，现在按根元素分派出 `kind`）；命中就把元数据写条目（`applyScannedMetadata`，**只写传进来的列、不动 `scraped_at`**）、演员写 `media_cast` + 建演员档案（`syncItemCast`）。**`hasNfo` 仍按「目录里有没有对应 NFO」判定**（`collectNfoBases` + `hasNfoEvidence` / `tvShowNfoOf` / `seasonNfoOf`），与读库是两件事；读文件失败静默跳过。
 
 ## 4. 刮削：一次处理一整部剧
 
@@ -130,18 +135,18 @@ episodeItemId(connectionId, path)                               // sha1('episode
 5. **剧集级产物**：`landAssets(...)`（剧集目录下的海报 / 背景图 / 徽标等）+ `carryRestore(context, seriesNfoPath, { fileName: entry.name, directory: context.dirPath, files: [] })` 生成**剧集根还原记录** + `mergeRestoreFiles` 合并本地 `tvshow.nfo` 里原有的记录 + `client.writeText(seriesNfoPath, buildTvShowNfoXml(detail, naming, artworkOf(plantedSeries), seriesRestore), { overwrite: true })`。
 6. **逐季**：季目录名 `renderSeasonFolderName(naming.seasonFolderTemplate, detail, naming, season).trim() || 'Season ' + padNumber(season)` → `mkdir` → 季海报 + `season.nfo`（`buildSeasonNfoXml`，含季级还原记录）。
 7. **逐集**（季内）：
-   - 集文件名 `renderEpisodeTemplate(naming.episodeFileTemplate, detail, naming, { showTitle: detail.title, season, episode, episodeTitle: remote?.title ?? '', fileName: file.name })`，渲染为空则回落 `baseNameOf(file.name)`；
-   - `movieFileName(base, extensionOf(file.name))` 算出目标路径后移动（**扩展名沿用源文件**）+ `refreshSourcePath(client, connectionId, file.itemId, file.path, targetPath)`；
+   - 集文件名 `renderEpisodeTemplate(naming.episodeFileTemplate, detail, naming, { showTitle, season, episode, episodeTitle, fileName })`，渲染为空则回落 `baseNameOf(file.name)`；
+   - **只有主版本会搬**：`isPrimary = (getItem(file.itemId)?.path ?? file.path) === file.path`；`isPrimary && targetPath !== file.path` 才 `client.move(file.path, joinRemotePath(seasonDir, movieFileName(base, extensionOf(file.name))))` + `refreshSourcePath(client, connectionId, file.itemId, file.path, targetPath)`（**扩展名沿用源文件**）。同一集的其它版本目标名与主版本**完全相同**、搬过去必然撞车，所以原地不动：`finalBase = finalPath === targetPath ? base : baseNameOf(file.name)`（`scrapeSeriesJob.ts:284`）；
    - 剧照按「季 + 集号」匹配 `asset.episode?.index === episodeNumber`，落 `<集基础名>-thumb.<ext>`（`EPISODE_THUMB_SUFFIX = '-thumb'`）；
-   - 集 NFO 与集文件**同名**：先写 `nfoFileName(baseNameOf(file.name))`（旧名），改完名再把 NFO 重命名为 `nfoFileName(finalBase)`、删掉旧名那份；
-   - `updateItemMetadata(file.itemId, { ...metadataOf(detail, '', pluginId, file.itemId), title: remote?.title ?? '第 N 集', num: '', overview: remote?.plot ?? '', premiereDate: remote?.releaseDate ?? '', runtimeMinutes: remote?.duration ?? 0, providerIds: … })` + `updateItem(file.itemId, { name: basenameRemotePath(finalPath), parentId: seasonItem, seasonNumber, episodeNumber })` + `replaceItemImages`。
+   - 集 NFO 与**自己那份集文件**同名：写入目标是最终路径的 `nfoFileName(finalBase)`，沿用旧 NFO 的还原记录（`carryRestore(oldNfoPath)` + `mergeRestoreFiles`），写完若 `nfoTarget !== oldNfoPath` 且旧文件还在就删掉旧的 —— **同一集的多个版本各自有一份以自己文件名命名的 NFO**（扫描侧会逐个版本试读，见 §3.4）；
+   - `updateItemMetadata(file.itemId, { ...metadataOf(…), title, num: '', overview, premiereDate, runtimeMinutes, providerIds })` + `updateItem(file.itemId, { parentId: seasonItem, seasonNumber: season, episodeNumber })`；**条目名只在主版本上更新**（`if (isPrimary) updateItem(file.itemId, { name: basenameRemotePath(finalPath) })`）+ `replaceItemImages`。
 8. **收尾**：剧集条目 `updateItem(entry.itemId, { path: seriesDir, name: seriesBase })`（仅当整树移动过）+ `updateItemMetadata(entry.itemId, metadataOf(detail, entry.num, pluginId, entry.itemId))` + `replaceItemImages` + `enqueueItemActorScrape(entry.itemId, detail.actors ?? [], settings.scrape.actorScrape, signal)`；最后 `pruneEmptyDirs(context, [...oldDirs].filter(d => d !== seriesDir))`。结果 message 形如 `插件 X，N 集，N 季，N 个剧集资源，N 个 NFO，…`。
 
 > 剧集库**暂不支持「优先本地 NFO」**（`localFirst`），见 §10。
 
 ### 4.3 搜索关键词与候选匹配
 
-- **关键词 = 剧集目录名**：`libraryScrape.ts:107` 用 `seriesKeywordOf(item.name)`；`item.name` 在扫描期就是 `basenameRemotePath(剧集目录)`（刮削后被刮削标题覆盖，是同一个字段）。`seriesKeywordOf`（`episode.ts:129`）先用与影片一致的 `extractKeyword` 清洗，再**去掉结尾的年份**（`Show 2019` → `Show`）—— 年份留着会让「包含关键词」匹配失败，年份另有用途（`seriesYearOf`）。
+- **关键词 = 剧集目录名**：`libraryScrape.ts:107` 用 `seriesKeywordOf(item.name)`；`item.name` 在扫描期就是 `basenameRemotePath(剧集目录)`（刮削后被刮削标题覆盖，是同一个字段）。`seriesKeywordOf`（`src/common/types/media/mediaRules.ts:212`）先用与影片一致的 `extractKeyword` 清洗，再**去掉结尾的年份**（`Show 2019` → `Show`）—— 年份留着会让「包含关键词」匹配失败，年份另有用途（`seriesYearOf`，`mediaRules.ts:218`）。
 - **只发一次 `search`**：`scrapeJobPlan.ts:152` 对每个插件调 `invokePlugin(plugin.id, 'search', { keyword: context.entry.keyword })`，**没有「按目录名搜不到再拿剧集名重搜一次」的二次查询**；`scrapeSeriesJob.ts:5` 注释里的「剧集目录名或剧集名」指的是同一件事。
 - **匹配器 `pickSeriesCandidate(candidates, keyword, year)`**（`scrapeMatcher.ts`，剧集没有番号）：
   1. `year` 是 4 位时先筛 `(candidate.date ?? '').startsWith(year)`，池非空只用这个池，否则用全量；
@@ -203,6 +208,8 @@ episodeFileTemplate: '{showTitle} S{season}E{episode}'  // 集文件名（NFO �
 
 NFO 与还原记录：
 
+> 同一集的多个版本（`Show S01E01.mkv` + `Show S01E01 - 1080p.mkv`）：刮削只把**主版本**改成上面的规范文件名，其它版本**保持原文件名不变**，但各自有以自己文件名命名的 `.nfo`（扫描侧逐个版本试读）；重扫时它们仍归同一条 `episode`（多版本合并，见 §3.1）。
+
 - 文件名常量：写入侧 `scrapeSeriesJob.ts` 与还原侧 `mediaClearShared.ts` 都定义 `SERIES_NFO_NAME = 'tvshow.nfo'`、`SEASON_NFO_NAME = 'season.nfo'`；`mediaWall.ts:68` 读侧另有一份同名常量。
 - 三件套 XML 构造在 `src/common/types/scrape/tvNfo.ts`：`buildTvShowNfoXml` / `buildSeasonNfoXml` / `buildEpisodeNfoXml`（都接受第 4 个参数 `restore: NfoRestoreInfo | null`；集 NFO 是 `<episodedetails>`，含 `<episode>` 标签）。
 - 还原记录写在 NFO 里，由 `src/common/types/scrape/nfo.ts` 的 `appendRestore` 生成：注释行 + `<originalfilename>` + `<originaldirectory>` + 若干 `<plantedfile relative="…" original="…" />`；读回用 `parseNfoRestore`。剧集三层都带记录，**集 NFO 的记录是「原集文件名 + 原目录」**（这是逐集搬回的唯一依据）。
@@ -233,7 +240,7 @@ NFO 与还原记录：
 
 - `loadMediaWall` 按 `library.type === 'tv'` 走 `listSeriesItems(library.id)` + `seriesStatsOf(library.id)` + `toSeriesWallItem`；影片库走「条目 + 主源」。空 `libraryId` 遍历所有库。
 - `loadWallItems(itemIds)` 影片与剧集都认（`item.type === 'series'` 时用 `seriesStatsOfOne`）。
-- `readNfoMeta` 拆出通用 `readNfoInDir(connectionId, dirPath, names)`：影片读视频**同目录**的 `movie.nfo` / `<基础名>.nfo`（`nfoCandidates`），剧集读 `<剧集目录>/tvshow.nfo`。
+- `readNfoMeta` 拆出通用 `readNfoInDir(connectionId, dirPath, names)`：影片读视频**同目录**的 `movie.nfo` → `<目录名>.nfo` → `<基础名>.nfo`（`nfoCandidates`，目录型条目靠目录名对上），剧集读 `<剧集目录>/tvshow.nfo`。
 - `loadSeriesDetail(item, library)`：
   - 季列表 `listSeasonItems(libraryId, item.id)`、集列表 `listEpisodeItems(libraryId, season.id)`；
   - 季海报 `posterUrl = coverUrlOf(season, images)`、集封面 `coverUrl = coverUrlOf(episode, images)` —— 封面兜底链是「条目自己的图 → 直接父条目（集 → 季 → 剧集）」，所以集没剧照会退回季海报、季没海报会退回剧集封面；
@@ -264,7 +271,7 @@ NFO 与还原记录：
 - `MediaDetailPage.vue`：播放器改用选集口径（`const { seasons, activeId, playUrl, poster, select } = useEpisodeSelection(detail)`），播放器下方接入 `<media-episode-list>`；「还原刮削前」的确认文案按类型分说（`这部剧集` / `这部影片`，剧集提示会连带还原所有季与集）。
 - `MediaDetailHero.vue`：**头部不放播放按钮**（播哪一集由选集区决定，播放器就在头部正下方），标题兜底「未命名剧集」；另外头部**只认宽图**（缩略图 / 横幅 / 背景图 / 剧照），一张都没有时整条图片带都不渲染、退成纯文字头部。
 - `composables/useDetailView.ts`：`isSeries`、`posterTitle`（空标题时「未命名剧集」/「未命名影片」）、`posterNote`（剧集 `N 季 · M 集 · 体积`，影片 `番号 · 体积`）、`noSourceHint`（剧集「这部剧集里还没有能播放的集，请回影视墙刷新后再试」）。
-- `mediaDetailCells.ts`：`fileCells`（磁盘上的事实）与 `heroFacts` 加剧集分支 —— 标题 / 剧集目录 / 季数 / 集数 / 体积，元信息侧用首播日期（`meta.releaseDate`）、片商、厂牌，集数行 `episodeCount > 0 ? 'N 集' : ''`。
+- `mediaDetailCells.ts`：`fileCells`（文件信息）与 `heroFacts` 加剧集分支 —— 文件信息用「剧集目录」标签 + 所在目录 / 体积 / 修改时间 / 数据源，头部要点是季数 / 集数（`episodeCount > 0 ? 'N 集' : ''`）/ 首播日期（`meta.releaseDate`）；`infoCells`（影片信息 / 剧集信息）与影片共用同一套四行（片商 / 厂牌 / 系列 / 导演），空值行不渲染。
 
 ## 8. 还原刮削前（清除 NFO）
 
@@ -294,7 +301,7 @@ NFO 与还原记录：
 | --- | --- |
 | `src/common/types/library/index.ts` | `LibraryType` / `LIBRARY_TYPES` / `LIBRARY_TYPE_LABELS` / `libraryTypeLabel` |
 | `src/common/types/media/index.ts` | `MediaWallItem`（加 `type` / `seasonCount` / `episodeCount`）、`MediaEpisodeRef`、`MediaSeasonRef`、`MediaDetailResult.seasons`、`MediaClearNfoResult.removedDirs` |
-| `src/common/types/scrape/episode.ts` | `parseEpisodeName` / `seasonNumberOfDir` / `isExtraVideoDir` / `seriesKeywordOf` / `seriesYearOf` |
+| `src/common/types/media/mediaRules.ts` | 剧集与影片共用的命名规则纯函数：`parseEpisodeNumbers` / `seasonNumberOfDir` / `isExtraVideoDir` / `extraKindOfName` / `seriesKeywordOf` / `seriesYearOf` / `parseMediaName` / `isVersionOfFolder`（原来是 `src/common/types/scrape/episode.ts`，该文件已删除） |
 | `src/common/types/scrape/naming.ts` | `renderSeasonFolderName` / `renderEpisodeTemplate` / `padNumber` |
 | `src/common/types/scrape/tvNfo.ts` | `buildTvShowNfoXml` / `buildSeasonNfoXml` / `buildEpisodeNfoXml` |
 | `src/common/types/scrape/nfo.ts` | 还原记录写入 `appendRestore` / 读回 `parseNfoRestore` |
@@ -304,7 +311,9 @@ NFO 与还原记录：
 | `src/main/src/modules/library/libraryScan.ts` | 扫描编排：`isTv` 二选一走剧集索引 / 清理，`skippedVideos` 提示 |
 | `src/main/src/modules/library/libraryScrape.ts` | 剧集候选 `collectSeriesCandidates` / `pendingSeriesEntries` / `planSeriesLibraryScrape` / `startSeriesLibraryScrape(ByIds)` |
 | `src/main/src/modules/library/libraryStore.ts` | `coverUrlsOf` / `listSummaries().videoCount` 按库类型分派 |
-| `src/main/src/modules/media/mediaSeriesIndexer.ts` | 剧集三层索引 `indexSeriesLibraryPath`、`seriesItemId` / `seasonItemId` / `episodeItemId`、`cleanupSeriesUnseen` |
+| `src/main/src/modules/media/mediaSeriesItems.ts` | 剧集条目层：`seriesItemId` / `seasonItemId` / `episodeItemId` / `findOwnedItem` 认领、`ensureSeriesItem` / `ensureSeasonItem` / `indexEpisode`（多版本合成一集） |
+| `src/main/src/modules/media/mediaSeriesIndexer.ts` | 剧集目录遍历 `indexSeriesLibraryPath`、图片归属 `indexSeriesImages`、`cleanupSeriesUnseen` |
+| `src/main/src/modules/media/mediaNfoScan.ts` | 扫描期 NFO：`collectNfoBases` / `hasNfoEvidence` / `importMovieNfo` / `importSeriesNfo` / `importSeasonNfo` / `importEpisodeNfo` |
 | `src/main/src/db/repo/mediaSeriesRepo.ts` | `SeriesItemStats` / `EMPTY_SERIES_STATS` / `listSeriesItems` / `listPendingSeriesItems` / `countSeriesItems` / `listSeasonItems` / `listEpisodeItems` / `seriesStatsOf` / `seriesStatsOfOne` / `replacePathPrefix` / `SeriesEpisodeFile` / `listSeriesEpisodes` |
 | `src/main/src/modules/media/mediaWall.ts` | `toSeriesWallItem` / `readNfoInDir` / `loadSeriesDetail` / `loadWallItems` 认 series |
 | `src/main/src/modules/media/mediaBrowse.ts` | 目录浏览块（**只认影片库**） |
@@ -313,7 +322,7 @@ NFO 与还原记录：
 | `src/main/src/modules/media/mediaClearShared.ts` | 还原公共工具（NFO 名常量、`readRestore`、`restorePlantedFiles`、`removeEmptyDir`…） |
 | `src/main/src/modules/scrape/scrapeSeriesJob.ts` | `runSeriesJob` 剧集任务入口 + 产物命名常量 |
 | `src/main/src/modules/scrape/scrapeSeriesAssets.ts` | `indexRemoteEpisodes` / `landAssets` / `imagesOf` / `pruneEmptyDirs` |
-| `src/main/src/modules/scrape/scrapeJobApply.ts` | `metadataOf`（`detail.genres ?? []`）、`mergeRestoreFiles`、`carryRestore`、`refreshSourcePath` |
+| `src/main/src/modules/scrape/scrapeJobApply.ts` | `metadataOf`（`detail.genres ?? []`）、`mergeRestoreFiles`、`carryRestore`、`refreshSourcePath`（单文件条目）、`refreshItemDir`（目录型条目：条目 `path` 换成新目录 + 逐源重算路径） |
 | `src/main/src/modules/scrape/scrapeJobPlan.ts` | `collectFromPlugins`（第三参 `pick`，剧集传 `pickSeriesCandidate`） |
 | `src/main/src/modules/scrape/scrapeMatcher.ts` | `pickSeriesCandidate` |
 | `src/renderer/src/components/media/MediaWallCard.vue` | 剧集卡「N 季 M 集」标签 |
@@ -332,3 +341,5 @@ NFO 与还原记录：
 8. **渲染层没有剧集库的目录浏览入口**：`mediaBrowse.ts` 只认影片库。
 9. **资料库根自己就是剧集目录时不改名**：只在它下面按规范建季目录（warn 提示）。
 10. `media_item` **没有 `title` 列**：刮削标题写在 `name` 与 `sortName` 上（`mediaRepo.updateItemMetadata`），NFO 还原后 `name` 回落到磁盘文件名。
+11. **同集多版本只搬主版本**：同一季同集号的多个文件合成一条 `episode` 后，刮削只把**主版本**（条目 `path` 指向的那份）整理成规范文件名，其它版本保持原文件名（只各写自己的 NFO）；详情页本期只播主版本，版本切换 UI 留后续。多版本的识别依赖文件名里同一次 `SxxExx`（`parseEpisodeNumbers`），**与 `- 1080p` 这类版本后缀无关**。
+12. **花絮文件在剧集库同样不入库**：`extraKindOfName` 命中的文件（`xxx-sample.mkv`、整个名字就是 `sample` 的）在扫描期被过滤，`isExtraVideoDir` 命中的目录整棵不下钻。

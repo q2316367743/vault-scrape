@@ -25,9 +25,32 @@ const EMPTY_GROUP_PATTERN = /\(\s*\)|\[\s*\]|（\s*）|【\s*】/g
  */
 export function providerTagOf(pluginId: string, id: string): string {
   const value = id.trim()
-  const provider = pluginId.trim().replace(/-offline$/i, '')
+  const provider = providerKeyOf(pluginId)
   if (value.length === 0 || provider.length === 0) return ''
   return `${provider}id-${value}`
+}
+
+/**
+ * 插件 ID → provider 名：去掉尾部 `-offline` 并小写。
+ *
+ * `providerIds`（条目元数据）与 NFO 的 `<uniqueid type="…">` 统一用这个名字当键，
+ * 这样「扫描读 NFO」与「刮削写 NFO」能对上，`[r18id-xxx]` 也能被扫描解析回 `r18`。
+ */
+export function providerKeyOf(pluginId: string): string {
+  return pluginId.trim().replace(/-offline$/i, '').toLowerCase()
+}
+
+/**
+ * 外部 ID 片段 → `{ provider: id }`；认不出返回空对象。
+ *
+ * 与 `providerTagOf` 互为逆运算：`tmdbid-27205` → `{ tmdb: '27205' }`。
+ */
+export function providerIdsOfTag(tag: string): Record<string, string> {
+  const matched = /^([a-z0-9_-]+?)id-(.+)$/i.exec(tag.trim())
+  const key = (matched?.[1] ?? '').trim().toLowerCase()
+  const value = (matched?.[2] ?? '').trim()
+  if (key.length === 0 || value.length === 0) return {}
+  return { [key]: value }
 }
 
 /** 清洗文件名非法字符，折叠空白与收尾的点 */

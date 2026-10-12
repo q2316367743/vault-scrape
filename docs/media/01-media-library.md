@@ -35,10 +35,13 @@
 | `src/main/src/modules/library/libraryScrapeDispatch.ts` | **按库类型分派**三个入口（`isTvLibrary` 是唯一判断点）：tv → 剧集版候选 / 启动，否则影片版；`libraryScan` / `libraryIpc` / `scrapeIpc` 三个调用点都走它 |
 | `src/main/src/modules/library/libraryIpc.ts` | `library:*` 通道注册与入参收窄 |
 | `src/main/src/modules/library/libraryEvents.ts` | 扫描进度广播 |
-| `src/main/src/modules/media/mediaIndexer.ts` | 目录游标 BFS、条目 / 媒体源 / 图片落库、配合 `extensions` 判定视频、清理未扫到的行 |
-| `src/main/src/modules/media/mediaSeriesIndexer.ts` | 剧集库的三层索引（`indexSeriesLibraryPath`）、`seriesItemId` / `seasonItemId` / `episodeItemId`、`cleanupSeriesUnseen`（见 §4.6） |
+| `src/common/types/media/mediaRules.ts` | **命名规则纯函数**（扫描与刮削共用）：`parseMediaName` / `versionLabelOf` / `isVersionOfFolder` / `compareVersionLabel` / `seasonNumberOfDir` / `parseEpisodeNumbers` / `isExtraVideoDir` / `extraKindOfName` / `seriesKeywordOf` / `seriesYearOf`（见 §4.7） |
+| `src/main/src/modules/media/mediaScanCommon.ts` | 两个索引器共用的底层工具：`MAX_SCAN_ENTRIES` / `MAX_SCAN_DEPTH`、`hashId`、`movieItemId` / `folderItemId` / `mediaSourceId` / `mediaImageId`、`IndexPathOptions` / `IndexPathResult`、`isVideoExtension` / `isBigEnoughVideo`、`imageTypeOfBaseName`、**`findOwnedItem`（条目身份认领）** |
+| `src/main/src/modules/media/mediaIndexer.ts` | 影片库：目录游标 BFS、**目录 = 条目分组（`movieGroupsOf`）**、媒体源 / 图片落库、配合 `extensions` 判定视频、花絮跳过、清理未扫到的行 |
+| `src/main/src/modules/media/mediaSeriesIndexer.ts` | 剧集库的三层索引（`indexSeriesLibraryPath`）、图片归属、`cleanupSeriesUnseen`（见 §4.6） |
+| `src/main/src/modules/media/mediaSeriesItems.ts` | 剧集树的条目层：`seriesItemId` / `seasonItemId` / `episodeItemId`、`ensureSeriesItem` / `ensureSeasonItem` / `indexEpisode`（多版本合成一集）、`DirContext`（从 `mediaSeriesIndexer.ts` 拆出，见 §4.6） |
 | `src/main/src/db/repo/mediaSeriesRepo.ts` | 剧集读模型仓储：`listSeriesItems` / `listPendingSeriesItems` / `listSeasonItems` / `listEpisodeItems` / `seriesStatsOf` / `replacePathPrefix` / `listSeriesEpisodes`（**表与影片完全共用，无新表**） |
-| `src/main/src/modules/media/mediaNfoScan.ts` | 扫描期的 NFO 处理：`collectNfoBases` / `hasNfoEvidence`（`has_nfo` 证据）与 `backfillCastFromNfo`（未刮削条目从同目录 NFO 补 `media_cast` 参演名单） |
+| `src/main/src/modules/media/mediaNfoScan.ts` | 扫描期的 NFO 处理：`collectNfoBases` / `hasNfoEvidence`（`has_nfo` 证据）、`importMovieNfo` / `importSeriesNfo` / `importSeasonNfo` / `importEpisodeNfo`（**未刮削条目按根元素种类读 NFO，元数据落条目、名单落 `media_cast`**） |
 | `src/main/src/modules/media/mediaWall.ts` | 首页 / 整墙与详情读模型（含剧集详情 `loadSeriesDetail` 与通用 `readNfoInDir`）；目录浏览块已拆到 `mediaBrowse.ts`（**只认影片库**） |
 | `src/main/src/modules/media/mediaBrowse.ts` | 目录浏览块（`owningPath` / `movieSubtree` / `toBrowseEntry` / `compareBrowse` / `browseLibrary`），只认影片库——渲染层没有剧集库的浏览入口 |
 | `src/main/src/modules/media/mediaClearNfo.ts` | 「还原刮削前」的分派器（空 id / 条目不存在 / series → `clearSeriesNfo` / 非 movie 一律 `notFound`）与影片版实现 |
@@ -86,9 +89,9 @@
 
 索引：`idx_library_path_library`（library_id）、唯一索引 `idx_library_path_conn_path`（connection_id, path）——后者是「一条目录只属于一个库」的兜底，嵌套重叠由 `normalizePaths()` 在保存时先拦下。
 
-条目侧三张表（`media_item` 28 列 / `media_source` 12 列 / `media_image` 9 列）的逐列以 `src/main/src/db/schema/mediaItem.ts` 等 schema 与 `resources/drizzle/` 迁移 SQL 为准；其中 `season_number` / `episode_number` 两列由剧集增量迁移 `0001_familiar_lifeguard.sql` 引入（基线里 `media_item` 是 26 列）。
+条目侧三张表（`media_item` 32 列 / `media_source` 12 列 / `media_image` 9 列）的逐列以 `src/main/src/db/schema/mediaItem.ts` 等 schema 与 `resources/drizzle/` 迁移 SQL 为准；其中 `season_number` / `episode_number` 两列由剧集增量迁移 `0001_familiar_lifeguard.sql` 引入（基线里 `media_item` 是 26 列），`maker` / `label` / `series` / `director` 四列由详情页元信息落库的增量迁移 `0002_soft_masked_marvel.sql` 引入（`TEXT NOT NULL DEFAULT ''`，详见[数据存储](../data/01-sqlite-storage.md)）。
 
-`media_item.has_nfo`（在基线迁移 `0000_moaning_black_panther.sql` 里）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo` 或与视频同名的 `.nfo` 就置 1。它现在只是「磁盘上有没有 NFO」的事实标记，**不参与任何界面判定**——影视墙不按刮削与否分类，旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线（`has_nfo` 列保留，避免改动表结构与迁移）；**刮削队列**仍只看 `scrapedAt === 0`（见 §5）。
+`media_item.has_nfo`（在基线迁移 `0000_moaning_black_panther.sql` 里）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo`、**目录型条目按目录名命名的 `.nfo`** 或与视频同名的 `.nfo` 就置 1（剧集库三层另见 §4.6）。它现在只是「磁盘上有没有 NFO」的事实标记，**不参与任何界面判定**——影视墙不按刮削与否分类，旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线（`has_nfo` 列保留，避免改动表结构与迁移）；**刮削队列**仍只看 `scrapedAt === 0`（见 §5）。
 
 契约类型（`src/common/types/library/index.ts`）：
 
@@ -119,9 +122,14 @@
 - 每个根目录一条**游标 BFS**（队列 + `depth`），`MAX_SCAN_ENTRIES = 200_000`、`MAX_SCAN_DEPTH = 32`，任一触顶就把结果标成 `truncated`（提示「已达扫描上限，结果可能不完整」）。
 - **根目录列目录失败直接抛错** `scanFailed`「无法读取媒体目录：<原因>」；**子目录失败只计数** `skippedDirs` 并继续（提示「跳过 N 个读不到的目录」）。
 - 被跳过的目录路径会一并交给清理阶段（`skippedPaths`）：这些目录**没扫到 ≠ 内容已删**，所以清理时会避开这些前缀，不删它们下面的媒体源、条目与图片（避免一次网络抖动就清掉刮削成果）。
-- 目录按需生成 `type='folder'` 条目串起父子层级（`ensureFolderItem`）；**连接根 `/` 不建条目**，其下第一层目录的 `parentId` 为空串。
-- **只把扩展名命中当前库后缀清单的文件建成 `movie` 条目**：判定在 `mediaIndexer.ts` 的私有 `isVideoExtension(extensions, extname)`（`extname` 去点转小写后 `extensions.includes`），**扫描器里不再有硬编码后缀**；`indexImages()` 也用同一份清单判定「视频基名」，顺带索引图片（见 4.3）。
-- **未刮削的条目顺带补参演名单**（`mediaNfoScan.ts`）：`indexVideo()` 返回 `{ itemId, castable }`（`castable` = 库里 `scraped_at = 0`），目录循环接着调 `backfillCastFromNfo()` —— 同目录有 NFO 且 `media_cast` 里还没有这部影片的名单时，读 NFO 里的 `<actor>`（`parseNfoXml`）写进 `media_cast`，并按名字建好演员档案（`syncItemCast`）。NFO 只是数据提供方、数据库是保存方；**已经有名单或已刮削的条目不再读文件**，重扫不会覆盖刮削结果，读失败静默跳过（条目照常入库）。
+- **条目模型：一个影片目录 = 一个 `movie` 条目**（对齐 Jellyfin）。`mediaIndexer.movieGroupsOf()` 把一层目录里的视频分组：
+  - 目录里有「以目录名为前缀」的视频（`mediaRules.isVersionOfFolder(fileBase, dirBase)`，前缀后允许 `-` / `.` / `_`）时，这**整个目录**就是一个 `movie` 条目，条目 `path` = **目录路径**，这些视频是同一个条目的多个**版本**，各写一条 `media_source`（读侧 `primarySourceOf` 取主版本，详情页本期只播主版本，版本切换 UI 后续）；
+  - 目录里只有一个视频、且不是目录名的版本时，条目 `path` = **该视频路径**（单文件条目，兼容散装文件）；
+  - 连接根等目录下散着的多个不相关视频各自成条目。
+- 目录按需生成 `type='folder'` 条目串父子层级（`ensureFolderItem`）：**只有「自己没有影片」或「目录里有多个独立影片」的目录才建目录条目**；**连接根 `/` 不建条目**，其下第一层目录的 `parentId` 为空串。目录条目缓存（`folderCache`，键 `` `${connectionId}\n${dirPath}` ``）会记下「目录本身就是影片条目」的情况，不给它再建同路径目录条目。
+- **哪些文件算视频**：扩展名命中当前库后缀清单（`isVideoExtension(extensions, extname)`，`extname` 去点转小写后 `extensions.includes`，**扫描器里没有硬编码后缀**）+ 体积过门槛（`isBigEnoughVideo`，库级 `minFileSizeMb`）+ **不是花絮文件**（`extraKindOfName(fileBase)` 为空）；`indexImages()` 用同一份清单判定「视频基名」，顺带索引图片（见 4.3）。
+- **花絮一律不入库**：`extras` / `featurettes` / `sample` / `trailer` / `behind the scenes` / `花絮` 等目录（`mediaRules.isExtraVideoDir`）**整棵子树不入队**（里面的子目录也不会被当成新影片）；目录里 `xxx-sample.mkv` / `xxx-trailer.mkv` 这类文件、以及**整个名字就是** `sample` / `trailer` 的文件（`extraKindOfName`，专治 `sample.mkv` 这种没有分隔符的写法）直接过滤。这同时修掉了「电影库把花絮当独立影片」的老问题。
+- **扫描读 NFO 落库**（`mediaNfoScan.ts`，**未刮削的条目才读**）：影片按 `movie.nfo` → `<目录名>.nfo` → `<视频名>.nfo` 顺序找（目录型条目多版本时只有目录名能对上），**校验根元素是 `<movie>`**，命中就把标题 / 年份 / 首播日期 / 时长 / 类型 / 片商 / 厂牌 / 系列 / 导演 / 标签 / 外部 ID 写进条目（`applyScannedMetadata`，只写传进来的列、不动 `scraped_at`），演员写 `media_cast`（`syncItemCast`）并按名字建演员档案。`scrapedAt > 0` 的条目一律不读，重扫不会覆盖刮削结果；读失败静默跳过（条目照常入库，元数据等刮削补齐）。这些列（含 `maker` / `label` / `series` / `director`）就是详情页的唯一元信息来源，页面上不再读磁盘 NFO（见[影视墙页面 §4](../page/04-media-wall-page.md)）。
 - 后缀清单的默认值与清洗规则见[设置项清单 · 资料库](../setting/02-setting-items.md)（默认 `mp4 / mkv / avi / mov / wmv / flv / webm / ts / m2ts / mpg / mpeg / rmvb`，上限 64 个，清空回落默认值）。
 
 > **剧集库（`type='tv'`）不走上面这套 `movie` + `folder` 流程**：它由 `mediaSeriesIndexer.indexSeriesLibraryPath` 扫成 `series → season → episode` 三层（目录角色只看「目录名 + 直接内容」，集号只认文件名、认不出就不入库），清理也换成 `cleanupSeriesUnseen`。完整口径见 [剧集支持 §3](./02-series-support.md)。
@@ -132,9 +140,9 @@
 
 | 对象 | 输入 | 说明 |
 | --- | --- | --- |
-| movie 条目 | `item\n{connectionId}\n{path}` | 与库无关，同一个文件在哪个库都是同一条目 |
+| movie 条目 | `item\n{connectionId}\n{path}` | 与库无关；**目录型条目的 `path` 是影片目录**，单文件条目是视频路径 |
 | folder 条目 | `folder\n{libraryId}\n{connectionId}\n{dirPath}` | **含 libraryId**，同一目录在两个库里是两条目录条目 |
-| 媒体源 | `source\n{connectionId}\n{path}` | 与条目一一对应（本阶段一源） |
+| 媒体源 | `source\n{connectionId}\n{path}` | 一个条目可以有多个源（多版本），`(connection_id, path)` 唯一 |
 | 图片 | `image\n{connectionId}\n{path}` | |
 
 **例外：刮削产物图的 ID 是 `randomUUID()`**。`mediaImageRepo.replaceItemImages()`（刮削成功后整组替换某个条目的图片，见 [刮削模块](../scrape/01-scrape-module.md)）先删旧行、再用 `upsertImage({ id: randomUUID(), … })` 写入；`upsertImage` 的 `onConflictDoUpdate` 刻意不改 `id`，所以重扫既有 UUID 行也保持 UUID。于是 `media_image.id` 实际有两种形态：
@@ -144,15 +152,17 @@
 
 读取侧 `MEDIA_ID_PATTERN`（`src/common/types/media/source.ts`）**必须两种都放行**：私有协议 `storage://{连接ID}/{媒体ID}/{文件名}` 的解析在 `mediaProtocol.handleMediaRequest()` 里先用它做形态校验，只认 32 位十六进制会把所有刮削图打成 404（影视墙封面、资料库封面四宫格一起挂）。两种形态都只含十六进制字符与连字符，不放宽路径安全边界。
 
-- `movie` 条目**已存在时只更新 `parentId` 与 `hasNfo`**（都是扫描拥有的列，后者记同目录有没有 NFO）——文件名与番号交给刮削结果，重扫不会把刮削出来的标题覆盖回文件名。
+- **条目身份由 `findOwnedItem(connectionId, itemPath, videoPaths, type)` 统一认领**（`mediaScanCommon.ts`）：先按「连接 + 条目路径」找，再按「组内任一视频路径对应的媒体源 → 它的条目」，最后才用确定性 ID 新建；**只认同类型条目**。所以主版本换了（新增 / 删掉一个版本文件）时代码改为按源认领，id 与已刮好的元数据都不会丢。
+- `movie` 条目**已存在时只更新扫描拥有的列**：`path`（只在变了才写）、`parentId`、`hasNfo`（同目录有没有 NFO，目录型条目额外认 `<目录名>.nfo`），未刮削（`scrapedAt = 0`）时才更新 `name` / `num`——文件名与番号交给刮削结果，重扫不会把刮削出来的标题覆盖回文件名。
 - `media_source` 走 `upsertSource`（冲突目标是唯一索引 `(connection_id, path)`），只刷新扫描拥有的列：`item_id` / `library_id` / `name` / `extname` / `mime` / `size` / `modified_at` / `indexed_at` / `scan_id`；**`id` 不变**。
 - 图片：只有**命中词表**的图片会入库（词表即刮削器 `resolveAssetName` 写出来的那些名字：`poster` / `backdrop` / `thumb` / `banner` / `logo` / `fanartN`），其余名字（`landscape`、用户自建的任意名字等）一律忽略：
   - 与视频**同名**（去掉扩展名一致）的图片挂到该影片，按该文件的用途定 `type`；
   - 目录级**固定名**按用途定 `type` 并挂目录条目：`poster` / `cover` / `folder` → `primary`，`thumb` / `thumb1` / `thumbs2` → `thumb`，`fanart` / `fanart1` / `backdrop` / `background` → `backdrop`，`still` / `still1` / `screenshots2` → `still`（剧照），`banner` → `banner`，`logo` / `clearlogo` → `logo`；
   - `<视频基名>-<固定名>` 这种**前缀名**（刮削器 `naming.assetNaming = 'movie'` 或 `forceMovieStyle` 时的产物，如 `ABC-123-thumb.jpg`）按同一词表定用途，并挂到基名对应的影片条目；
+  - `<目录名>-<固定名>` 这种前缀名（多版本目录里视频名各不相同，图片常以目录名打头）也认，挂到目录级条目；
   - `extrafanart` / `extrathumbs` 子目录里的图算**上一层目录**影片的产出（锚点取父目录；父目录本身也是 extra 目录时再上一层，用于多集作品的 `S2`）；
   - 影片挂到所在目录的 `folder` 条目，所以「目录级固定名」通常落在影片的父条目上，读封面时按 4.4 之后的兜底链取。
-- 连接根没有目录条目时，该目录只有一个视频就挂给它，多个视频则放弃（避免张冠李戴）。
+- 目录级固定名图片的落点是「目录自己的条目」：目录就是影片条目（目录型）时挂它，否则挂 `folder` 条目；连接根没有目录条目时，该目录只有一个视频就挂给它，多个视频则放弃（避免张冠李戴）。
 
 ### 4.4 清理与自动刮削
 
@@ -160,7 +170,7 @@
 
 1. 先删掉本次**没有**扫到源的 **movie** 条目（`deleteItemsWithoutSource` 显式过滤 `type='movie'`），并删掉这些条目的图片；返回的条目数就是 `LibraryScanResult.removedItems`；
 2. 再删掉本次没被扫到的 `media_source` 行（`deleteSourcesNotInScan`，条件 `scan_id <> 本次 scanId`）；
-3. 最后清掉磁盘上已消失的**刮削产物图**：上面词表里的固定名，以及 `<视频基名>-<固定名>` 前缀名（`isScanOwnedImagePath()`），且本次没见到；用户自己放的其他图片不在清理范围内。
+3. 最后清掉磁盘上已消失的**刮削产物图**：上面词表里的固定名，以及 `<视频基名>-<固定名>` / `<目录名>-<固定名>` 前缀名（`isScanOwnedImagePath()`），且本次没见到；用户自己放的其他图片不在清理范围内。
 
 随后 `autoScrape(library, pending)` 按固定顺序判断（**前四条任一命中都只影响自动刮削，扫描结果本身照常返回**），原因原样进 `autoScrapeSkipped`：
 
@@ -193,15 +203,38 @@
 | --- | --- | --- |
 | `Show/S01E01.mkv` | 剧集目录里直接放视频 | 一条 `series` + 一条**隐式季**（路径就是剧集目录，季号取文件名里的季号） |
 | `Show/Season 01/S01E01.mkv` | 含「季目录」子目录 | `series` + `season`（季目录路径，`name` = 目录名） |
+| `Show/Season 01/S01E01.mkv` + `…/S01E01.1080p.mkv` | 同季同集号多个文件 | **合成一条 `episode` + 多条 `media_source`**（文件名自然序第一个当主版本，条目路径跟着它走） |
 | `Show/Season 01/CD1/…` | 季目录下更深一层 | 沿用父级季上下文，**不新建条目** |
 | `Extras` / `Featurettes` / `Sample` / `Behind the Scenes` / `Deleted Scenes` / `Interviews` / `Shorts` / `Trailers` | `isExtraVideoDir` 命中 | **整棵子树跳过**，里面的视频不入库 |
 | `Specials` / `SP` / `OVA` / `OAD` / `特别篇` / `番外` / `特典` | `seasonNumberOfDir` → 0 | 正常建季条目，季号 0 |
 
-- 季号：目录名写明时以目录为准（`Season 01` / `S1` / `第2季` / `第二季`），没写（剧集目录里直接放视频）时用文件名里的季号；**集号只认文件名**（`parseEpisodeName`，认可 `S01E02` / `1x02` / `EP02` / `第02集` / 兜底第一个独立数字，多集文件按第一集），认不出就跳过并计入 `skippedVideos`（提示「N 个视频认不出季 / 集号，未入库」）。
+- 季号：目录名写明时以目录为准（`Season 01` / `S1` / `第2季` / `第二季`），没写（剧集目录里直接放视频）时用文件名里的季号；**集号只认文件名**（`parseEpisodeNumbers`，`mediaRules.ts:175`，认可 `S01E02` / `1x02` / `EP02` / `第02集` / 兜底第一个独立数字，多集文件按第一集），认不出就跳过并计入 `skippedVideos`（提示「N 个视频认不出季 / 集号，未入库」）。
 - 季目录里的集挂季条目；剧集目录里直接放的集挂剧集条目（`parent_id = seriesId`，`seasonNumber` 仍是真实季号）——**读取侧要把两种都算进同一季**。
-- 条目 ID 都是 `sha1(...).slice(0,32)`：`seriesItemId(libraryId, connectionId, dirPath)`、`seasonItemId(..., seasonNumber)`（**带季号**，避免隐式季共用剧集目录撞 ID）、`episodeItemId(connectionId, path)`（与库无关）；认领旧条目靠 `findItemByPath` 且**要求 `type` 相同**，刮削改名后就地改写路径、**id 不变**，重扫不造重复也不丢元数据。
-- 图片与 NFO：与集同名的图当集主图、`<集名>-<用途>` 前缀名挂集、目录级固定名挂当前目录的条目（剧集或季）、`extrafanart` / `extrathumbs` 挂上一层条目；`tvshow.nfo` / `season.nfo` 只作 `hasNfo` 证据，未刮削的剧集条目会从 `tvshow.nfo` 补一次参演名单（`backfillSeriesCastFromNfo`）。
-- 剧集库同样只把扩展名命中清单的文件当视频（`libraryExtensionsOf(setting.library, 'tv')`）。
+- 条目 ID 都是 `sha1(...).slice(0,32)`：`seriesItemId(libraryId, connectionId, dirPath)`、`seasonItemId(..., seasonNumber)`（**带季号**，避免隐式季共用剧集目录撞 ID）、`episodeItemId(connectionId, path)`。身份认领走与影片库同一个 `findOwnedItem`（路径 → 组内视频的源 → 视频路径，**只认同类型条目**）；季必须**同时看路径与季号**（多个隐式季共用剧集目录这一条路径）。刮削改名后就地改写路径、**id 不变**，重扫不造重复也不丢元数据。条目层代码在 `src/main/src/modules/media/mediaSeriesItems.ts`（原本与遍历同文件，超出 RL-05 行数上限后拆出）。
+- **扫描读 NFO 落库**（三类根元素各自校验，未刮削的条目才读）：剧集读目录里的 `tvshow.nfo`（根 `<tvshow>`）、季读 `season.nfo` / `seasonNN.nfo`（根 `<season>`）、集读与集文件同名的 `.nfo`（根 `<episodedetails>`，**同一集多个版本逐个试**）。这是修「剧集刮削写了 `tvshow.nfo`、扫描读不到」的根因：`parseNfoXml` 原先只认 `<movie>` 根，现在按根元素分派出 `kind`，读侧再比对 `kind`。
+- 图片与 NFO 证据：与集同名的图当集主图、`<集名>-<用途>` 前缀名挂集、目录级固定名挂当前目录的条目（剧集或季）、`extrafanart` / `extrathumbs` 挂上一层条目；`tvshow.nfo` / `season.nfo` / 集 NFO 都算 `hasNfo` 证据。
+- 剧集库同样只把扩展名命中清单的文件当视频（`libraryExtensionsOf(setting.library, 'tv')`），花絮文件（`extraKindOfName`）同样过滤。
+
+### 4.7 与 Jellyfin / Emby / Plex / Kodi 的命名规则对齐
+
+命名规则集中在 `src/common/types/media/mediaRules.ts`（**纯函数、无 IO，扫描与刮削共用**）。本轮是破坏性重构、不考虑兼容，所以规则只有这一套：
+
+| 规则 | 实现 | 说明 |
+| --- | --- | --- |
+| 一片一目录 | `movieGroupsOf`（`mediaIndexer.ts`） | 目录名就是条目名；目录里的视频以目录名为前缀（`isVersionOfFolder`） |
+| 多版本合并 | `versionLabelOf` / `compareVersionLabel` | 前缀后 `-` / `.` / `_` 分隔的部分是版本标签（`- 2160p` / `- Directors Cut`），合并成**一个条目多个源**；无标签的排最前，即主版本 |
+| 年份与外部 ID | `parseMediaName` | `片名 (2009) [tmdbid-567]` → `{ year: '2009', providerIds: { tmdb: '567' } }`（`imdbid-tt12801262` 同理） |
+| 季目录 | `seasonNumberOfDir` | `Season 01` / `S1` / `第2季` / `第二季` → 季号；`Specials` / `SP` / `OVA` / `特别篇` → **0（特别篇）** |
+| 季集号 | `parseEpisodeNumbers` | `S01E02` / `1x02` / `EP02` / `第02集`；多集文件（`S01E02E03`、`S01E03-E04`）按第一集；补零两位由 `padNumber` 负责 |
+| 花絮 | `isExtraVideoDir` / `extraKindOfName` | 目录整棵不入队；文件（含整个名字就是 `sample` / `trailer` 的）直接过滤 |
+| 剧集关键词 | `seriesKeywordOf` / `seriesYearOf` | 剧集目录名清洗后去掉结尾年份，供刮削匹配 |
+
+**刮削侧产出的命名必须落进这套规则**（见 [刮削模块 §4](../scrape/01-scrape-module.md)）：`movieDirOf/movieFolderName` 给出 `<root>/<片名 (年份)>/`，视频是 `<片名 (年份)>.ext`、NFO 是 `<片名 (年份)>.nfo`、图片落同一个目录（`<base>` 既是目录名也是视频名前缀，满足「文件名以文件夹名为前缀」）；季目录由 `renderSeasonFolderName` **补零成 `Season 01`**（原本就合规），集文件名含 `S01E02` 标记。
+
+- **库根分离**：电影库与剧集库应指向不同根目录（Jellyfin 要求不混放）；本软件在保存资料库时校验同库目录重复 / 嵌套 / 跨库重叠（见 §6 错误码 `invalidArgument`）。
+- **特殊字符**：`< > : " / \ | ? *` 由刮削侧命名清洗（`sanitizeName`）去掉；扫描侧只读不写、不改用户自己的文件名。
+- **剧集库根宽松**：资料库根目录自己就含集文件或季目录时，**根本身算一部剧集**（`indexSeriesLibraryPath` 的 depth 0 分支），对应 Jellyfin 把库直接指向单个剧目录的用法；刮削阶段不会给资料库根改名。
+- **花絮目录归属**：`extrafanart` / `extrathumbs` 不在花絮目录清单里（它们是图片目录），按 4.3 的锚点规则挂到上一层条目。
 
 ## 5. 刮削（`libraryScrape.ts`）
 
@@ -264,7 +297,7 @@
 ## 8. 与「影视墙 / 存储页」的关系
 
 - **入口分工**：**扫描**与**刮削**都在影视墙的资料库抽屉里，刮削走整库待刮削候选（`library:scrape { libraryId }`）。原「工作台」的手动挑片入口（`scrape:browse` + `scrape:start { libraryId, itemIds }`）已下线，两个通道保留但渲染层没有调用方；刮削的进度 / 取消 / 继续 / 逐文件结果在概览页看（[刮削进度与详情页](../page/03-scrape-detail-page.md)）。刮削阶段**不扫盘、不自己建索引**。
-- **影视墙**：[影视墙页面](../page/04-media-wall-page.md)分首页（`/media`：资料库横排 + 最近添加 / 推荐两排）与内容页（`/media/library?libraryId=…`，空串 = 全部条目）；**影视库只列 `type='movie'` 条目、剧集库只列 `type='series'` 条目**（整部剧一张卡，`MediaWallItem.type='series'`，卡上多一枚「N 季 M 集」标签、没有番号与 `playUrl`），不属于任何库的条目不会出现在墙上；封面取条目自己的 primary 图、否则退回父目录条目的 primary 图（`readNfoInDir` 统一了「读哪个 NFO」的口径：影片读同目录 `movie.nfo` / `<基础名>.nfo`，剧集读 `<剧集目录>/tvshow.nfo`）；`indexedAt` = 最新媒体源的 `indexed_at`。**影视墙不按刮削与否分类**（没有「待刮削 / 已刮削」标记、排序与统计，详情页也没有「刮削状态」格）。
+- **影视墙**：[影视墙页面](../page/04-media-wall-page.md)分首页（`/media`：资料库横排 + 最近添加 / 推荐两排）与内容页（`/media/library?libraryId=…`，空串 = 全部条目）；**影视库只列 `type='movie'` 条目、剧集库只列 `type='series'` 条目**（整部剧一张卡，`MediaWallItem.type='series'`，卡上多一枚「N 季 M 集」标签、没有番号与 `playUrl`），不属于任何库的条目不会出现在墙上；封面取条目自己的 primary 图、否则退回父目录条目的 primary 图（`readNfoInDir` 统一了「读哪个 NFO」的口径：影片按 `nfoCandidates` 读同目录 `movie.nfo` → `<目录名>.nfo` → `<基础名>.nfo`（目录型条目靠目录名对上），剧集读 `<剧集目录>/tvshow.nfo`）；`indexedAt` = 最新媒体源的 `indexed_at`。**影视墙不按刮削与否分类**（没有「待刮削 / 已刮削」标记、排序与统计，详情页也没有「刮削状态」格）。
 - **概览页**：[刮削进度与详情页](../page/03-scrape-detail-page.md)展示主进程最近一条任务的进度（可取消 / 继续）与全部刮削记录，点记录行进只读详情页（任务信息 + 逐文件结果）。
 - **存储页**：[存储页](../page/02-storage-page.md)是只读浏览 + 预览：删连接时主进程会级联 `deleteLibrariesByConnection(connectionId)`（删库 + 媒体条目 / 媒体源 / 图片），避免留下悬空数据；连接上不再有刮削器配置。预览走 `storage://` 的**路径形式**（不依赖媒体索引），因此未入库的任意视频 / 图片 / 音频 / nfo 也能看，与影视墙走的是同一条区间流式通道。
 - **数据落盘位置**：
@@ -288,6 +321,8 @@
 - **没有库封面列**：`library` 表没有封面字段；首页资料库卡片的四宫格是**影片封面拼贴**（`MediaLibrarySummary.coverUrls`，最多 4 张、按最近添加排序），不是库自己的封面。
 - 路径冲突统一报 `invalidArgument`：同库重复报「媒体目录重复添加」，同库嵌套报「媒体目录不能互相嵌套：A 与 B」，跨库重叠报「媒体目录与资料库「N」的 X 重叠，请改用不重叠的目录」——旧的 `findPathOwner` 精确归属规则与 `pathOverlap` 错误码都已移除。
 - 扫描上限是**全局计数**（`listed > 200_000` 即停），触顶时结果可能不完整，只给 `truncated` 提示、不做断点续扫。
+- **多版本只播主版本**：详情页本期固定播放 `primarySourceOf` 选出的主版本（无版本标签优先，其次路径 / 名称序第一），版本切换 UI 留后续；媒体源列表本身已经完整入库。
+- **跨目录搬整个影片目录依赖连接能力**：刮削侧给「目录型但没按规则命名」的影片改名 = 移动整个目录（`client.move`）。本机连接是 `fs.rename`（可用）；WebDAV 的目录移动不保证支持，失败时**回落为保持原目录**（只写 NFO / 图片，不改目录名），日志给一句警告，不至于把整次刮削搞失败。
 
 ## 10. 手工验证清单
 
@@ -306,6 +341,11 @@
 11. 磁盘上删掉一个视频后再扫描：该影片从墙上消失，提示里的「清理 N 个失效条目」与 `removedItems` 对得上；库内其它影片不受影响。
 12. 目录级封面：在影片所在目录放 `poster.jpg` 与 `fanart.jpg`，扫描后影视墙该影片（或它所在目录的子项）应显示封面；把这两个文件删掉再扫，封面消失。
 13. 首页封面拼贴：给库里最近的几个影片刮出封面后回首页，该库卡片显示最多 4 张的四宫格（按最近添加排序）；不足 4 张按实际张数，没有封面时显示文字占位。
+13.5 目录型条目 + 多版本：`库/片名 (2009)/` 里放 `片名 (2009).mkv` 与 `片名 (2009) - 1080p.mkv` → 墙上只有**一部**影片，条目名 = 目录名，进详情能播放主版本（无标签那个）；把 `- 1080p` 那个删掉再扫，条目还在、元数据不丢。
+13.6 花絮不入库：影片目录里放 `sample.mkv`，再建一个 `trailers/` 子目录放视频 → 扫描后墙上只有正片，影片数不含这两个。
+13.7 扫描读 NFO：给未刮削的影片目录写一个 `<movie>` 根的 `movie.nfo`（含 `<title>` / `<plot>` / `<actor>`）→ 扫描后详情页标题与简介来自 NFO、演员列表有数据，且该条目**仍是待刮削**（`scraped_at` 还是 0）；把同一份内容写成 `<tvshow>` 根放进影片目录 → 不再被当成影片元数据。
+13.8 剧集 NFO 三类：剧集目录放 `<tvshow>` 根的 `tvshow.nfo`、季目录放 `<season>` 根的 `season.nfo`、集文件旁放 `<episodedetails>` 根的同名 NFO → 扫描后剧集 / 季 / 集三级详情都能读到简介与标题（即修掉「刮削写了 `tvshow.nfo`、扫描读不到」）。
+13.9 刮削目录型条目：对一个没按规则命名的目录型影片（`库/downloads/ABC-123/` 里有多个视频）刮削 → 目录被搬成 `片名 (年份)/`，**里面的视频文件名不动**，NFO 与图片落在同目录；重扫后仍是同一个条目（id 与元数据都在）。
 14. 自动刮削四种跳过原因（顺序固定）：设置里关掉「扫描后自动刮削」→「设置中已关闭「扫描后自动刮削」」；把库的刮削器全部取消后扫描 →「该资料库未配置刮削器，已跳过刮削」；没有任何未刮削影片 →「没有待刮削的影片」；已有任务在跑 →「已有刮削任务在运行，可稍后手动刮削」。四种情况**扫描结果都正常返回**（影片数、上次扫描照样更新）。
 15. 空刮削器不能刮削：抽屉里该行标签显示「不刮削」、「刮削」按钮禁用（悬停提示「该资料库未配置刮削器，不执行刮削」）；绕过界面直接调 `library:scrape` → 报「该资料库未配置刮削器（空刮削器表示不刮削），请先在资料库设置里选择」。
 16. 多媒体目录一次一组：给一个库挂两个目录、各放若干未刮削影片，点一次「刮削」→ 任务只包含条目最多的那一组，另一组条目 `scrapedAt` 仍为 0；再点一次「刮削」才轮到它。

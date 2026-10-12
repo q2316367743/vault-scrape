@@ -55,7 +55,8 @@
  * - **分层是硬约束**：`.hero-media` 自己 `z-index: 0` 成层，`.hero-scrim`(1) / `.hero-mask`(2) /
  *   `.hero-body`(1) 都显式写 z-index——tdesign 图片根节点是 `position: relative; z-index: 1`，
  *   父容器不成层叠上下文时它会越过同层兄弟，把标题文字整行盖住；
- * - 没有值的要点不显示，所以未刮削的影片头部不会是一排「—」；
+ * - 没有值的要点不显示，所以未刮削的影片头部不会是一排「—」（头部只放番号 / 发行日期 / 时长这类
+ *   一眼要看的项，片商 / 厂牌 / 系列 / 导演与文件事实分别归页面的两个信息区块）；
  * - 左右出血由页面负责（本组件只管铺满自己的容器）。
  */
 import { computed, ref, watch } from 'vue'
@@ -98,9 +99,9 @@ const title = computed(
 )
 const facts = computed(() => heroFacts(props.detail))
 const tags = computed(() => heroTags(props.detail))
-/** 副标题：NFO 原名有值且与展示标题不同时才显示 */
+/** 副标题：原名有值且与展示标题不同时才显示 */
 const subtitle = computed(() => {
-  const original = props.detail.meta?.originalTitle ?? ''
+  const original = props.detail.meta.originalTitle
   return original.length > 0 && original !== props.detail.item.title ? original : ''
 })
 

@@ -1,9 +1,5 @@
 <template>
-  <sub-page-layout
-    title="演员详情"
-    :description="description"
-    fallback="/actor"
-  >
+  <sub-page-layout :title="title" fallback="/actor">
     <template #extra>
       <t-button variant="outline" @click="onScrape">
         <template #icon><user-add-icon /></template>
@@ -83,7 +79,7 @@ const { actorId, detail, loading, failure, load } = useActorDetail()
 const { connections, refresh } = useFileConnections()
 
 const actor = computed(() => detail.value?.actor ?? null)
-const description = computed(() => actor.value?.name ?? actorId)
+const title = computed(() => actor.value?.name ?? actorId)
 const { setting } = storeToRefs(useSettingScrapeStore())
 /** 本次会话已经自动抓过的演员：来回进出详情页不重复打插件 */
 const autoScraped = new Set<string>()

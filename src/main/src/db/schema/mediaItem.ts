@@ -44,6 +44,16 @@ export const mediaItemTable = sqliteTable(
     studios: text('studios').notNull().default('[]'),
     tags: text('tags').notNull().default('[]'),
     providerIds: text('provider_ids').notNull().default('{}'),
+    /**
+     * 片商 / 厂牌 / 系列 / 导演：刮削（插件）与扫描（NFO）都会写。
+     *
+     * 单独成列而不是塞进 `studios`：详情页要把它们分行展示，`studios` 只是「制作公司」
+     * 的兜底数组。详情页的元信息一律读这几列，不再实时读磁盘 NFO。
+     */
+    maker: text('maker').notNull().default(''),
+    label: text('label').notNull().default(''),
+    series: text('series').notNull().default(''),
+    director: text('director').notNull().default(''),
     /** 上次命中的刮削器插件 ID */
     scraperId: text('scraper_id').notNull().default(''),
     /** 上次刮削完成时间；0 表示尚未刮削 */

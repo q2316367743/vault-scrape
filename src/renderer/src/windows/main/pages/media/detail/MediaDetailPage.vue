@@ -43,10 +43,13 @@
         </section>
 
         <div class="detail-columns">
-          <media-nfo-block :detail="detail" />
+          <section v-if="infoCells.length > 0" class="detail-section">
+            <h4 class="section-title">{{ infoTitle }}</h4>
+            <media-fact-grid :cells="infoCells" />
+          </section>
           <section class="detail-section">
-            <h4 class="section-title">磁盘上的事实</h4>
-            <media-fact-grid :cells="factCells" />
+            <h4 class="section-title">文件信息</h4>
+            <media-fact-grid :cells="fileCells" />
           </section>
         </div>
 
@@ -65,10 +68,13 @@
 </template>
 <script setup lang="ts">
 /**
- * 影片详情页（`/media/detail`）：沉浸头部 + 播放 + 剧情简介 + 封面 + 元信息 / 磁盘事实 + 剧照墙 + 演员。
+ * 影片详情页（`/media/detail`）：沉浸头部 + 播放 + 剧情简介 + 封面 + 影片 / 文件信息 + 剧照墙 + 演员。
  *
  * 契约：
  * - 参数只从路由 query 读（`itemId`）：可以直接刷新、也可以重复进入；
+ * - **元信息全部来自本地库**（`media_item` 的刮削列，刮削与扫描都会写）：进页面只查一次库，
+ *   不再为标题 / 片商这类信息去读磁盘 NFO，所以重复进入不会再有磁盘与网络往返；
+ *   页面上也不出现「NFO」「磁盘」这类实现词，只按用户视角分「影片信息」与「文件信息」两块；
  * - 除「还原刮削前」（通道仍是 `media:clear-nfo`）外只读：不下载、不触发刮削、不改索引；取数一律走 mediaApi，失败只提示并允许重试；
  * - **不用 `SubPageLayout`**：没有页头横条，返回与「更多」（重新读取 / 还原刮削前）都浮在封面图上，
  *   由 `MediaDetailToolbar` 提供；代价是本页要自己做滚动容器（根节点 `height: 100%` + `overflow: auto`），
@@ -101,7 +107,6 @@ import MediaActorStrip from './components/MediaActorStrip.vue'
 import MediaDetailHero from './components/MediaDetailHero.vue'
 import MediaDetailToolbar from './components/MediaDetailToolbar.vue'
 import MediaFactGrid from './components/MediaFactGrid.vue'
-import MediaNfoBlock from './components/MediaNfoBlock.vue'
 import MediaPlayBar from './components/MediaPlayBar.vue'
 import MediaStillWall from './components/MediaStillWall.vue'
 import { useDetailScroll } from './composables/useDetailScroll'
@@ -111,11 +116,13 @@ import { useMediaDetail } from './composables/useMediaDetail'
 
 const { itemId, detail, loading, failure, load } = useMediaDetail()
 const { connections, refresh } = useFileConnections()
-/** 展示口径（连接反查 / 保护判定 / 封面块 / 剧照墙 / 信息格）都在这里 */
+/** 展示口径（连接反查 / 保护判定 / 封面块 / 剧照墙 / 两个信息区块）都在这里 */
 const {
   protect,
   isSeries,
-  factCells,
+  fileCells,
+  infoCells,
+  infoTitle,
   stillImages,
   plot,
   posterUrl,

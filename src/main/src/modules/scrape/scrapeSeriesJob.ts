@@ -14,6 +14,7 @@
  */
 import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
 import type { NfoRestoreInfo } from '@common/types/media'
+import { seriesYearOf } from '@common/types/media'
 import {
   ScrapeError,
   assetExtension,
@@ -25,13 +26,12 @@ import {
   renderEpisodeTemplate,
   renderSeasonFolderName,
   renderTemplate,
-  seriesYearOf,
   type ScrapeAssetContext
 } from '@common/types/scrape'
 import { enqueueItemActorScrape } from '$/modules/actor/actorScrape'
-import { seasonItemId } from '$/modules/media/mediaSeriesIndexer'
+import { seasonItemId } from '$/modules/media/mediaSeriesItems'
 import { replaceItemImages } from '$/db/repo/mediaImageRepo'
-import { insertItem, updateItem, updateItemMetadata } from '$/db/repo/mediaRepo'
+import { getItem, insertItem, updateItem, updateItemMetadata } from '$/db/repo/mediaRepo'
 import {
   listSeasonItems,
   listSeriesEpisodes,
@@ -262,8 +262,12 @@ export async function runSeriesJob(context: ScrapeJobContext): Promise<ScrapeJob
       const base = renderedEpisode.length > 0 ? renderedEpisode : baseNameOf(file.name)
       const fromDir = dirnameRemotePath(file.path)
       const targetPath = joinRemotePath(seasonDir, movieFileName(base, extensionOf(file.name)))
+      // 同一集的多个版本（`S01E01.mkv` + `S01E01 - 1080p.mkv`）：条目只认主版本，
+      // 其它版本不搬不改名 —— 它们的目标名和主版本完全相同，搬过去必然撞车
+      const episodeItem = getItem(file.itemId)
+      const isPrimary = episodeItem === null || episodeItem.path === file.path
       let finalPath = file.path
-      if (targetPath !== file.path) {
+      if (isPrimary && targetPath !== file.path) {
         try {
           await client.move(file.path, targetPath, { overwrite: false })
           await refreshSourcePath(client, context.connectionId, file.itemId, file.path, targetPath)
@@ -360,12 +364,8 @@ export async function runSeriesJob(context: ScrapeJobContext): Promise<ScrapeJob
         runtimeMinutes: remote?.duration ?? 0,
         providerIds: remote?.id && pluginId.length > 0 ? { [pluginId]: remote.id } : {}
       })
-      updateItem(file.itemId, {
-        name: basenameRemotePath(finalPath),
-        parentId: seasonItem,
-        seasonNumber: season,
-        episodeNumber
-      })
+      if (isPrimary) updateItem(file.itemId, { name: basenameRemotePath(finalPath) })
+      updateItem(file.itemId, { parentId: seasonItem, seasonNumber: season, episodeNumber })
       replaceItemImages(file.itemId, imagesOf(plantedEpisode, context))
     }
   }

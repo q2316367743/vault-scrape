@@ -71,19 +71,21 @@
 
 **整墙**（`media:wall`）：`loadMediaWall({ libraryId })` —— `libraryId` 为空串时遍历 `listLibraries()`，否则只取 `getLibrary(libraryId)`（库不存在抛 `notFound`「资料库不存在」）。每个库按类型取条目：影视库走 `listMovieItems(libraryId)`（**只列 `type='movie'` 的条目**，条目没有主源、已被清理时跳过），**剧集库走 `listSeriesItems(libraryId)` + `seriesStatsOf(libraryId)` + `toSeriesWallItem`**（不要求主源，靠集文件聚合算季数 / 集数 / 体积 / 时间）；不属于任何资料库的条目不会出现在墙上。`indexedAt = maxSourceIndexedAt()`（最新媒体源的 `indexed_at`），`libraries = listSummaries()`（带 `videoCount` / `coverUrls`，**0 个条目的库也会出现**，`videoCount` 影视库数影片、剧集库数剧集），返回 `MediaWallResult{ items, total, indexedAt, libraries }`。整墙一次拉全，搜索 / 排序全在渲染层做，主进程不复制排序规则（首页两排的取样在**主进程**做，见 §2）。
 
-**详情**（`media:detail`）：`loadMediaDetail({ itemId })`——空 id 报 `invalidArgument`「缺少影片 ID」；影片条目不存在、不是 `movie`、或没有主源时报 `notFound`（「索引里没有这个视频，磁盘上可能已被删除」）；`type === 'series'` 的条目转 `loadSeriesDetail(item, library)`（**季 / 集条目直接来查一律 `notFound`**）。返回 `MediaDetailResult{ item, meta, nfoPath, actors, images, seasons }`，`item` 与墙上同一套卡片数据（含 `playUrl`），详情页不需要再拼任何地址。`seasons` 是**剧集的季 / 集结构**（`MediaSeasonRef[]`，只放**有媒体源、能播**的集；影片恒为 `[]`）：季海报与集封面按「条目自己的图 → 直接父条目（集 → 季 → 剧集）」兜底，集标题优先刮削集名、否则「第 N 集」，每集 `playUrl` 是它自己媒体源的 `buildMediaUrl(...)`。`actors` 是**参演演员**（`MediaActorRef{ actorId, name, avatarUrl }[]`，按 `media_cast.ordinal` 出演顺序；没有名单时是空数组，`avatarUrl` 为空串表示没头像），由 `actorRefsOfItem(itemId)` 组装、头像是 `storage://actor/...` 地址；演员与影片是**按名字的弱关联**（`media_cast` 只记姓名归一化键，演员行被删掉时 `actorId` 回落空串、渲染层不跳转），名单在刮削入库与扫描 NFO 时写入（见[演员模块](../actor/01-actor-module.md)）。详情页用 `MediaActorStrip.vue` 渲染成「头像 + 姓名」并跳[演员详情页](./05-actor-pages.md)。`images` 是这部影片的全部图片（`MediaDetailImage{ type, url }[]`，`detailImagesOf()`）：与封面同一套归属规则——**条目自己的图在前、父目录条目的兜底图在后**（目录级图片会被同目录多部影片共用），各自按 `MEDIA_IMAGE_TYPES`（主图 → 背景图 → 缩略图 → 剧照 → 徽标 → 横幅 → 其他）排序、按地址去重；一张都没有时是空数组，封面仍以 `item.coverUrl` 为准。渲染层拿它喂沉浸头部的背景大图与剧照墙，只按 `type` 分工、不再取数（见 §4「详情页版式」）。
+**详情**（`media:detail`）：`loadMediaDetail({ itemId })`——空 id 报 `invalidArgument`「缺少影片 ID」；影片条目不存在、不是 `movie`、或没有主源时报 `notFound`（「索引里没有这个视频，磁盘上可能已被删除」）；`type === 'series'` 的条目转 `loadSeriesDetail(item, library)`（**季 / 集条目直接来查一律 `notFound`**）。返回 `MediaDetailResult{ item, meta, actors, images, seasons }`（**没有 `nfoPath`**），`item` 与墙上同一套卡片数据（含 `playUrl`），详情页不需要再拼任何地址。`meta` 是 `MediaDetailMeta`（**非空对象，字段可以为空串**），**全部由 `detailMetaOf(item)` 从 `media_item` 的刮削列现读**（title 取 `scrapedAt > 0 ? name : ''`、num / originalTitle、overview → `plot`、premiereDate → `releaseDate`、runtimeMinutes → `duration`、tags，以及本轮新增的 maker / label / series / director 四列）：**详情页不再为标题 / 片商这类信息读磁盘 NFO**（原来每条详情都要按候选顺序 `exists` + `readText` 好几个来回，WebDAV / SMB 下就是进页面转圈的原因），NFO 只在扫描导入时读一次、把值落库。代价：NFO 被外部工具手改后不会立刻反映，要等重扫 / 重刮（见 §9）。`seasons` 是**剧集的季 / 集结构**（`MediaSeasonRef[]`，只放**有媒体源、能播**的集；影片恒为 `[]`）：季海报与集封面按「条目自己的图 → 直接父条目（集 → 季 → 剧集）」兜底，集标题优先刮削集名、否则「第 N 集」，每集 `playUrl` 是它自己媒体源的 `buildMediaUrl(...)`。`actors` 是**参演演员**（`MediaActorRef{ actorId, name, avatarUrl }[]`，按 `media_cast.ordinal` 出演顺序；没有名单时是空数组，`avatarUrl` 为空串表示没头像），由 `actorRefsOfItem(itemId)` 组装、头像是 `storage://actor/...` 地址；演员与影片是**按名字的弱关联**（`media_cast` 只记姓名归一化键，演员行被删掉时 `actorId` 回落空串、渲染层不跳转），名单在刮削入库与扫描 NFO 时写入（见[演员模块](../actor/01-actor-module.md)）。详情页用 `MediaActorStrip.vue` 渲染成「头像 + 姓名」并跳[演员详情页](./05-actor-pages.md)。`images` 是这部影片的全部图片（`MediaDetailImage{ type, url }[]`，`detailImagesOf()`）：与封面同一套归属规则——**条目自己的图在前、父目录条目的兜底图在后**（目录级图片会被同目录多部影片共用），各自按 `MEDIA_IMAGE_TYPES`（主图 → 背景图 → 缩略图 → 剧照 → 徽标 → 横幅 → 其他）排序、按地址去重；一张都没有时是空数组，封面仍以 `item.coverUrl` 为准。渲染层拿它喂沉浸头部的背景大图与剧照墙，只按 `type` 分工、不再取数（见 §4「详情页版式」）。
 
-- NFO 候选顺序 `movie.nfo` → `{文件名}.nfo`（文件名取主源 `name`），路径为空或读失败 / 解析不出内容都算「没有 NFO」，不报错；
-- NFO 解析用三端共享的纯函数 `parseNfoXml`（`@common/types/media/nfo.ts`），字段口径与写入侧 `buildNfoXml` 对齐；`runtime` 转成分钟。
+- 刮削列与 NFO 字段的对应写在两处：刮削入库走 `scrapeJobApply.metadataOf()`（maker / label / series / director 直接从插件详情落库，不再压进 `studios`），扫描导入走 `mediaNfoScan.scannedMetadataOf()`（`parseNfoXml` 的 `meta.maker` / `label` / `series` / `director` 逐个写列）；
+- 迁移落在 `resources/drizzle/0002_soft_masked_marvel.sql`（`ALTER TABLE media_item ADD maker / label / series / director TEXT NOT NULL DEFAULT ''`）；`clearItemMetadata()`（「还原刮削前」）把这四列一起归空，与其它刮削列同进出；
+- NFO 候选顺序 `movie.nfo` → `{目录名}.nfo` → `{文件名}.nfo` 现在只服务于两条**扫描期 / 还原期**路径：扫描导入（`mediaNfoScan.importNfo`，只处理 `scrapedAt === 0` 的条目）与「还原刮削前」（`mediaClearNfo`，读还原记录、删 NFO）；详情页取数不再走这条；
+- NFO 解析用三端共享的纯函数 `parseNfoXml`（`@common/types/media/nfo.ts`），**按根元素分派出 `kind`**（`<movie>` / `<tvshow>` / `<season>` / `<episodedetails>`，读侧比对种类，这是「剧集写了 `tvshow.nfo` 却读不到」的修法），字段口径与写入侧 `buildNfoXml` 对齐；`runtime` 转成分钟。
 
 **清除 NFO / 还原刮削前**（`media:clear-nfo`，本域唯一的写通道）：`clearMediaNfo({ itemId })`（`src/main/src/modules/media/mediaClearNfo.ts`）——空 id 报 `invalidArgument`「缺少条目 ID」；条目不存在报 `notFound`「索引里没有这个条目」；`type === 'series'` 转 `clearSeriesNfo`（`src/main/src/modules/media/mediaClearSeriesNfo.ts`），`type !== 'movie'`（季 / 集条目）报 `notFound`「索引里没有这部影片」，其余走 `clearMovieNfo`。影视库语义是「一键还原成刮削前的样子」的**单条影片**流程（下面 1~6 步），**剧集库是整部剧的「剧集根 → 逐季 → 逐集」三步流程**（见第 7 条）；剧集完整口径见[剧集支持](../media/02-series-support.md) §8：
 
 1. **读还原记录**：按上面同一套候选顺序读同目录 NFO，取第一条能解析出记录的那份（`parseNfoRestore`，见[刮削模块 §5.2](../scrape/01-scrape-module.md)）。旧版本刮削的 NFO、第三方工具写的 NFO 里都没有记录，这种情况退化成「只清数据 + 删 NFO」；
 2. **删磁盘 NFO**：按同一套候选顺序逐个 `exists` 再 `remove`，存在的都删。任何一个删不掉（连接不可用、权限不足）就抛 `writeFailed`「磁盘上的 NFO 没有删除（原因），刮削数据保持不变」，**库内数据保持原样**——只清库不删盘，下次开「优先读取本地 NFO」重刮会把同一份错误数据读回来；
 3. **还原 / 清理资源**：记录里带 `original` 的文件（`localFirst` 沿用、被改名就位的本地图片）搬回原来的文件名与目录（原位置已被占用就原样留着、**不覆盖**）；不带 `original` 的（本次刮削联网下载的图片、预告片）直接删掉；两者都是尽力而为，删不掉 / 搬不动只跳过，不让整次还原失败；
-4. **搬回视频**：记录里有原目录与原文件名时，先 `mkdir`（递归）目标目录再 `move`（`overwrite: false`），搬成功后 `refreshSourcePath` 就地更新 `media_source` 与条目 `path`（**source id 不变**，墙面与协议地址不受影响）；目标已存在就**保持现状**（不覆盖、不删），只把 `restored` 报成 `false`；视频本来就在记录位置时算还原成功（空操作）；
+4. **搬回视频**：记录里有原目录与原文件名时，先 `mkdir`（递归）目标目录再 `move`（`overwrite: false`），搬成功后 `refreshSourcePath` 就地更新 `media_source` 与条目 `path`（**source id 不变**，墙面与协议地址不受影响）；**目录型条目**（条目 `path` 是影片文件夹）则换成 `refreshItemDir`：把**整个影片目录**搬回 `记录目录/记录文件名`（刮削时整目录改的名，还原也整目录搬回），再一次性刷新条目路径与**所有**媒体源的路径，目录里各版本的视频文件名从头到尾没被改过；目标已存在就**保持现状**（不覆盖、不删），只把 `restored` 报成 `false`；视频本来就在记录位置时算还原成功（空操作）；
 5. **清库内数据**：`clearItemMetadata(itemId, { name, num })` 把刮削列整组归零（`scrapedAt = 0`、`sortName` / `originalTitle` / `overview` / `tagline` / `premiereDate` / `officialRating` / `scraperId` 归空、`genres` / `studios` / `tags` 回 `'[]'`、`providerIds` 回 `'{}'`），`name` 取**还原后**的磁盘视频文件名（含扩展名）、`num` 取 `normalizeNum(extractKeyword(文件名).num)`；再 `deleteImagesByItem(itemId)` 删掉这条影片的图片记录、`deleteCastByItems([itemId])` 删掉参演名单（与 `mediaIndexer` 的扫描写入口径一致，所以清完的状态等于「扫描过、还没刮」）；
-6. **删空目录**：视频搬走后，原来的影片目录（≠ 还原后的目录、≠ 连接根目录、不属于任何资料库根目录）若已经空了就递归 `remove` 掉，路径收进 `removedDirs`（**数组**——影片最多一个，剧集会有多个季 / 集目录）。
+6. **删空目录**：视频搬走后，原来的影片目录（≠ 还原后的目录、≠ 连接根目录、不属于任何资料库根目录）若已经空了就递归 `remove` 掉，路径收进 `removedDirs`（**数组**——影片最多一个，剧集会有多个季 / 集目录）；**目录型条目这一步只对搬走后空掉的父目录生效**（自己整个目录已经搬回原位，不再单独删）。
 7. **剧集条目的三步流程**（`clearSeriesNfo`）：① **剧集根**——读 `tvshow.nfo` 的还原记录 → 删 NFO → 记录位置与当前不同、且目标不存在时把**整个剧集目录搬回原名原位置**并 `replacePathPrefix` 一次性改写 `media_item` / `media_source` / `media_image` 三类路径（**条目 id 与父子关系不动**）→ 还原剧集级资源 → 清 `name` / 图片 / 参演名单；② **逐季**——删 `season.nfo`、还原季资源、`deleteImagesByItem`、清季名；③ **逐集**——没有媒体源就只清库内；否则从**源文件名**反推 NFO 名 `nfoFileName(stripExtension(source.name))`，删 NFO、还原集资源（剧照 `<集基础名>-thumb.<ext>`）、按记录把集文件搬回并 `refreshSourcePath`、名字回落磁盘文件名、清图片与参演名单；最后把搬空的集目录 / 季目录 `removeEmptyDir` 删掉，路径进 `removedDirs`。**已知限制：季目录名不回改**——刮削时规范化的季目录搬空后按空目录删掉，旧季目录由集文件搬回时重建（见 §9）。
 
 返回 `MediaClearNfoResult{ itemId, removedNfo, removedAssets, restoredAssets, restored, path, removedDirs }`：`removedDirs` 是**数组**（剧集会有多个季 / 集目录，影片最多一个）；`removedNfo` / `removedAssets` / `restoredAssets` 三个路径数组都是**真的改动过**的磁盘路径，本来就没有对应文件时是空数组（不算失败）；`path` 是还原后的条目路径；`restored === false` 只表示「视频没能回到记录位置」（没有记录，或目标已存在），库内数据照样清干净了，渲染层据此换提示文案。扫描拥有的列（`type` / `parentId` / `hasNfo`）不动，`path` 由第 4 步更新，`hasNfo` 交给下次扫描纠正。
@@ -94,7 +96,7 @@
 - **不误删是一种取舍**：记录只收「本次真的写下或搬过」的文件，第二次刮削时按保留设置沿用磁盘上已有图片、以及本来就没挪过位置的本地图片都不进记录，还原时它们会留在影片目录里（宁可少删一步，也不删用户自己的文件）；连同整个影片目录已经删不空，也就不会被顺手删掉；
 - 演员本人档案（`actor`）不动，只删 `media_cast` 关联（见[演员模块](../actor/01-actor-module.md)）；
 - 清完**不自动重刮**：详情页只重新 `mediaApi.detail()` 一次，要重刮请回资料库抽屉点「刮削」（`scrapedAt === 0` 会被队列选中）；
-- 注意 `movie.nfo` 是**目录级**候选：一个目录里多部影片共用 `movie.nfo` 时，清除其中一条会把这个文件删掉，兄弟影片的库内元数据不受影响，但它们的 `hasNfo` 要等下次扫描才纠正。
+- 注意 `movie.nfo` 是**目录级**候选：一个目录里多部影片共用 `movie.nfo` 时，清除其中一条会把这个文件删掉，兄弟影片的库内元数据不受影响，但它们的 `hasNfo` 要等下次扫描才纠正；`{目录名}.nfo` 同样按目录命中，但目录型条目下它只属于这一条影片。
 
 **卡片字段**（`toWallItem()` / `toSeriesWallItem()`）：`itemId` / `libraryId` / `libraryName` / `nsfwProtected`（= 所属库的 `nsfwProtection`）/ `connectionId` / `path` / `dirPath` / `name` / `num` / `title` / `coverUrl` / `playUrl` / `dateAdded` / `pluginId`（条目上的 `scraperId`）/ `size` / `modifiedAt`，本轮新增 `type`（`'movie' | 'series'`）、`seasonCount`、`episodeCount`。**没有 `scraped` / `scrapedAt`**：卡片不再打「已刮削 / 未刮削」角标（`scrapedAt` 仍留在库里，只用于队列与标题口径）。
 
@@ -136,14 +138,14 @@
 | 3 | 选集区 | `components/MediaEpisodeList.vue`：季选择器（`seasons.length > 1` 才出现）+ 集按钮（「第 N 集」）+ 当前集标题 / 时长 / 首播日期 / 体积 / 简介；**`seasons` 为空数组（影片）时整块不渲染** |
 | 4 | 剧情简介 | 只在 `meta.plot` 去空白后非空时出现（原 NFO 块里的只读 `t-textarea` 已去掉，简介不再被塞进输入框） |
 | 5 | 封面 | 168×238 的 `SensitiveImage` + 标题 + 「番号 · 体积」（**剧集是「N 季 · M 集 · 体积」**）：竖版封面与头部那张横图是两张图，头部没有宽图时封面就是全页唯一一张图 |
-| 6 | 两栏信息 | 左 `MediaNfoBlock.vue`（NFO 元信息 + 来源路径 + 无 NFO 时的 `t-empty`），右「磁盘上的事实」+ `MediaFactGrid.vue`；`grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))`，窄窗口自动叠成一栏；**剧集的「磁盘上的事实」换成标题 / 剧集目录 / 季数 / 集数 / 体积** |
+| 6 | 两块信息 | 左「**影片信息**」（剧集是「剧集信息」，`infoCells()`）`MediaFactGrid.vue`：片商 / 厂牌 / 系列 / 导演 —— **没有值的行不出现，一行都没有时整块不渲染**（没刮过的条目就只剩右栏）；右「**文件信息**」（`fileCells()`）：文件名（剧集是「剧集目录」）/ 所在目录 / 体积 / 修改时间 / 数据源。两块都在 `.detail-columns` 里：`grid-template-columns: repeat(auto-fit, minmax(320px, 1fr))`，窄窗口自动叠成一栏。**页面上不出现「NFO」「磁盘上的事实」「来源：路径」这类实现词**（原来左栏是 `MediaNfoBlock.vue`：NFO 元信息 + 来源路径 + 无 NFO 时的 `t-empty`，本轮已删除） |
 | 7 | 剧照墙 | `MediaStillWall.vue`：缩略图网格 + `t-image-viewer` 大图浏览 |
 | 8 | 参演演员 | `MediaActorStrip.vue`（本轮未改） |
 
 - **无卡片留白分区**：区块一律不画底板 / 描边 / 圆角，只靠 14px 小节标题与 24px 留白分隔（上一版每块都套 `--td-bg-color-container` + 1px 边框，视觉上是一摞横条，已按反馈去掉）。唯一保留圆角的是封面与剧照缩略图；播放条与选集区都不铺底板 / 描边，不再套第二层。
 - 头部左右**出血**是天然的：滚动容器自己不设内边距，20px 只加在 `.detail-body` 上（`.detail-bleed` 这个负外边距类已随 `SubPageLayout` 一起删掉）。悬浮条自己就是横幅：整条 `pointer-events: none`，只有两枚按钮 `pointer-events: auto`——中间空档必须放行事件，否则会挡住头部那层「点击查看原图」（`.hero-mask` 是 z-index 2，悬浮条取 z-index 3）。两枚按钮都是**文字按钮**（`variant="text"`，不铺面板底色、不带阴影）：还没落底时封面图就在身后，字色取 `--td-text-color-anti`（反色）才看得清，落到横幅底色上再换回常规文字色（`.detail-bar:not(.is-solid) .bar-button`）。横幅底色用 `::before` + `opacity`（不用 `color-mix`，兼容面更宽），`.is-solid` 时淡入到 0.82 并加 `backdrop-filter: blur(12px)` 与下边框，标题同时淡入。**56px 这个高度是硬约束**：详情页 `useDetailScroll` 拿同一个数字当 `rootMargin`，改一处要一起改。加载 / 失败 / 空态走 `v-else` 分支（`.detail-fallback`，顶部留 96px 给悬浮条），失败提示在正文顶部。
 - 横幅什么时候显形**不按 `scrollTop` 猜阈值**（头部高度随窗口宽度与标题 / 要点行换行而变）：头部正下方埋一枚 1px 哨兵 `.hero-end`，`IntersectionObserver` 以滚动容器为 root、`rootMargin` 收掉横幅那一条，哨兵跑到它上面（`entry.boundingClientRect.top < entry.rootBounds.top`）就是标题已经滚出去了，`collapsed` 交给悬浮条。刷新后恢复滚动位置、窗口拉伸、要点行换行都不用额外处理，相交变化会自己重算。
-- 头部要点行（`heroFacts()`）只列**真正有值**的项——番号 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 体积，没有值就整项不出现，未刮削的影片不会是一排「—」，项之间用 `/` 分隔；**剧集换成首播日期（`meta.releaseDate`）/ 片商 / 厂牌等剧集级项**（季数 / 集数 / 体积在「磁盘上的事实」里，口径见 `mediaDetailCells.ts` 的 `heroFacts` / `fileCells` 剧集分支）；标签取 NFO `tags` 去空去重（`heroTags()`），用 `t-tag size="small" theme="primary" variant="light"`（light 变体没有边框）。
+- 头部要点行（`heroFacts()`）只列**一眼要看的几项**：影片是番号 / 发行日期 / 时长（时长 `> 0` 才出现），剧集换成季数 / 集数 / 首播日期；**没有值就整项不出现**，未刮削的影片不会是一排「—」，项之间用 `/` 分隔。片商 / 厂牌 / 系列 / 导演归左栏「影片信息」，体积与文件位置归右栏「文件信息」，**头部不再重复这三处**；标签取本地库 `meta.tags` 去空去重（`heroTags()`），用 `t-tag size="small" theme="primary" variant="light"`（light 变体没有边框）。
 - 背景大图（`heroBackdropOf()`）按**缩略图 → 横幅 → 背景图 → 剧照**取第一张现成的图：`thumb*` 是该条目的官方横图，必须排最前——`backdrop` 里混着 `extrafanart/fanartN` 这种竖版剧照（实测 `fanart1.jpg` 是 600×800），排在前面会把头部裁成一条。**一张都没有就整条图片带都不渲染**（`<div v-if="media.length > 0" class="hero-media">` 连图、渐隐层、遮罩层一起去掉），头部退成纯文字头部、上内边距给 64px（悬浮条 56px + 8px 呼吸）让开吸顶条——**不要拿竖版封面 `blur(28px)` 放大来充数**（用户反馈原话：「如果没有上面的 banner 图片，就不显示 banner」，上一版就是这么糊了一块在那儿）。
 - **头部只有一张图，横竖两种来源都可能不准**：类型只决定优先级，真正的横竖由 `MediaDetailHero.vue` 在 `t-image` 的 `@load` 里量 `naturalWidth / naturalHeight`（`target instanceof HTMLImageElement` 收窄，不用 `as`）——竖图同样走模糊底图，`landscape` 与 `revealed` 跟着 `itemId` 在 `watch` 里重置（详情页是同一路由换 query，组件不会重建）。
 - **NSFW 保护命中时头部给模糊底图 + 「点击查看原图」**（`.hero-mask` 盖一层可点区域，点一下 `revealed = true` 换成清晰原图）：既不第一眼就露出未经确认的敏感画面，也不会像完全不放图那样只剩一块底色（上一版就是这么做的，反馈是「横幅是个白灰白色的方块」）；头部本来就没有宽图时这一层不存在（图片带整条不渲染）。封面与剧照仍由 `SensitiveImage` 自己按需遮罩。
@@ -199,12 +201,12 @@ src/renderer/src/windows/main/pages/media/
 │   ├── MediaWallPage.vue                 # 页头（`SubPageLayout` 返回 + 标题）+ 搜索 + 排序 + 摘要 + 网格
 │   └── composables/useMediaWall.ts       # 取数、去重、搜索过滤与排序
 ├── detail/                               # /media/detail（详情页）
-│   ├── MediaDetailPage.vue               # 吸顶悬浮条（无页头）+ 沉浸头部 + 播放条 + 选集区 + 剧情简介 + 两栏信息 + 剧照墙 + 演员条
+│   ├── MediaDetailPage.vue               # 吸顶悬浮条（无页头）+ 沉浸头部 + 播放条 + 选集区 + 剧情简介 + 影片 / 文件信息 + 剧照墙 + 演员条
 │   ├── mediaDetailCells.ts               # 信息格 + 头部要点 / 标签 / 背景图 / 剧照墙的字段口径（纯函数，含剧集分支）
 │   ├── composables/useDetailScroll.ts    # 头部哨兵 + IntersectionObserver → collapsed（标题滚出后横幅显形）
-│   ├── composables/useDetailView.ts      # 展示口径：连接反查、NSFW 判定、封面块 / 剧照墙 / 信息格、剧集标题兜底与提示文案
+│   ├── composables/useDetailView.ts      # 展示口径：连接反查、NSFW 判定、封面块 / 剧照墙 / 影片信息 / 文件信息、剧集标题兜底与提示文案
 │   ├── composables/useMediaDetail.ts     # 从 query 取参、调 mediaApi.detail
-│   └── components/{MediaDetailToolbar,MediaDetailHero,MediaStillWall,MediaFactGrid,MediaNfoBlock,MediaActorStrip,MediaPlayBar}.vue
+│   └── components/{MediaDetailToolbar,MediaDetailHero,MediaStillWall,MediaFactGrid,MediaActorStrip,MediaPlayBar}.vue
 └── library/                              # 首页 / 内容页共用的资料库管理
     ├── components/
     │   ├── LibraryDrawer.tsx / LibraryDrawerContent.vue
@@ -218,7 +220,7 @@ src/renderer/src/windows/main/pages/media/
 - `pages/media/` 下**不再有平铺文件**（RL-09：页面目录分层），跨首页与内容页共用的组件放 `pages/media/components/`。
 - 详情页与播放窗口共用的两块已上移到公共目录：选集区组件 `@/components/media/MediaEpisodeList.vue`、选集状态 `@/hooks/UseEpisodeSelection.ts`（两份头注释都写明「详情页与播放窗口共用」，区块标题 `.section-title` 的样式由调用方给），`detail/components/` 与 `detail/composables/` 里不再有这两份。
 - 原来页面私有的 `mediaUtils.ts` 已上移为 `src/renderer/src/utils/format.ts`（`formatSize` / `formatTime` / `formatDuration`，未知值统一显示「—」；本轮新增播放时钟 `formatClock(seconds)`——`mm:ss`、超一小时 `h:mm:ss`，播放位置 0 是正常值、不显示「—」），引用点统一用 `@/utils/format`；刮削展示也在用同一份，所以不要再在页面里复制。
-- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情取数，剧集详情走 `loadSeriesDetail`，并导出 `nfoCandidates` / `primarySourceOf` 给清除流程共用）、`mediaBrowse.ts`（`media:browse` 逐级浏览，**只认影片库**）、`mediaClearNfo.ts`（「还原刮削前」分派器 + `clearMovieNfo`：按 NFO 里的还原记录删 NFO、还原文件、清库内刮削数据，本域唯一写操作）、`mediaClearSeriesNfo.ts`（剧集版 `clearSeriesNfo` 三步还原）、`mediaClearShared.ts`（还原公共工具），文件搬移与路径回写复用 `$/modules/scrape/scrapeJobApply` 的 `refreshSourcePath`；`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
+- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情取数，剧集详情走 `loadSeriesDetail`，并导出 `nfoCandidates` / `primarySourceOf` 给清除流程共用）、`mediaBrowse.ts`（`media:browse` 逐级浏览，**只认影片库**）、`mediaClearNfo.ts`（「还原刮削前」分派器 + `clearMovieNfo`：按 NFO 里的还原记录删 NFO、还原文件、清库内刮削数据，本域唯一写操作）、`mediaClearSeriesNfo.ts`（剧集版 `clearSeriesNfo` 三步还原）、`mediaClearShared.ts`（还原公共工具），文件搬移与路径回写复用 `$/modules/scrape/scrapeJobApply` 的 `refreshSourcePath`（单文件条目）/ `refreshItemDir`（目录型条目：整个影片目录搬回 + 刷新条目与全部源）；`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
 - 本机路径与连接内路径互转仍走 `src/renderer/src/utils/remotePath.ts`（`toRemoteDir` / `toDisplayDir`）。
 
 ## 7. NSFW 保护
@@ -257,20 +259,22 @@ src/renderer/src/windows/main/pages/media/
 21. **播放（独立窗口）**：进影片详情页 → 点播放条上的「播放」→ **开一个独立播放窗口**（左侧画面、右侧影片详情侧栏）；拖进度条能跳、暂停 / 继续 / 倍速 / 音量 / 全屏 / 画中画正常；**拖到影片中间位置能立刻出画**说明 Range 生效（本机、WebDAV、SMB 三种数据源都要过一遍，SMB 依赖 `patches/@awo00+smb2+1.1.1.patch`）；播放窗口开着时回详情页点「播放」→ 仍是**同一个窗口换片**，不新开窗口。**再把某个 `mp4` 在文件管理器里挪到库里别的目录（不重扫）**，回详情页再点播放仍应能起播，日志里有 info「索引路径失效，已按文件名找回：<旧> → <新>」。mpv 相关的验收（配路径、检测、回退、macOS 方案）见[播放窗口与 mpv 播放](../media/03-mpv-playback.md) §12。
 22. 播放中途关掉播放窗口，或播放中途切走 / 关掉详情页，再回来看日志：不应出现重复的资源读取失败记录（说明被取消的流已经 `destroy()`）；关掉播放窗口后 mpv 进程应一起退出（任务管理器 / 活动监视器里没有残留 `mpv`）。
 23. 详情页在「更多」里点「重新读取」前先把文件从磁盘删掉：提示「索引里没有这个视频，磁盘上可能已被删除」（或资源读取失败），界面不崩；页面此时没有详情，但「更多」仍在，菜单里只剩「重新读取」可用作重试。
-24. 同目录没有 NFO：NFO 块给出「同目录没有可用的 NFO…」提示，播放条与磁盘事实照常显示。
+24. **详情页只查一次库**：同目录没有 NFO 的影片进详情页 → 两块信息照常显示（「文件信息」五项 + 有刮削数据时的「影片信息」），**不应出现「同目录没有可用的 NFO…」这类提示**；WebDAV / SMB 数据源上反复进出同一部影片的详情页，**不应再出现进页面转圈**（原先每条详情都要按候选顺序读一次磁盘 NFO），元信息全部来自 `media_item` 的刮削列。左栏「影片信息」在没刮过 / 没刮到片商等值时**整块不渲染**，不会留一个空标题。
+    - **元信息落库**：对一部影片刮削一次 → 片商 / 厂牌 / 系列 / 导演出现在左栏「影片信息」（不再挤在 `studios` 里当分类）；数据文件里应是 `media_item` 的 `maker` / `label` / `series` / `director` 四列；对该条「还原刮削前」→ 这四列一起被清空、左栏整块消失。
+    - **回归**：对同目录有 NFO 的旧条目（刮削前扫描导入过）进详情页，标题 / 原名 / 简介 / 标签应与改成直读库之前一致 —— 说明扫描导入 `scannedMetadataOf()` 的落库路径没漏字段。
 25. 开启 NSFW 保护并把数据源标记 NSFW：列表封面显示遮罩；点进详情页后头部是模糊底图 + 「点击查看原图」、封面与剧照逐张点开才显示；点「播放」进播放窗口后**只遮侧栏封面、画面本身不遮**（Windows 嵌入模式下 mpv 是原生子窗口，网页遮罩盖不住，见 §7 与 [播放窗口与 mpv 播放](../media/03-mpv-playback.md) §11）。
 26. 缩放窗口宽度：首页资料库横排与两排横向滚动正常（卡片不压缩），内容页网格列数自适应，详情页各块随宽度自适应（播放条与选集区不溢出、要点行与标签正常换行）。
 27. **播放失败兜底 + 路径自愈**：把一个已入库影片的**文件名改掉**（或真删掉）后直接进详情页（不重扫）→ 播放条仍可点（地址来自索引），但播放窗口里会给出读不出来的说明（内置后端是「内置播放器读不出这个视频：文件可能已被移动或删除，也可能是封装 / 编码放不了。」；配了 mpv 时按「mpv 报错 → 回退内置并说明原因」处理），不再是黑屏；把文件放回去重新进页面 → 正常起播。只是**挪到别的目录**（同名同大小）时不该看到失败，见第 21 条的自愈；存储页预览的兜底层见[存储页](./02-storage-page.md)。
-28. **还原刮削前**：进一个已刮削影片的详情页 → 封面图右上角的「更多」里应有「还原刮削前」（详情没读到时「更多」整枚不显示，菜单项在读取 / 还原中禁用）；展开点它 → 二次确认写明「清空刮削数据 + 删磁盘 NFO 与刮削下载的图片 / 预告片 + 视频改回原名并搬回原位，原位置有同名文件时不覆盖，不自动重刮」，点「取消」什么都不发生。确认后：标题回到**刮削前的原始文件名**、简介 / 分类 / 封面 / 参演名单消失，`movie.nfo` / `<文件名>.nfo` 与刮削下载的图片 / 预告片被删掉，本地沿用的图片搬回原文件名，视频回到刮削前的位置与文件名（被搬进 `<根>/<base>/` 的应搬回原目录，空掉的影片文件夹一并删掉），演员本人档案仍在，提示形如「已清除刮削数据，视频已改回原文件名并移回原位置，删掉 1 个 NFO 文件」。
+28. **还原刮削前**：进一个已刮削影片的详情页 → 封面图右上角的「更多」里应有「还原刮削前」（详情没读到时「更多」整枚不显示，菜单项在读取 / 还原中禁用）；展开点它 → 二次确认写明「清空刮削数据 + 删磁盘 NFO 与刮削下载的图片 / 预告片 + 视频改回原名并搬回原位，原位置有同名文件时不覆盖，不自动重刮」，点「取消」什么都不发生。确认后：标题回到**刮削前的原始文件名**、简介 / 分类 / 封面 / 参演名单消失，`movie.nfo` / `<目录名>.nfo` / `<文件名>.nfo` 与刮削下载的图片 / 预告片被删掉，本地沿用的图片搬回原文件名，视频回到刮削前的位置与文件名（被搬进 `<根>/<base>/` 的应搬回原目录，空掉的影片文件夹一并删掉）；**目录型条目**（原始形态就是 `<片名 (年份)>/` + 里面几个版本）则整个影片目录搬回原名、目录里各版本的文件名从头到尾没被改过，演员本人档案仍在，提示形如「已清除刮削数据，视频已改回原文件名并移回原位置，删掉 1 个 NFO 文件」。
 29. **没有记录的旧数据**：把 NFO 里的 `<originalfilename>` / `<originaldirectory>` 标签删掉（模拟旧版本刮削）再点「还原刮削前」→ 数据照样清干净、NFO 删掉，视频保持当前位置，提示里带「视频保持当前位置（NFO 里没有可用的还原记录，或原位置已被占用）」。
 30. 还原后**不自动重刮**：还原完详情页不应自己发起刮削；此时到资料库抽屉点「刮削」，这条影片应像没刮过一样重新进入队列（`scrapedAt === 0`），刮完标题 / 封面 / 演员回来。
 31. 清不掉时保持原样：把该影片所在目录设成只读（或让连接离线、删掉连接）再点「还原刮削前」→ 提示「磁盘上的 NFO 没有删除（原因），刮削数据保持不变」，库内标题 / 封面 / 演员仍在（不允许出现「库清了、NFO 还在」的半成品状态）。
 32. 详情页版式：进一个已刮削且刮到背景图 / 剧照的影片 → **没有页头横条**，顶部只有一条**吸顶**的悬浮条（左「返回」圆钮、右「更多」，两枚都是**文字按钮**、不铺底色，压在封面图上时是反色白字；点「更多」弹出「重新读取 / 还原刮削前」），**不显示页头标题**；往下滚时这条**留在顶部、不跟着滚走**，一旦头部那个大标题滚出视野，它就淡入成一抹半透明横幅——毛玻璃底 + 单行省略号的标题（长标题末尾截断成「…」、宽度被挤时也不换行）+ 收成圆形的「更多」（与返回同形）、字色换回常规色，滚回顶部再淡出、露出压在封面图上的返回与「更多」；横幅显形后点「返回」/「更多」都应正常响应（条子本身不吃事件，但两枚按钮要能点）；头部是通栏背景大图铺到窗口左右边缘，标题（有原名时带大写副标题）**完整可见、不被图片盖住任何一行**，标题压在图片下缘的渐隐区里，下面只有 `/` 分隔的要点行 + 标签（**没有「播放」按钮**）；要点行只出现**有值**的项（未刮削的影片不应出现一排「—」）；正文各块之间**不应出现带边框的卡片或横条**；头部图片带的底边与页面**不应有色差或硬边**（渐隐必须落到内容面板底色上，不能横切标题文字）；页面滚到底时最下面的演员条不被裁掉（本页自己是滚动容器）；播放条与选集区不该被悬浮条盖住，正文里也不该出现带边框的卡片或横条（详情页已不再内嵌播放器，所以这一段不再涉及视频层级与网页全屏）。
-33. 剧情简介：NFO 里有简介时单独成一块（可选中复制）；没写简介时这块整块不出现；NFO 元信息块里**不应再有简介输入框**。
+33. 剧情简介：刮削写了简介时单独成一块（可选中复制）；没写简介时这块整块不出现；**简介不再被塞进输入框**（原来 NFO 元信息块里那个只读 `t-textarea` 已随 NFO 块一起删掉）。
 34. 剧照墙：有多张剧照时显示「剧照（N）」网格（主图 / 缩略图与头部实际用到的那张不在墙上，总数与网格数一致），点任意一张打开大图浏览，翻页 / 左右切换正常（`v-model:index` 生效），大图浏览里**没有下载按钮**；一张剧照都没有时整块不渲染。
 35. 没有横幅图就不显示横幅：找一部只刮到竖版 `primary` 封面、没有任何背景图 / 横幅 / 剧照的影片 → 头部**不应出现任何图片带**（不该是封面模糊放大糊一块），标题直接从紧凑头部开始、**不被吸顶悬浮条压住**；往下滚时标题滑出视野、横幅照常淡入；标题块下方是一张 168×238 的清晰封面 + 标题 + 「番号 · 体积」。
 36. 头部选图：找一部同时有 `thumb.jpg`（官方横图）与 `extrafanart/fanartN.jpg`（竖版剧照）的影片 → 头部应是那张 `thumb`；只有竖版 `backdrop` 的影片 → 头部走模糊底图（竖图不应被裁成一条）。
-37. 窄窗口：把窗口拉窄 → 两栏信息（NFO 元信息 / 磁盘上的事实）叠成一栏，头部标题 / 要点行 / 标签自动换行不溢出，封面与剧照网格自适应。
+37. 窄窗口：把窗口拉窄 → 两块信息（影片信息 / 文件信息）叠成一栏，头部标题 / 要点行 / 标签自动换行不溢出，封面与剧照网格自适应。
 38. NSFW 保护命中时进详情页：头部先显示**模糊**的背景大图 + 一枚「点击查看原图」，点一下变清晰（点过之后不再回到模糊）；头部下方那张封面是遮罩状态、要点行与标题仍在（标题来自索引，不算敏感画面）；剧照墙每张都要点一下才显示；从详情页切到另一部影片（同路由换 query）时头部的「已点开」状态不能带过去。
 39. **剧集库整墙**：新建一个「剧集」库（目录里是 `Season 01/S01E01.mkv`、`Season 01/S01E02.mkv`）并扫描 → 资料库卡片 meta 显示「剧集 1 部」，内容页标题是库名、**整部剧只有一张卡**（角标是「N 季 M 集」、**不显示番号**），摘要「共 1 部」、描述「磁盘上的剧集聚成一堵墙…」；点进详情页标题是剧集名，选集区默认选中**第 1 季第 1 集**、播放条提示写明将播放这一集，下方出现选集区（季选择器 + 集按钮 + 当前集标题 / 时长 / 首播日期 / 体积 / 简介）。
 40. **选集播放与回落**：点第 2 集（或换一季）→ 详情页的选中集与播放条提示跟着换，此时点「播放」播的就是这一集；在播放窗口右侧栏里直接点第 2 集 → 画面切到那一集且侧栏高亮同步；「更多 → 重新读取」后仍停在选中的那一集；把某部剧的所有集媒体源清掉（还原刮削前、或删掉集文件后重扫）再进详情页 → 选集区整块不渲染、播放条按钮禁用且提示「这部剧集里还没有能播放的集，请回影视墙刷新后再试」；只剩一季时季选择器不出现。
@@ -292,6 +296,7 @@ src/renderer/src/windows/main/pages/media/
 - **归属是条目上的外键**，不再是取数时按「最长前缀」现算：改资料库的媒体目录后，需要重新扫描才会把影片划到新的库里（不再是一刷新就自动改归属）。
 - 「清除 NFO」（按钮文案「还原刮削前」）影视库只做单条影片，剧集库按**整部剧**还原（不能只还原某一季 / 某一集），都没有批量 / 整库还原，还原完也不自动重刮。
 - **剧集的季目录名不回改**：刮削时没有留下原始季目录名，还原只能由集文件搬回时重建旧季目录、把规范化后的季目录当空目录删掉；另外剧集库**暂不支持「优先读取本地 NFO 和图片」**（`localFirst`），刮削也不做体积过滤、不按剧集去重（见[剧集支持](../media/02-series-support.md) §10）。
+- **详情页元信息只认本地库**（本轮改动）：取数不再读磁盘 NFO，换来进页面不转圈；代价是 NFO 被外部工具（tinyMediaManager、手动编辑）改过之后，详情页要等**重扫**（`importNfo` 只处理 `scrapedAt === 0` 的条目）或**重刮**才反映新值。要立刻生效可以对该条点「还原刮削前」再重刮。
 - 还原依赖 NFO 里的 `<originalfilename>` / `<originaldirectory>` / `<plantedfile>` 记录：旧版本刮削、或第三方工具写的 NFO 没有这些标签，只能清数据 + 删 NFO，视频留在原地（视频记录在影片目录里，目录也不会被删）。
 - 还原是**尽力而为、不回滚**：视频目标已存在就保持现状（不覆盖、不删），某个图片 / 预告片删不掉只跳过，都只体现在返回值与提示文案里。
 - `movie.nfo` 是目录级候选，多部影片共用时会被一并删掉（见 §4）。

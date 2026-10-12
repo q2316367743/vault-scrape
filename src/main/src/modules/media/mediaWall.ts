@@ -15,10 +15,9 @@
  * - 播放地址与封面地址都走 `storage://{连接}/{媒体ID}/{文件名}`，只认 ID 不认路径；
  * - 墙面可以按资料库过滤（`MediaWallRequest.libraryId`，空串 = 全部库）；
  * - 首页两排（最近添加 / 推荐）与墙面同一套条目口径，只做排序与截断；
- * - 详情另外读 NFO 作为元信息（影片读同目录 NFO，剧集读剧集目录下的 `tvshow.nfo`）；
- *   读失败不抛错，只当没有。
+ * - 详情页的元信息直接读库（`media_item` 的刮削列，由刮削与扫描写入），不实时读磁盘 NFO；
  */
-import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
+import { basenameRemotePath, dirnameRemotePath } from '@common/types/file'
 import type { MediaLibrary } from '@common/types/library'
 import {
   MEDIA_COVER_IMAGE_TYPE_ORDER,
@@ -26,14 +25,13 @@ import {
   MEDIA_IMAGE_TYPES,
   MediaError,
   buildMediaUrl,
-  parseNfoXml,
   type MediaDetailImage,
+  type MediaDetailMeta,
   type MediaDetailRequest,
   type MediaDetailResult,
   type MediaEpisodeRef,
   type MediaHomeResult,
   type MediaHomeRow,
-  type MediaNfoMeta,
   type MediaSeasonRef,
   type MediaWallItem,
   type MediaWallRequest,
@@ -49,7 +47,8 @@ import {
   listMovieItems,
   listSourcesByItem,
   listSourcesByLibrary,
-  maxSourceIndexedAt
+  maxSourceIndexedAt,
+  readItemMetadata
 } from '$/db/repo/mediaRepo'
 import {
   EMPTY_SERIES_STATS,
@@ -61,18 +60,21 @@ import {
   type SeriesItemStats
 } from '$/db/repo/mediaSeriesRepo'
 import { actorRefsOfItem } from '$/modules/actor/actorLink'
-import { getFileClient } from '$/modules/file/fileClientManager'
 import { getLibrary, listLibraries, listSummaries } from '$/modules/library/libraryStore'
 
-/** 剧集元信息文件名（写入侧 `scrapeSeriesJob` 固定用这个名字） */
-const SERIES_NFO_NAME = 'tvshow.nfo'
-
-/** 主媒体源：路径与条目一致的优先，否则取第一条 */
+/**
+ * 主媒体源：优先「路径与条目一致」的那一个（文件型条目），
+ * 其次是「文件名与目录名一致」的那个版本（目录型条目，Jellyfin 也这样认主版本），
+ * 都对不上才退回第一条（多版本目录里所有版本都带 `- 1080p` 这类后缀时）。
+ */
 export function primarySourceOf(
   item: MediaItemRow,
   sources: readonly MediaSourceRow[]
 ): MediaSourceRow | undefined {
-  return sources.find((row) => row.path === item.path) ?? sources[0]
+  const exact = sources.find((row) => row.path === item.path)
+  if (exact) return exact
+  const base = stripExtension(basenameRemotePath(item.path)).toLowerCase()
+  return sources.find((row) => stripExtension(row.name).toLowerCase() === base) ?? sources[0]
 }
 
 /**
@@ -148,7 +150,9 @@ function toWallItem(
     dirPath: dirnameRemotePath(source.path),
     name: item.name,
     num: item.num,
-    title: item.scrapedAt > 0 ? item.name : stripExtension(item.name),
+    // 目录型条目的名字就是目录名（没有扩展名可去，`Mr. Nobody (2009)` 不能被截成 `Mr`）
+    title:
+      item.scrapedAt > 0 || source.path !== item.path ? item.name : stripExtension(item.name),
     coverUrl: coverUrlOf(item, images),
     playUrl: buildMediaUrl(source.connectionId, source.id, source.name),
     seasonCount: 0,
@@ -320,32 +324,32 @@ export function loadMediaHome(): MediaHomeResult {
 
 /** 同目录 NFO 的候选名（`movie.nfo` 优先，其次与视频同名的 `.nfo`）；「清除 NFO」共用这套命名 */
 export function nfoCandidates(source: MediaSourceRow): string[] {
-  return ['movie.nfo', `${stripExtension(source.name)}.nfo`]
+  // 刮削对目录型条目写的是 `<目录名>.nfo`（多版本时视频名各不相同，只有目录名能对上）
+  const dirName = basenameRemotePath(dirnameRemotePath(source.path))
+  return ['movie.nfo', `${dirName}.nfo`, `${stripExtension(source.name)}.nfo`]
 }
 
-/** 在指定目录里按候选名读 NFO；连接不可用、文件不存在、解析失败都只当作「没有 NFO」 */
-async function readNfoInDir(
-  connectionId: string,
-  dirPath: string,
-  names: readonly string[]
-): Promise<{ meta: MediaNfoMeta | null; path: string }> {
-  for (const name of names) {
-    const target = joinRemotePath(dirPath, name)
-    try {
-      const client = await getFileClient(connectionId)
-      if (!(await client.exists(target))) continue
-      const text = await client.readText(target)
-      return { meta: parseNfoXml(text), path: target }
-    } catch {
-      // 换下一个候选；全都读不到时按没有 NFO 处理
-    }
+/**
+ * 详情元信息：从库里的刮削列组装（详情页不读磁盘 NFO）。
+ *
+ * 契约：刮削（插件）与扫描（NFO）都把这几列写进库，所以进详情页只有一次 SELECT，
+ * 不再产生磁盘 / 网络往返；没刮削过的条目各字段是空值。
+ */
+function detailMetaOf(item: MediaItemRow): MediaDetailMeta {
+  return {
+    // 展示名只在真跑过刮削时才算刮削标题（与 `toWallItem` 同一套口径）
+    title: item.scrapedAt > 0 ? item.name : '',
+    num: item.num,
+    originalTitle: item.originalTitle,
+    plot: item.overview,
+    maker: item.maker,
+    label: item.label,
+    series: item.series,
+    director: item.director,
+    releaseDate: item.premiereDate,
+    duration: item.runtimeMinutes,
+    tags: readItemMetadata(item).tags
   }
-  return { meta: null, path: '' }
-}
-
-/** 影片：读视频所在目录的 NFO */
-function readNfoMeta(source: MediaSourceRow): Promise<{ meta: MediaNfoMeta | null; path: string }> {
-  return readNfoInDir(source.connectionId, dirnameRemotePath(source.path), nfoCandidates(source))
 }
 
 /**
@@ -355,7 +359,7 @@ function readNfoMeta(source: MediaSourceRow): Promise<{ meta: MediaNfoMeta | nul
  * - 只有带媒体源的集会进 `seasons`（没有源的残留条目不上详情）；
  * - 图片一次取整库（剧集 / 季 / 集的图都在这份表里），封面按「自己 → 直接父条目」兜底，
  *   所以集没剧照时会退回季海报、季没海报时会退回剧集封面；
- * - 元信息读剧集目录下的 `tvshow.nfo`（写入侧固定用这个名字）。
+ * - 元信息取剧集条目自己的刮削列，与影片同一套口径。
  */
 async function loadSeriesDetail(item: MediaItemRow, library: MediaLibrary | null): Promise<MediaDetailResult> {
   const images = imagesByItem(listImagesByLibrary(item.libraryId))
@@ -394,18 +398,16 @@ async function loadSeriesDetail(item: MediaItemRow, library: MediaLibrary | null
       episodes
     })
   }
-  const nfo = await readNfoInDir(item.connectionId, item.path, [SERIES_NFO_NAME])
   return {
     item: toSeriesWallItem(item, images, library, seriesStatsOfOne(item.libraryId, item.id)),
-    meta: nfo.meta,
-    nfoPath: nfo.path,
+    meta: detailMetaOf(item),
     actors: actorRefsOfItem(item.id),
     images: detailImagesOf(item, images),
     seasons
   }
 }
 
-/** 单个条目（影片 / 剧集）的详情：与墙上同一套规则 + 磁盘上的 NFO */
+/** 单个条目（影片 / 剧集）的详情：与墙上同一套规则，元信息直接读库 */
 export async function loadMediaDetail(request: MediaDetailRequest): Promise<MediaDetailResult> {
   const itemId = request.itemId.trim()
   if (itemId.length === 0) throw new MediaError('invalidArgument', '缺少条目 ID')
@@ -421,11 +423,9 @@ export async function loadMediaDetail(request: MediaDetailRequest): Promise<Medi
     ...listImagesByItem(item.id),
     ...(item.parentId.length > 0 ? listImagesByItem(item.parentId) : [])
   ])
-  const nfo = await readNfoMeta(source)
   return {
     item: toWallItem(item, source, images, library),
-    meta: nfo.meta,
-    nfoPath: nfo.path,
+    meta: detailMetaOf(item),
     actors: actorRefsOfItem(item.id),
     images: detailImagesOf(item, images),
     seasons: []

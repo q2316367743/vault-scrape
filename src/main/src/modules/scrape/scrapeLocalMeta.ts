@@ -122,7 +122,8 @@ export async function readLocalNfo(
       if (!(await client.exists(path))) continue
       const xml = await client.readText(path)
       const meta = parseNfoXml(xml)
-      if (meta) return { name, path, meta, xml }
+      // 只认影片级 NFO：目录里出现剧集 / 季 / 集 NFO 时不能当成影片元数据
+      if (meta && meta.kind === 'movie') return { name, path, meta, xml }
     } catch {
       // 单个候选读失败就继续；本地 NFO 只是加速手段
     }

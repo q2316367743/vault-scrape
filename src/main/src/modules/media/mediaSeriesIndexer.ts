@@ -5,40 +5,53 @@
  * - 目录角色只看「目录名 + 直接内容」，与资料库设置无关：
  *   * **剧集目录**：直接含视频，或含「季目录」子目录（`Season 01` / `S1` / `第1季` / `Specials`）；
  *   * **季目录**：剧集目录下的子目录（含视频的更深一层目录沿用父级季上下文，不再新建条目）；
- *   * **花絮 / 样片目录**（`Extras`、`Featurettes`、`Sample`、`OVA`…）整棵跳过，里面的视频不入库；
+ *   * **花絮 / 样片目录**（`Extras`、`Featurettes`、`Sample`、`Trailers`…）整棵跳过，里面的视频不入库
+ *     （`Specials` / `OVA` / `OAD` 属**季目录**、季号 0，不跳过）；
  * - 资料库根目录自己就是剧集目录时（库直接指向某个剧集文件夹）照常建剧集条目，但刮削阶段不会给它改名；
  * - 季号：**目录名写明季号时以目录为准**；目录名没写（剧集目录里直接放视频）时用文件名里的季号；
- * - 集号只认文件名，认不出来（`parseEpisodeName` 返回 null）就**不入库**，并计入 `skippedVideos`；
+ * - 集号只认文件名，认不出来（`parseEpisodeNumbers` 返回 null）就**不入库**，并计入 `skippedVideos`；
  * - 季目录里的集挂季条目下；剧集目录里直接放的集挂剧集条目下（`parent_id = seriesId`，`seasonNumber` 仍是真实季号），
  *   读取侧要把两种都算进同一季；
- * - 条目身份按「连接 + 路径」认（`findItemByPath`），且**只认同类型条目**：同一个目录从「剧集」变成「季」时不复用旧行；
- *   刮削改名后就地改写路径、id 不变，重扫既不会造重复、也不会丢掉已写好的元数据；
+ * - **多版本**：同一季同集号的多个文件（`S01E01.mkv` + `S01E01 - 1080p.mkv`）合成**一条 `episode`**，
+ *   条目 `path` 取自然序第一个（主版本），其余文件各写一条 `media_source`；
  * - 图片：与集同名的图当集主图，`<集名>-poster.jpg` 这类前缀名按用途挂集，
  *   其余固定名（poster / backdrop / banner / logo / fanart…）挂当前目录的条目（剧集或季）；
  *   `extrafanart` / `extrathumbs` 里的图挂上一层条目；用户自己放的其他图不归扫描管；
- * - `tvshow.nfo` / `season.nfo` 只作为 `hasNfo` 证据；未刮削的剧集条目会从 `tvshow.nfo` 补一次参演名单。
+ * - NFO：`tvshow.nfo` 记剧集的 `hasNfo`，`season.nfo` 记季的，与集同名的 `.nfo` 记集的；
+ *   未刮削（`scrapedAt = 0`）的条目按 `./mediaNfoScan` 把 NFO 里的元数据与名单读进库，已刮削的跳过。
+ *
+ * 条目 ID / 身份认领 / 写入在 `./mediaSeriesItems`，本文件只管目录遍历、图片归属与清理。
  */
-import { createHash } from 'node:crypto'
 import { LibraryError, type MediaLibrary } from '@common/types/library'
 import {
   basenameRemotePath,
   dirnameRemotePath,
-  guessMimeType,
   isRemotePathInside,
   type FileEntry
 } from '@common/types/file'
-import { mediaSourceKindOf, type MediaImageType } from '@common/types/media'
-import { isExtraVideoDir, padNumber, parseEpisodeName, seasonNumberOfDir, stripExtension } from '@common/types/scrape'
+import {
+  extraKindOfName,
+  isExtraVideoDir,
+  mediaSourceKindOf,
+  parseEpisodeNumbers,
+  seasonNumberOfDir,
+  type MediaImageType
+} from '@common/types/media'
+import { padNumber, stripExtension } from '@common/types/scrape'
 import { deleteImagesByIds, listImagesByLibrary, upsertImage } from '$/db/repo/mediaImageRepo'
 import {
   deleteChildlessItems,
   deleteItemsWithoutSource,
   deleteSourcesNotInScan
 } from '$/db/repo/mediaCleanupRepo'
-import { findItemByPath, getItem, insertItem, updateItem, upsertSource } from '$/db/repo/mediaRepo'
-import type { MediaItemType } from '$/db/repo/mediaRepo'
+import { getItem } from '$/db/repo/mediaRepo'
 import { getFileClient } from '$/modules/file/fileClientManager'
-import { backfillCastFromNfo, backfillSeriesCastFromNfo, collectNfoBases, hasNfoEvidence } from './mediaNfoScan'
+import {
+  collectNfoBases,
+  importEpisodeNfo,
+  importSeasonNfo,
+  importSeriesNfo
+} from './mediaNfoScan'
 import {
   MAX_SCAN_DEPTH,
   MAX_SCAN_ENTRIES,
@@ -50,134 +63,17 @@ import {
   isScanOwnedImagePath,
   isVideoExtension,
   mediaImageId,
-  mediaSourceId,
   minBytesOf,
   type IndexPathOptions,
   type IndexPathResult
-} from './mediaIndexer'
-
-function hashId(input: string): string {
-  return createHash('sha1').update(input).digest('hex').slice(0, 32)
-}
-
-/** 剧集条目 ID：`sha1('series\n' + libraryId + '\n' + connectionId + '\n' + 剧集目录路径)` */
-export function seriesItemId(libraryId: string, connectionId: string, dirPath: string): string {
-  return hashId(`series\n${libraryId}\n${connectionId}\n${dirPath}`)
-}
-
-/**
- * 季条目 ID：`sha1('season\n' + libraryId + '\n' + connectionId + '\n' + 季目录路径 + '\n' + 季号)`。
- *
- * 带季号是因为「剧集目录里直接放视频」时，多个隐式季共用剧集目录这一个路径，只靠路径会撞 ID。
- */
-export function seasonItemId(
-  libraryId: string,
-  connectionId: string,
-  dirPath: string,
-  seasonNumber: number
-): string {
-  return hashId(`season\n${libraryId}\n${connectionId}\n${dirPath}\n${seasonNumber}`)
-}
-
-/** 集条目 ID：`sha1('episode\n' + connectionId + '\n' + 视频路径)` */
-export function episodeItemId(connectionId: string, path: string): string {
-  return hashId(`episode\n${connectionId}\n${path}`)
-}
-
-/**
- * 认领同类型条目：先按「连接 + 路径」找，再按确定性 ID 找，都没有就当新条目。
- *
- * 同一路径上可能存在不同类型的条目（例如剧集目录与它的隐式季共用路径），因此必须比对 `type`。
- */
-function resolveItemId(
-  connectionId: string,
-  path: string,
-  type: MediaItemType,
-  candidateId: string
-): { id: string; exists: boolean } {
-  const byPath = findItemByPath(connectionId, path)
-  if (byPath && byPath.type === type) return { id: byPath.id, exists: true }
-  const byId = getItem(candidateId)
-  if (byId && byId.type === type) return { id: candidateId, exists: true }
-  return { id: candidateId, exists: false }
-}
-
-/** 目录在剧集树里的角色：剧集目录，或某个剧集的某一季 */
-interface DirContext {
-  kind: 'series' | 'season'
-  /** 该目录对应的条目 ID（剧集目录 → 剧集条目；季目录 → 季条目） */
-  itemId: string
-  /** 条目所在的目录路径（隐式季就落在剧集目录上；更深一层目录沿用祖先的路径） */
-  itemPath: string
-  seriesId: string
-  /** 季号；剧集目录为 0 */
-  season: number
-  /** 季号是否由目录名写明（写明时以目录为准，否则用文件名里的季号） */
-  namedSeason: boolean
-}
-
-/** 建好 / 更新剧集条目，返回条目 ID */
-function ensureSeriesItem(
-  library: MediaLibrary,
-  connectionId: string,
-  dirPath: string,
-  nfoBases: ReadonlySet<string>
-): string {
-  const { id, exists } = resolveItemId(
-    connectionId,
-    dirPath,
-    'series',
-    seriesItemId(library.id, connectionId, dirPath)
-  )
-  const hasNfo = nfoBases.has('tvshow') ? 1 : 0
-  if (exists) {
-    // 重扫只修父子关系与 NFO 证据，名字交给刮削结果
-    updateItem(id, { parentId: '', hasNfo })
-  } else {
-    insertItem({
-      id,
-      libraryId: library.id,
-      connectionId,
-      type: 'series',
-      parentId: '',
-      path: dirPath,
-      name: basenameRemotePath(dirPath),
-      hasNfo
-    })
-  }
-  return id
-}
-
-/** 建好 / 更新季条目，返回条目 ID */
-function ensureSeasonItem(
-  library: MediaLibrary,
-  connectionId: string,
-  seriesId: string,
-  dirPath: string,
-  seasonNumber: number,
-  name: string
-): string {
-  const { id, exists } = resolveItemId(
-    connectionId,
-    dirPath,
-    'season',
-    seasonItemId(library.id, connectionId, dirPath, seasonNumber)
-  )
-  if (exists) updateItem(id, { parentId: seriesId, seasonNumber })
-  else {
-    insertItem({
-      id,
-      libraryId: library.id,
-      connectionId,
-      type: 'season',
-      parentId: seriesId,
-      path: dirPath,
-      name,
-      seasonNumber
-    })
-  }
-  return id
-}
+} from './mediaScanCommon'
+import {
+  ensureSeasonItem,
+  ensureSeriesItem,
+  indexEpisode,
+  type DirContext,
+  type EpisodeGroup
+} from './mediaSeriesItems'
 
 /** 一个目录能给图片提供的落点 */
 interface SeriesImageTarget {
@@ -277,7 +173,10 @@ export async function indexSeriesLibraryPath(
     const files = entries.filter((entry) => entry.type === 'file')
     const subdirs = entries.filter((entry) => entry.type === 'directory')
     const videos = files.filter(
-      (file) => isVideoExtension(options.extensions, file.extname) && isBigEnoughVideo(file, minBytes)
+      (file) =>
+        isVideoExtension(options.extensions, file.extname) &&
+        isBigEnoughVideo(file, minBytes) &&
+        extraKindOfName(stripExtension(file.name)).length === 0
     )
     const nfoBases = collectNfoBases(files)
     const parent = contextByDir.get(dirnameRemotePath(node.path))
@@ -293,22 +192,35 @@ export async function indexSeriesLibraryPath(
       context = parent
     } else if (parent?.kind === 'series') {
       const season = namedSeason ?? 1
+      const seasonItem = ensureSeasonItem(
+        library,
+        connectionId,
+        parent.seriesId,
+        node.path,
+        season,
+        namedSeason === null ? `Season ${padNumber(season)}` : dirName,
+        nfoBases
+      )
       context = {
         kind: 'season',
-        itemId: ensureSeasonItem(
-          library,
-          connectionId,
-          parent.seriesId,
-          node.path,
-          season,
-          namedSeason === null ? `Season ${padNumber(season)}` : dirName
-        ),
+        itemId: seasonItem.itemId,
         itemPath: node.path,
         seriesId: parent.seriesId,
         season,
         namedSeason: namedSeason !== null
       }
-    } else if (videos.length > 0 || subdirs.some((dir) => seasonNumberOfDir(basenameRemotePath(dir.path)) !== null)) {
+      if (namedSeason !== null) {
+        await importSeasonNfo(
+          client,
+          { id: seasonItem.itemId, path: node.path, scrapedAt: seasonItem.scrapedAt },
+          files,
+          season
+        )
+      }
+    } else if (
+      videos.length > 0 ||
+      subdirs.some((dir) => seasonNumberOfDir(basenameRemotePath(dir.path)) !== null)
+    ) {
       const seriesId = ensureSeriesItem(library, connectionId, node.path, nfoBases)
       context = {
         kind: 'series',
@@ -318,74 +230,62 @@ export async function indexSeriesLibraryPath(
         season: 0,
         namedSeason: false
       }
-      if ((getItem(seriesId)?.scrapedAt ?? 0) === 0) {
-        await backfillSeriesCastFromNfo(client, seriesId, files)
-      }
+      const series = getItem(seriesId)
+      if (series) await importSeriesNfo(client, series, files)
     }
 
-    // 2. 收这一层的视频：解析季 / 集号，解析不出来的不入库
+    // 2. 收这一层的视频：同季同集号的多个文件是同一集的多版本，合成一个条目；解析不出来的不入库
     const videoBases = new Map<string, string>()
-    for (const video of videos) {
-      if (!context) {
-        result.skippedVideos += 1
-        continue
+    if (context === null) {
+      result.skippedVideos += videos.length
+    } else {
+      const groups = new Map<string, EpisodeGroup>()
+      for (const video of videos) {
+        const parsed = parseEpisodeNumbers(video.name, context.namedSeason ? context.season : 1)
+        if (!parsed) {
+          result.skippedVideos += 1
+          continue
+        }
+        // 目录名写明季号时以目录为准；剧集目录直接放视频时用文件名里的季号
+        const season = context.namedSeason ? context.season : parsed.season
+        const key = `${season}\n${parsed.episode}`
+        const group = groups.get(key)
+        if (group) group.videos.push(video)
+        else groups.set(key, { season, episode: parsed.episode, videos: [video] })
       }
-      const parsed = parseEpisodeName(video.name, context.namedSeason ? context.season : 1)
-      if (!parsed) {
-        result.skippedVideos += 1
-        continue
-      }
-      // 目录名写明季号时以目录为准；剧集目录直接放视频时用文件名里的季号
-      const season = context.namedSeason ? context.season : parsed.season
-      const parentId =
-        context.kind === 'season' && context.namedSeason
-          ? context.itemId
-          : ensureSeasonItem(
-              library,
-              connectionId,
-              context.seriesId,
-              context.itemPath,
-              season,
-              `Season ${padNumber(season)}`
-            )
-      const existing = findItemByPath(connectionId, video.path)
-      const item = resolveItemId(connectionId, video.path, 'episode', episodeItemId(connectionId, video.path))
-      const hasNfo = hasNfoEvidence(video, nfoBases)
-      if (item.exists) {
-        updateItem(item.id, { parentId, seasonNumber: season, episodeNumber: parsed.episode, hasNfo })
-      } else {
-        insertItem({
-          id: item.id,
-          libraryId: library.id,
+      for (const group of groups.values()) {
+        const parentId =
+          context.kind === 'season' && context.namedSeason
+            ? context.itemId
+            : ensureSeasonItem(
+                library,
+                connectionId,
+                context.seriesId,
+                context.itemPath,
+                group.season,
+                `Season ${padNumber(group.season)}`,
+                nfoBases
+              ).itemId
+        const episode = indexEpisode(
+          library,
           connectionId,
-          type: 'episode',
+          options.scanId,
           parentId,
-          path: video.path,
-          name: video.name,
-          seasonNumber: season,
-          episodeNumber: parsed.episode,
-          hasNfo
-        })
+          group,
+          nfoBases
+        )
+        result.indexedVideos += group.videos.length
+        result.indexedFiles += group.videos.length
+        for (const video of group.videos) {
+          videoBases.set(stripExtension(video.name).toLowerCase(), episode.itemId)
+        }
+        await importEpisodeNfo(
+          client,
+          { id: episode.itemId, path: episode.primaryPath, scrapedAt: episode.scrapedAt },
+          files,
+          group.videos
+        )
       }
-      upsertSource(
-        {
-          id: mediaSourceId(connectionId, video.path),
-          itemId: item.id,
-          libraryId: library.id,
-          connectionId,
-          path: video.path,
-          name: video.name,
-          extname: video.extname,
-          mime: video.mime || guessMimeType(video.name),
-          size: video.size,
-          modifiedAt: video.modifiedAt
-        },
-        options.scanId
-      )
-      result.indexedVideos += 1
-      result.indexedFiles += 1
-      videoBases.set(stripExtension(video.name).toLowerCase(), item.id)
-      if ((existing?.scrapedAt ?? 0) === 0) await backfillCastFromNfo(client, item.id, files, video)
     }
 
     // 3. 图片：固定名挂本目录条目，同名 / 前缀名挂集；`extrafanart` 里的图挂上一层条目
@@ -406,7 +306,11 @@ export async function indexSeriesLibraryPath(
       result.truncated = true
       continue
     }
-    for (const dir of subdirs) queue.push({ path: dir.path, depth: node.depth + 1 })
+    for (const dir of subdirs) {
+      // 花絮 / 样片目录整棵跳过：不放它们进队列，里面的视频才不会在更深一层被当成新的剧集
+      if (isExtraVideoDir(basenameRemotePath(dir.path))) continue
+      queue.push({ path: dir.path, depth: node.depth + 1 })
+    }
   }
   return result
 }

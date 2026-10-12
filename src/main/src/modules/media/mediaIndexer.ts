@@ -1,29 +1,32 @@
 /**
- * 媒体索引引擎：把连接里的视频文件扫成 `media_item` / `media_source` / `media_image`。
+ * 影片库索引引擎：把连接里的视频扫成 `media_item` / `media_source` / `media_image`。
  *
- * 契约：
- * - 每条资料库目录独立调用 `indexLibraryPath`，游标队列 BFS（上限 200k 条、32 层）；
- * - 根目录列目录失败直接抛错；子目录失败计入 `skippedDirs` 继续扫；
- * - 条目 ID 是确定性的（sha1 前 32 位），但重扫按「连接 + 路径」认身份（`findItemByPath`）：
+ * 目录与命名口径对齐 Jellyfin / Emby / Plex / Kodi（规则本体见 `@common/types/media/mediaRules`）：
+ * - **一个影片目录 = 一个影片条目**（`Movies/片名 (年份)/`）；目录里以目录名为前缀的多个视频
+ *   是同一部影片的多个版本（多条 `media_source`，挂在同一条目上）；
+ * - 目录下只有一个视频、文件名与目录名对不上时，它仍然是这个目录的影片（`片名/movie.mkv`）；
+ *   有多个且都对不上时各自独立成条目（条目路径 = 视频路径），连接根下的散装视频同样各自成条目；
+ * - **花絮整棵跳过**：`extras` / `featurettes` / `trailers` 这类目录不下钻，
+ *   `-trailer` / `-sample` 这类文件既不入库也不算版本（避免被当成正片）；
+ * - 条目 ID 是确定性的（sha1 前 32 位），但重扫按「路径 / 媒体源」认身份（`findOwnedItem`）：
  *   刮削会把文件移进同名文件夹并就地改写库里的路径（id 不变），只有按路径认才既不会
  *   造出重复条目、也不会丢掉已刮好的元数据；只刷新扫描拥有的列，刮削元数据一律保留；
- * - 图片按「连接 + 路径」唯一：与视频同名的图片挂影片条目当主图；目录级固定名
- *   （poster / backdrop / thumb / banner / logo / fanartN…）与 `<视频名>-<固定名>` 前缀名按用途挂影片或目录条目；
- *   `extrafanart` / `extrathumbs` 子目录里的图算上一层目录影片的产出；
+ * - 目录条目（`folder`）只为「自己没有影片的目录」建：影片目录自己就是影片条目，
+ *   不再额外建同路径的目录条目，避免同一路径两条身份；
+ * - 图片按「连接 + 路径」唯一：与视频同名的图片挂影片条目当主图；`<视频名>-poster.jpg`
+ *   这类前缀名按用途挂影片；目录级固定名（poster / backdrop / thumb / banner / logo / fanartN…）
+ *   挂目录里的影片条目（目录里有多个独立影片时挂目录条目）；`extrafanart` / `extrathumbs`
+ *   子目录里的图算上一层目录影片的产出；
  * - 资料库设了最小体积（MB）时，小于它的视频不入库（体积未知的 0 字节条目仍然入库）；
  * - 同目录有 `movie.nfo` 或与视频同名的 `.nfo` 时把 `hasNfo = 1` 记在影片条目上，
- *   仅作为「磁盘上有没有 NFO」的事实标记（影视墙不再按它分类）；
- * - 还没刮削过（`scraped_at = 0`）的影片，扫描时顺手把 NFO 里的 `<actor>` 读进 `media_cast`
- *   并按名字建好演员档案（NFO 只是数据提供方，数据库才是保存方）；刮削过的条目交给刮削结果；
- * - 哪些后缀算视频由调用方按资料库设置传入（`IndexPathOptions.extensions`），
- *   本文件不硬编码扩展名；
+ *   并按 `./mediaNfoScan` 把 NFO 里的元数据与名单读进库（已刮削过的条目跳过）；
+ * - 哪些后缀算视频由调用方按资料库设置传入（`IndexPathOptions.extensions`），本文件不硬编码；
  * - `cleanupUnseen` 删除本次没扫到的媒体源、失去源的影片条目与其图片。
  *
  * 剧集库的 series → season → episode 扫描在 `./mediaSeriesIndexer`：本文件只保留影片 / 目录模型，
  * 以及两个索引器共用的底层工具（`isVideoExtension` / `minBytesOf` / `imageTypeOfBaseName` /
  * `extraArtAnchor` / `emptyResult` 等已导出，改这些函数的语义会同时影响两个索引器）。
  */
-import { createHash } from 'node:crypto'
 import type { MediaLibrary } from '@common/types/library'
 import { LibraryError } from '@common/types/library'
 import {
@@ -35,175 +38,47 @@ import {
   type FileEntry
 } from '@common/types/file'
 import { extractKeyword, normalizeNum, stripExtension } from '@common/types/scrape'
-import { mediaSourceKindOf, type MediaImageType } from '@common/types/media'
+import {
+  extraKindOfName,
+  isExtraVideoDir,
+  isVersionOfFolder,
+  type MediaImageType
+} from '@common/types/media'
 import { deleteImagesByIds, listImagesByLibrary, upsertImage } from '$/db/repo/mediaImageRepo'
 import { getFileClient } from '$/modules/file/fileClientManager'
-import { backfillCastFromNfo, collectNfoBases, hasNfoEvidence } from './mediaNfoScan'
+import { collectNfoBases, hasNfoEvidence, importMovieNfo } from './mediaNfoScan'
+import {
+  MAX_SCAN_DEPTH,
+  MAX_SCAN_ENTRIES,
+  emptyResult,
+  extraArtAnchor,
+  findOwnedItem,
+  imageKey,
+  imageTypeOfBaseName,
+  isBigEnoughVideo,
+  isCancelled,
+  isImageEntry,
+  isScanOwnedImagePath,
+  isVideoExtension,
+  mediaImageId,
+  mediaSourceId,
+  minBytesOf,
+  movieItemId,
+  folderItemId,
+  type IndexPathOptions,
+  type IndexPathResult
+} from './mediaScanCommon'
 import {
   deleteItemsWithoutSource,
   deleteSourcesNotInScan
 } from '$/db/repo/mediaCleanupRepo'
 import {
-  findItemByPath,
   getItem,
   insertItem,
   updateItem,
-  upsertSource
+  upsertSource,
+  type MediaItemScanPatch
 } from '$/db/repo/mediaRepo'
-
-/** 单次扫描的条目上限（沿用旧索引实现的语义） */
-export const MAX_SCAN_ENTRIES = 200_000
-/** 单次扫描的最大目录深度（沿用旧索引实现的语义） */
-export const MAX_SCAN_DEPTH = 32
-
-/** 目录级主图名（与视频不同名时挂目录条目） */
-const DIR_PRIMARY_NAMES: ReadonlySet<string> = new Set(['poster', 'cover', 'folder'])
-/** 目录级背景图名（`fanart` / `fanart1` / `fanarts2`… 也按背景图算） */
-const DIR_BACKDROP_NAMES: ReadonlySet<string> = new Set(['backdrop', 'background'])
-const DIR_FANART_NAMES = /^fanarts?\d*$/
-/** 目录级缩略图名（`thumb` / `thumb1` / `thumbs2`…） */
-const DIR_THUMB_NAMES = /^thumbs?\d*$/
-/** 目录级剧照名（`still` / `still1` / `screenshots2`…） */
-const DIR_STILL_NAMES = /^(?:still|screenshot)s?\d*$/
-/** 目录级横幅 / 徽标名（Jellyfin 的 Banner / Logo） */
-const DIR_BANNER_NAMES: ReadonlySet<string> = new Set(['banner'])
-const DIR_LOGO_NAMES: ReadonlySet<string> = new Set(['logo', 'clearlogo'])
-/** 剧照 / 缩略图子目录：里面的图片属于**上一层**目录里的影片 */
-const EXTRA_ART_DIR_NAMES: ReadonlySet<string> = new Set(['extrafanart', 'extrathumbs'])
-
-/** 图片基础名（去扩展名、小写）→ 用途；不是固定图片名时返回 null */
-export function imageTypeOfBaseName(base: string): MediaImageType | null {
-  if (DIR_PRIMARY_NAMES.has(base)) return 'primary'
-  if (DIR_BACKDROP_NAMES.has(base)) return 'backdrop'
-  if (DIR_FANART_NAMES.test(base)) return 'backdrop'
-  if (DIR_THUMB_NAMES.test(base)) return 'thumb'
-  if (DIR_STILL_NAMES.test(base)) return 'still'
-  if (DIR_BANNER_NAMES.has(base)) return 'banner'
-  if (DIR_LOGO_NAMES.has(base)) return 'logo'
-  return null
-}
-
-/**
- * 图片是不是刮削产物名：目录级固定名（`poster.jpg` / `thumb.jpg` / `still1.jpg`…），
- * 或者 `<视频基础名>-<固定名>.jpg`（刮削关掉重命名时的附属文件命名，见 `resolveAssetFile`）。
- *
- * 只有这类图片会被清理（`cleanupUnseen`）；用户自己放的其他图不归扫描管。
- */
-export function isScanOwnedImagePath(path: string): boolean {
-  const base = stripExtension(basenameRemotePath(path)).toLowerCase()
-  if (imageTypeOfBaseName(base) !== null) return true
-  const dash = base.lastIndexOf('-')
-  return dash > 0 && imageTypeOfBaseName(base.slice(dash + 1)) !== null
-}
-
-function hashId(input: string): string {
-  return createHash('sha1').update(input).digest('hex').slice(0, 32)
-}
-
-/** 影片条目 ID：`sha1('item\n' + connectionId + '\n' + path)` */
-export function movieItemId(connectionId: string, path: string): string {
-  return hashId(`item\n${connectionId}\n${path}`)
-}
-
-/** 目录条目 ID：`sha1('folder\n' + libraryId + '\n' + connectionId + '\n' + dirPath)` */
-export function folderItemId(libraryId: string, connectionId: string, dirPath: string): string {
-  return hashId(`folder\n${libraryId}\n${connectionId}\n${dirPath}`)
-}
-
-/** 媒体源 ID：`sha1('source\n' + connectionId + '\n' + path)` */
-export function mediaSourceId(connectionId: string, path: string): string {
-  return hashId(`source\n${connectionId}\n${path}`)
-}
-
-/** 图片 ID：`sha1('image\n' + connectionId + '\n' + path)` */
-export function mediaImageId(connectionId: string, path: string): string {
-  return hashId(`image\n${connectionId}\n${path}`)
-}
-
-/** 扫描清理用的图片键（连接 + 路径） */
-export function imageKey(connectionId: string, path: string): string {
-  return `${connectionId}\n${path}`
-}
-
-export interface IndexDirProgress {
-  dirPath: string
-  scannedDirs: number
-  indexedFiles: number
-}
-
-export interface IndexPathOptions {
-  scanId: string
-  /** 该资料库识别为影片的后缀清单（小写、无点，来自 `libraryExtensionsOf`） */
-  extensions: readonly string[]
-  /** 只索引体积不小于该值（MB）的视频；0 或省略表示不过滤 */
-  minFileSizeMb?: number
-  onDir?: (progress: IndexDirProgress) => void
-  isCancelled?: () => boolean
-}
-
-export interface IndexPathResult {
-  /** 本次写入 / 更新的媒体源数 */
-  indexedFiles: number
-  /** 其中的视频数 */
-  indexedVideos: number
-  /** 列目录失败被跳过的目录数 */
-  skippedDirs: number
-  /** 被跳过的目录路径（清理时要避开这些前缀） */
-  skippedPaths: string[]
-  /** 成功列出的目录数 */
-  scannedDirs: number
-  /** 是否因为条目上限或深度上限提前收工 */
-  truncated: boolean
-  /** 本次扫到的图片键集合（cleanupUnseen 用） */
-  seenImages: Set<string>
-  /** 剧集库专属：认不出季 / 集号而没入库的视频数 */
-  skippedVideos: number
-}
-
-/** 新建一份空结果（影片与剧集索引器共用，保证字段齐全） */
-export function emptyResult(): IndexPathResult {
-  return {
-    indexedFiles: 0,
-    indexedVideos: 0,
-    skippedDirs: 0,
-    skippedPaths: [],
-    scannedDirs: 0,
-    truncated: false,
-    seenImages: new Set<string>(),
-    skippedVideos: 0
-  }
-}
-
-function isCancelled(options: IndexPathOptions): boolean {
-  return options.isCancelled?.() === true
-}
-
-function isImageEntry(entry: FileEntry): boolean {
-  return mediaSourceKindOf(entry.mime, entry.extname) === 'image'
-}
-
-/**
- * 文件是不是影片：拿传入的后缀清单比对。
- *
- * `entry.extname` 通常已经是无点小写，但脏数据可能带点、大写或空白，这里统一清洗后再比。
- */
-export function isVideoExtension(extensions: readonly string[], extname: string): boolean {
-  const ext = extname.trim().replace(/^\.+/, '').toLowerCase()
-  return extensions.includes(ext)
-}
-
-/** 把「最小体积（MB）」换算成字节门槛；非法值按不过滤处理 */
-export function minBytesOf(minFileSizeMb: number | undefined): number {
-  if (minFileSizeMb === undefined || !Number.isFinite(minFileSizeMb) || minFileSizeMb <= 0) return 0
-  return minFileSizeMb * 1024 * 1024
-}
-
-/** 视频是否达到最小体积；体积未知（0 字节）时放行，避免连接不报 size 就扫不到东西 */
-export function isBigEnoughVideo(file: FileEntry, minBytes: number): boolean {
-  if (minBytes <= 0) return true
-  if (file.size <= 0) return true
-  return file.size >= minBytes
-}
 
 /**
  * 按需创建目录条目并串起父子层级，返回目录条目 ID（连接根不建条目，返回空串）。
@@ -230,28 +105,82 @@ function ensureFolderItem(
   return id
 }
 
-/** 一个视频入库后的回执：`castable` 表示它还没刮削过，可以从 NFO 补参演名单 */
-interface IndexedVideo {
-  itemId: string
-  castable: boolean
+/** 一个影片条目里的一组视频：目录型条目（`itemPath` 是目录）或文件型条目（`itemPath` 是视频） */
+interface MovieGroup {
+  itemPath: string
+  videos: FileEntry[]
 }
 
-/** 写入一个视频文件对应的影片条目 + 媒体源 */
-function indexVideo(
+/**
+ * 把一个目录里的视频分成影片条目，对齐 Jellyfin 的「一个影片目录 = 一个条目 + 多个版本」。
+ *
+ * - 以目录名为前缀的视频（`片名 (2021)/片名 (2021) - 1080p.mkv`）算同一部影片的多个版本，
+ *   合成一个组，条目路径 = 目录；
+ * - 目录下只有一个视频、文件名与目录名对不上时（`片名/movie.mkv`），它仍然是这个目录的影片；
+ * - 其余情况每个视频各自成组（条目路径 = 视频路径）——**连接根例外**：根下的散装视频
+ *   各自成条目，否则整个资料库会被合成一部影片；
+ * - 目录里有多个独立影片时，除了各自的条目，还会给目录本身建一个 `folder` 条目承接目录级图片。
+ */
+function movieGroupsOf(
+  dirPath: string,
+  dirBase: string,
+  videos: readonly FileEntry[],
+  depth: number
+): MovieGroup[] {
+  if (videos.length === 0) return []
+  const matching = videos.filter((video) => isVersionOfFolder(stripExtension(video.name), dirBase))
+  const others = videos.filter((video) => !matching.includes(video))
+  const groups: MovieGroup[] = []
+  if (matching.length > 0) groups.push({ itemPath: dirPath, videos: matching })
+  if (others.length === 1 && matching.length === 0 && depth > 0) {
+    groups.push({ itemPath: dirPath, videos: others })
+  } else {
+    for (const video of others) groups.push({ itemPath: video.path, videos: [video] })
+  }
+  return groups
+}
+
+/**
+ * 写入一个影片条目（含它的多个版本），返回条目 ID 与它当前的刮削时间。
+ *
+ * 条目身份按「条目路径 → 组内视频的媒体源 → 视频路径」逐级认（见 `./mediaScanCommon` 的
+ * `findOwnedItem`）：刮削会把单文件移进同名文件夹并就地改写库里的路径（id 不变），
+ * 手动搬动文件、换主版本时也能靠源找回条目、把路径改到新位置。
+ * 已刮削过的条目只修父子关系、路径与 NFO 证据，标题与番号保持刮削结果。
+ */
+function indexMovieGroup(
   library: MediaLibrary,
   connectionId: string,
   scanId: string,
   parentId: string,
-  entry: FileEntry,
-  hasNfo: number
-): IndexedVideo {
-  // 条目身份按 (connectionId, path) 认，不重算哈希：刮削把文件移进同名文件夹后
-  // 会就地改写库里的路径（id 保持不变），重算哈希会造出重复条目、并丢掉已写好的元数据
-  const existing = findItemByPath(connectionId, entry.path)
-  const itemId = existing?.id ?? movieItemId(connectionId, entry.path)
-  if (existing) {
-    // 重扫只修父子关系与 NFO 证据，文件名与番号交给刮削结果
-    updateItem(itemId, { parentId, hasNfo })
+  group: MovieGroup,
+  nfoBases: ReadonlySet<string>
+): { itemId: string; scrapedAt: number } {
+  const found = findOwnedItem(
+    connectionId,
+    group.itemPath,
+    group.videos.map((video) => video.path),
+    'movie'
+  )
+  const itemId = found?.id ?? movieItemId(connectionId, group.itemPath)
+  const primary = group.videos[0]
+  const dirTyped = group.itemPath !== primary.path
+  const name = dirTyped ? basenameRemotePath(group.itemPath) : primary.name
+  // 目录型条目的 NFO 常以**目录名**命名（多版本时视频名各不相同，只有它认得出来）
+  const hasNfo =
+    nfoBases.has('movie') ||
+    (dirTyped && nfoBases.has(name.toLowerCase())) ||
+    group.videos.some((video) => hasNfoEvidence(video, nfoBases) === 1)
+      ? 1
+      : 0
+  if (found) {
+    const patch: MediaItemScanPatch = { parentId, hasNfo }
+    if (found.path !== group.itemPath) patch.path = group.itemPath
+    if (found.scrapedAt === 0) {
+      patch.name = name
+      patch.num = normalizeNum(extractKeyword(name).num)
+    }
+    updateItem(itemId, patch)
   } else {
     insertItem({
       id: itemId,
@@ -259,79 +188,65 @@ function indexVideo(
       connectionId,
       type: 'movie',
       parentId,
-      path: entry.path,
-      name: entry.name,
-      num: normalizeNum(extractKeyword(entry.name).num),
+      path: group.itemPath,
+      name,
+      num: normalizeNum(extractKeyword(name).num),
       hasNfo
     })
   }
-  const source = {
-    id: mediaSourceId(connectionId, entry.path),
-    itemId,
-    libraryId: library.id,
-    connectionId,
-    path: entry.path,
-    name: entry.name,
-    extname: entry.extname,
-    mime: entry.mime || guessMimeType(entry.name),
-    size: entry.size,
-    modifiedAt: entry.modifiedAt
+  for (const video of group.videos) {
+    // 源一律走 upsertSource：它按 (connectionId, path) 认领，重新分组时会把源改挂到新条目
+    upsertSource(
+      {
+        id: mediaSourceId(connectionId, video.path),
+        itemId,
+        libraryId: library.id,
+        connectionId,
+        path: video.path,
+        name: video.name,
+        extname: video.extname,
+        mime: video.mime || guessMimeType(video.name),
+        size: video.size,
+        modifiedAt: video.modifiedAt
+      },
+      scanId
+    )
   }
-  // 源一律走 upsertSource：它内部按 (connectionId, path) 解析身份，能自愈历史遗留的错位行
-  upsertSource(source, scanId)
-  return { itemId, castable: (existing?.scrapedAt ?? 0) === 0 }
+  return { itemId, scrapedAt: found?.scrapedAt ?? 0 }
 }
 
 /** 一个目录能给图片提供的落点 */
 interface ImageTarget {
-  /** 目录条目 ID（连接根没有条目，为空串） */
-  parentId: string
-  /** 视频基础名（小写）→ 视频路径 */
-  videoBases: Map<string, string>
-  /** 目录里只有一个视频时是它的路径，否则空串（连接根没有目录条目时靠它兜底） */
-  singleVideoPath: string
-}
-
-/** 按目录里的文件算出图片落点 */
-function buildImageTarget(
-  parentId: string,
-  files: readonly FileEntry[],
-  extensions: readonly string[],
-  minBytes: number
-): ImageTarget {
-  const videoBases = new Map<string, string>()
-  const videos = files.filter(
-    (file) => isVideoExtension(extensions, file.extname) && isBigEnoughVideo(file, minBytes)
-  )
-  for (const video of videos) videoBases.set(stripExtension(video.name).toLowerCase(), video.path)
-  return { parentId, videoBases, singleVideoPath: videos.length === 1 ? videos[0].path : '' }
-}
-
-/** 目录级图片的落点：优先目录条目，连接根下只有唯一影片时挂给它 */
-function dirTargetOf(connectionId: string, target: ImageTarget): string {
-  if (target.parentId.length > 0) return target.parentId
-  return target.singleVideoPath.length > 0 ? movieItemId(connectionId, target.singleVideoPath) : ''
+  /** 目录级固定名图片的落点（目录里的影片条目 / 目录条目），没有则空串 */
+  dirItemId: string
+  /** 目录名（小写）：`<目录名>-poster.jpg` 这类前缀名也挂目录级条目 */
+  dirBase: string
+  /** 视频基础名（小写）→ 影片条目 ID */
+  videoItems: Map<string, string>
 }
 
 /** 图片的归属（条目 + 用途）；认不出来的图片返回 null */
 function imageSlotOf(
-  connectionId: string,
   target: ImageTarget,
   image: FileEntry
 ): { itemId: string; type: MediaImageType } | null {
   const base = stripExtension(image.name).toLowerCase()
-  const sameName = target.videoBases.get(base)
-  if (sameName !== undefined) return { itemId: movieItemId(connectionId, sameName), type: 'primary' }
+  const sameName = target.videoItems.get(base)
+  if (sameName !== undefined) return { itemId: sameName, type: 'primary' }
   // `<视频基础名>-poster.jpg` 这类前缀命名
-  for (const [videoBase, videoPath] of target.videoBases) {
+  for (const [videoBase, itemId] of target.videoItems) {
     if (!base.startsWith(`${videoBase}-`)) continue
     const type = imageTypeOfBaseName(base.slice(videoBase.length + 1))
-    if (type !== null) return { itemId: movieItemId(connectionId, videoPath), type }
+    if (type !== null) return { itemId, type }
+  }
+  // `<目录名>-poster.jpg`：图片以目录名打头（多版本目录里视频名各不相同，只能这样认）
+  if (target.dirBase.length > 0 && base.startsWith(`${target.dirBase}-`)) {
+    const type = imageTypeOfBaseName(base.slice(target.dirBase.length + 1))
+    if (type !== null && target.dirItemId.length > 0) return { itemId: target.dirItemId, type }
   }
   const type = imageTypeOfBaseName(base)
-  if (type === null) return null
-  const itemId = dirTargetOf(connectionId, target)
-  return itemId.length > 0 ? { itemId, type } : null
+  if (type === null || target.dirItemId.length === 0) return null
+  return { itemId: target.dirItemId, type }
 }
 
 /**
@@ -347,7 +262,7 @@ function indexImages(
 ): void {
   for (const image of files) {
     if (!isImageEntry(image)) continue
-    const slot = imageSlotOf(connectionId, target, image)
+    const slot = imageSlotOf(target, image)
     if (!slot) continue
     upsertImage({
       id: mediaImageId(connectionId, image.path),
@@ -361,21 +276,6 @@ function indexImages(
     })
     result.seenImages.add(imageKey(connectionId, image.path))
   }
-}
-
-/**
- * 剧照 / 缩略图子目录（`extrafanart`、`extrathumbs`，以及它们下面一层的 `S1` 这类目录）
- * 里的图片属于上一层目录里的影片，返回那个锚点目录；普通目录返回 null。
- */
-export function extraArtAnchor(dirPath: string): string | null {
-  if (EXTRA_ART_DIR_NAMES.has(basenameRemotePath(dirPath).toLowerCase())) {
-    return dirnameRemotePath(dirPath)
-  }
-  const parent = dirnameRemotePath(dirPath)
-  if (parent !== FILE_ROOT && EXTRA_ART_DIR_NAMES.has(basenameRemotePath(parent).toLowerCase())) {
-    return dirnameRemotePath(parent)
-  }
-  return null
 }
 
 interface QueueNode {
@@ -399,6 +299,10 @@ export async function indexLibraryPath(
   const folderCache = new Map<string, string>()
   /** 已扫过的目录 → 图片落点（extra 目录要回头找上一层目录） */
   const targetByDir = new Map<string, ImageTarget>()
+  /** 已扫过的目录 → 该目录自己的条目 ID（根目录为空串），子项靠它认父亲 */
+  const itemIdByDir = new Map<string, string>()
+  itemIdByDir.set(libPath.path, '')
+  folderCache.set(`${libPath.connectionId}\n${libPath.path}`, '')
   const queue: QueueNode[] = [{ path: libPath.path, depth: 0 }]
   let cursor = 0
   let listed = 0
@@ -425,26 +329,69 @@ export async function indexLibraryPath(
       break
     }
     result.scannedDirs += 1
-    const parentId = ensureFolderItem(library, libPath.connectionId, node.path, folderCache)
     const files = entries.filter((entry) => entry.type === 'file')
-    const target = buildImageTarget(parentId, files, options.extensions, minBytes)
-    targetByDir.set(node.path, target)
+    // 花絮文件（`-trailer` / `-sample`…）既不入库，也不算某个版本的替代品
+    const videos = files.filter(
+      (file) =>
+        isVideoExtension(options.extensions, file.extname) &&
+        isBigEnoughVideo(file, minBytes) &&
+        extraKindOfName(stripExtension(file.name)).length === 0
+    )
+    const groups = movieGroupsOf(node.path, basenameRemotePath(node.path), videos, node.depth)
+    const parentId = itemIdByDir.get(dirnameRemotePath(node.path)) ?? ''
+    // 只有「自己没有影片」或「目录里有多个独立影片」的目录才额外建目录条目，
+    // 影片目录自己就是影片条目（同一路径不再有两条身份）
+    const folderId =
+      groups.length === 1 && groups[0].itemPath === node.path
+        ? ''
+        : ensureFolderItem(library, libPath.connectionId, node.path, folderCache)
     const nfoBases = collectNfoBases(files)
-    for (const file of files) {
-      if (!isVideoExtension(options.extensions, file.extname)) continue
-      if (!isBigEnoughVideo(file, minBytes)) continue
-      const indexed = indexVideo(
+    const itemIdByGroupPath = new Map<string, string>()
+    for (const group of groups) {
+      const indexed = indexMovieGroup(
         library,
         libPath.connectionId,
         options.scanId,
         parentId,
-        file,
-        hasNfoEvidence(file, nfoBases)
+        group,
+        nfoBases
       )
-      result.indexedVideos += 1
-      result.indexedFiles += 1
-      if (indexed.castable) await backfillCastFromNfo(client, indexed.itemId, files, file)
+      itemIdByGroupPath.set(group.itemPath, indexed.itemId)
+      result.indexedVideos += group.videos.length
+      result.indexedFiles += group.videos.length
+      await importMovieNfo(
+        client,
+        { id: indexed.itemId, path: group.itemPath, scrapedAt: indexed.scrapedAt },
+        files,
+        group.videos
+      )
     }
+    const ownItemId =
+      groups.length === 1 && groups[0].itemPath === node.path
+        ? (itemIdByGroupPath.get(node.path) ?? '')
+        : folderId
+    itemIdByDir.set(node.path, ownItemId)
+    // 把「目录 → 自己的条目」写进同一个缓存：子目录往上找父亲时直接命中，
+    // 不会给「本身就是影片条目的目录」再建一条同路径的目录条目
+    folderCache.set(`${libPath.connectionId}\n${node.path}`, ownItemId)
+    // 目录级图片挂目录自己的条目；连接根下只有一部影片时挂给它
+    const dirItemId =
+      ownItemId.length > 0
+        ? ownItemId
+        : (groups.length === 1 ? (itemIdByGroupPath.get(groups[0].itemPath) ?? '') : '')
+    const videoItems = new Map<string, string>()
+    for (const group of groups) {
+      const itemId = itemIdByGroupPath.get(group.itemPath) ?? ''
+      for (const video of group.videos) {
+        videoItems.set(stripExtension(video.name).toLowerCase(), itemId)
+      }
+    }
+    const target: ImageTarget = {
+      dirItemId,
+      dirBase: basenameRemotePath(node.path).toLowerCase(),
+      videoItems
+    }
+    targetByDir.set(node.path, target)
     // 剧照 / 缩略图子目录里的图片按上一层目录（锚点）归属；锚点没扫到时就不收
     const anchor = extraArtAnchor(node.path)
     const imageTarget = anchor === null ? target : targetByDir.get(anchor)
@@ -455,7 +402,10 @@ export async function indexLibraryPath(
       continue
     }
     for (const entry of entries) {
-      if (entry.type === 'directory') queue.push({ path: entry.path, depth: node.depth + 1 })
+      if (entry.type !== 'directory') continue
+      // 花絮目录整棵不下钻：里面的视频不入库，图片也不当正片素材
+      if (isExtraVideoDir(basenameRemotePath(entry.path))) continue
+      queue.push({ path: entry.path, depth: node.depth + 1 })
     }
   }
   return result

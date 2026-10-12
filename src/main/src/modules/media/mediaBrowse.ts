@@ -14,9 +14,9 @@ import type { ScrapeBrowseRequest } from '@common/types/scrape'
 import { stripExtension } from '@common/types/scrape'
 import type { MediaItemRow } from '$/db/schema/mediaItem'
 import { isSameOrInsidePath } from '$/db/repo/libraryRepo'
-import { listChildItems, listItems, listSourcesByItem } from '$/db/repo/mediaRepo'
+import { findItemByPath, listChildItems, listItems, listSourcesByItem } from '$/db/repo/mediaRepo'
 import { getLibrary } from '$/modules/library/libraryStore'
-import { folderItemId } from '$/modules/media/mediaIndexer'
+import { folderItemId } from '$/modules/media/mediaScanCommon'
 import { primarySourceOf } from './mediaWall'
 
 /** 目标目录属于哪个媒体目录（同一库内取最长命中） */
@@ -83,7 +83,8 @@ function toBrowseEntry(row: MediaItemRow, withMovies: Map<string, boolean>): Med
     path: row.path,
     name: row.name,
     num: row.num,
-    title: row.scrapedAt > 0 ? row.name : stripExtension(row.name),
+    title:
+      row.scrapedAt > 0 || source?.path !== row.path ? row.name : stripExtension(row.name),
     hasSource: sources.length > 0,
     size: source?.size ?? 0,
     modifiedAt: source?.modifiedAt ?? 0
@@ -105,6 +106,7 @@ export function browseLibrary(request: ScrapeBrowseRequest): MediaBrowseEntry[] 
 
   const dirPath = request.dirPath.trim()
   const parents: string[] = []
+  const withMovies = movieSubtree(library.id)
   if (dirPath.length === 0 || dirPath === FILE_ROOT) {
     for (const item of library.paths) {
       parents.push(item.path === FILE_ROOT ? '' : folderItemId(library.id, item.connectionId, item.path))
@@ -112,10 +114,15 @@ export function browseLibrary(request: ScrapeBrowseRequest): MediaBrowseEntry[] 
   } else {
     const owner = owningPath(library, dirPath)
     if (!owner) throw new MediaError('invalidArgument', '目录不在该资料库内')
+    // 目录自己就是影片条目时不会再建目录条目（Jellyfin 规范：一部影片一个文件夹），
+    // 这时把这部影片当它的内容返回，浏览不会走进空列表
+    const own = findItemByPath(owner.connectionId, dirPath)
+    if (own && own.libraryId === library.id && own.type === 'movie') {
+      return [toBrowseEntry(own, withMovies)]
+    }
     parents.push(folderItemId(library.id, owner.connectionId, dirPath))
   }
 
-  const withMovies = movieSubtree(library.id)
   const seen = new Set<string>()
   const entries: MediaBrowseEntry[] = []
   for (const parentId of parents) {

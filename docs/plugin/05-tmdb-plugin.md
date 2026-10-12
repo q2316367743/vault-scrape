@@ -196,7 +196,7 @@ TMDB 有两套凭据，插件把两面都留着，`env` 里**两项都 `required
    [刮削模块 §5.2 / §8](../scrape/01-scrape-module.md)。**插件侧能做的是「别乱填 `num`」**，其余交给宿主。
 2. **`detail.id` → `covers` / `extras` 的 `movieId`**：宿主拿 `detail` 返回的 id 继续调后两个方法，不是候选 id，所以两者都要能解析（§3）。
 3. **`detail.id` → NFO `<uniqueid>`**：`providerIds = { [pluginId]: detail.id }`，故用纯数字。
-4. **`series` / `label` / `maker` 只影响命名占位符**，不入库；`studio` 才入库（`metadataOf`）。本插件用 `studio` 装出品公司 / 电视台。
+4. **`series` / `label` / `maker` / `director` 各自入库**（`media_item` 的同名列，详情页「影片信息」按行展示），**同时也参与命名占位符**；`studio` 单独进 JSON 列 `studios`（详情页不展示）。本插件用 `studio` 装出品公司 / 电视台。
 5. **集剧照**：带 `episode: { season, index }` 才是「某集的剧照」，落成 `<集基础名>-thumb.<ext>`；`season` 缺省算第 1 季。
 6. **演员**：`detail.actors` 会被 `enqueueItemActorScrape` 按**姓名**写进 `media_cast` 并排队补全资料——
    TMDB 给的是英文名，所以演员页会多出一批英文名演员（限 15 个避免膨胀）。

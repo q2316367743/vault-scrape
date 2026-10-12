@@ -1,10 +1,12 @@
 /**
- * NFO 解析：把 Kodi 兼容的 movie.nfo 读回公共形状。
+ * NFO 解析：把 Kodi / Jellyfin 兼容的 NFO 读回公共形状。
  *
  * 契约：
  * - 纯函数，只用字符串扫描，不引第三方 XML 库，也不导入 `node:*`（本目录三端共享）；
- * - 字段口径与写入侧 `@common/types/scrape/nfo.ts` 的 `buildNfoXml` 对齐；
- * - 没有 `<movie>` 根或所有字段都为空时返回 `null`，绝不抛错；
+ * - 字段口径与写入侧 `@common/types/scrape/nfo.ts` / `tvNfo.ts` 的 `build*NfoXml` 对齐；
+ * - 按**根元素**分派 `kind`：`<movie>` / `<tvshow>` / `<season>` / `<episodedetails>`
+ *   （`<episode>` 也认成 `<episodedetails>`）；一个都不认识或所有字段都为空时返回 `null`，绝不抛错；
+ * - 剧集库的 `tvshow.nfo`、季的 `season.nfo`、集的 `<集名>.nfo` 都靠这条分派才能读出来；
  * - `parseNfoRestore` 只认本宿主写下的「刮削前位置」私有标签（`<originalfilename>` /
  *   `<originaldirectory>` / `<plantedfile>`），别的工具写的 NFO 一律返回 `null`。
  */
@@ -13,8 +15,13 @@ import type { NfoRestoreFile, NfoRestoreInfo } from '../scrape/nfo'
 
 export type { NfoRestoreFile, NfoRestoreInfo } from '../scrape/nfo'
 
-/** 从 NFO 读回的影片元信息：缺失字段统一给空串 / 0 / 空数组，调用方不必再判 undefined */
+/** NFO 的根元素种类 */
+export type NfoKind = 'movie' | 'tvshow' | 'season' | 'episode'
+
+/** 从 NFO 读回的元信息：缺失字段统一给空串 / 0 / 空数组 / null，调用方不必再判 undefined */
 export interface MediaNfoMeta {
+  /** 根元素决定的种类；调用方按它判断这份 NFO 是不是自己要的那一层 */
+  kind: NfoKind
   title: string
   /** 番号 */
   num: string
@@ -30,6 +37,18 @@ export interface MediaNfoMeta {
   /** 时长（分钟），0 表示未知 */
   duration: number
   tags: string[]
+  /** 年份（`<year>`，没有就取 `<premiered>` / `<aired>` 的前四位），没有为空串 */
+  year: string
+  /** 题材（`<genre>`） */
+  genres: string[]
+  /** 季号（`<seasonnumber>` / `<season>`），没有为 null */
+  seasonNumber: number | null
+  /** 集号（`<episode>`），没有为 null */
+  episodeNumber: number | null
+  /** 剧集名（`<showtitle>`，集 NFO 用），没有为空串 */
+  showTitle: string
+  /** 外部 ID（`<uniqueid type="tmdb">27205</uniqueid>`），没有为空对象 */
+  providerIds: Record<string, string>
 }
 
 /** 整个值包在 CDATA 里的写法，部分第三方 NFO 工具会这么写 */
@@ -86,13 +105,58 @@ function hasContent(meta: MediaNfoMeta): boolean {
     meta.director.length > 0 ||
     meta.releaseDate.length > 0 ||
     meta.duration > 0 ||
-    meta.tags.length > 0
+    meta.tags.length > 0 ||
+    meta.year.length > 0 ||
+    meta.genres.length > 0 ||
+    meta.seasonNumber !== null ||
+    meta.episodeNumber !== null ||
+    meta.showTitle.length > 0 ||
+    Object.keys(meta.providerIds).length > 0
   )
 }
 
+/**
+ * 根元素种类：认文档里第一个出现的已知根标签。
+ *
+ * 用「第一个出现的」而不是「最外层」：本解析器只做字符串扫描，不做嵌套校验，
+ * 而写入侧四种 NFO 的根标签一定在自己文档里最先出现，够用且不会误判子标签
+ * （`<episodedetails>` 里的 `<episode>` 排在它后面）。
+ */
+function rootKindOf(xml: string): NfoKind | null {
+  const matched = /<\s*(movie|tvshow|episodedetails|episode|season)\b/i.exec(xml)
+  if (!matched) return null
+  const name = (matched[1] ?? '').toLowerCase()
+  if (name === 'movie') return 'movie'
+  if (name === 'tvshow') return 'tvshow'
+  if (name === 'season') return 'season'
+  return 'episode'
+}
+
+/** 取第一个 `<name>` 里的非负整数（季号 / 集号可以是 0），取不到返回 null */
+function numberTagOf(xml: string, name: string): number | null {
+  const value = Number.parseInt(firstTag(xml, name), 10)
+  return Number.isFinite(value) && value >= 0 ? value : null
+}
+
+/** `<uniqueid type="tmdb" default="true">27205</uniqueid>` → `{ tmdb: '27205' }` */
+function uniqueIdsOf(xml: string): Record<string, string> {
+  const ids: Record<string, string> = {}
+  for (const item of allTagMatches(xml, 'uniqueid')) {
+    const key = attrOf(item.attrs, 'type').trim().toLowerCase()
+    const value = item.value.trim()
+    if (key.length === 0 || value.length === 0 || ids[key] !== undefined) continue
+    ids[key] = value
+  }
+  return ids
+}
+
 export function parseNfoXml(xml: string): MediaNfoMeta | null {
-  if (!/<movie\b/i.test(xml)) return null
+  const kind = rootKindOf(xml)
+  if (kind === null) return null
+  const releaseDate =
+    firstTag(xml, 'premiered') || firstTag(xml, 'aired') || firstTag(xml, 'releaseDate')
   const meta: MediaNfoMeta = {
+    kind,
     title: firstTag(xml, 'title'),
     num: firstTag(xml, 'num'),
     originalTitle: firstTag(xml, 'originaltitle'),
@@ -105,9 +169,15 @@ export function parseNfoXml(xml: string): MediaNfoMeta | null {
     studio: firstTag(xml, 'studio'),
     series: firstTag(xml, 'series'),
     director: firstTag(xml, 'director'),
-    releaseDate: firstTag(xml, 'premiered') || firstTag(xml, 'releaseDate'),
+    releaseDate,
     duration: durationOf(xml),
-    tags: allTags(xml, 'tag')
+    tags: allTags(xml, 'tag'),
+    year: firstTag(xml, 'year') || (/(?:19|20)\d{2}/.exec(releaseDate)?.[0] ?? ''),
+    genres: allTags(xml, 'genre'),
+    seasonNumber: numberTagOf(xml, 'seasonnumber') ?? numberTagOf(xml, 'season'),
+    episodeNumber: numberTagOf(xml, 'episode'),
+    showTitle: firstTag(xml, 'showtitle'),
+    providerIds: uniqueIdsOf(xml)
   }
   return hasContent(meta) ? meta : null
 }

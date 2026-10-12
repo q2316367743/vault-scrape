@@ -18,14 +18,15 @@
 import type { LibraryTaskResult, MediaLibrary, MediaLibraryPath } from '@common/types/library'
 import { LibraryError, LIBRARY_ERROR_MESSAGES } from '@common/types/library'
 import { dirnameRemotePath } from '@common/types/file'
+import { seriesKeywordOf } from '@common/types/media'
 import {
   ScrapeError,
   extractKeyword,
   normalizeNum,
-  seriesKeywordOf,
   type ScrapeScanEntry
 } from '@common/types/scrape'
 import { isSameOrInsidePath } from '$/db/repo/libraryRepo'
+import { primarySourceOf } from '$/modules/media/mediaWall'
 import { listPendingMovieItems, listSourcesByItem } from '$/db/repo/mediaRepo'
 import { listPendingSeriesItems, seriesStatsOf } from '$/db/repo/mediaSeriesRepo'
 import { startScrapeTaskForEntries } from '$/modules/scrape/scrapeRunner'
@@ -60,8 +61,7 @@ function collectMovieCandidates(library: MediaLibrary): LibraryScrapeCandidate[]
   const firstByKey = new Map<string, string>()
   const candidates: LibraryScrapeCandidate[] = []
   for (const item of listPendingMovieItems(library.id)) {
-    const sources = listSourcesByItem(item.id)
-    const source = sources.find((row) => row.path === item.path) ?? sources[0]
+    const source = primarySourceOf(item, listSourcesByItem(item.id))
     if (!source) continue
     // 体积过滤与扫描一致：读不到体积（0）时不排除
     if (minBytes > 0 && source.size > 0 && source.size < minBytes) continue

@@ -1,7 +1,6 @@
 export * from './keyword'
 export * from './media'
 export * from './asset'
-export * from './episode'
 export * from './naming'
 export * from './nfo'
 export * from './tvNfo'

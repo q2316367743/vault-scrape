@@ -7,13 +7,15 @@ import {
   FILE_ROOT,
   basenameRemotePath,
   extnameOf,
-  guessMimeType
+  guessMimeType,
+  joinRemotePath
 } from '@common/types/file'
 import type { FileClient } from '$/modules/file/FileClient'
 import type { PluginMovieDetail } from '@common/types/plugin'
 import {
   findSourceByPath,
   getItem,
+  listSourcesByItem,
   readItemMetadata,
   updateItem,
   updateSourcePath,
@@ -21,6 +23,7 @@ import {
 } from '$/db/repo/mediaRepo'
 import { parseNfoRestore } from '@common/types/media'
 import type { NfoRestoreFile, NfoRestoreInfo } from '@common/types/media'
+import { providerKeyOf } from '@common/types/scrape'
 import type { PlantedAsset } from './scrapeJobPlan'
 import type { ScrapeJobContext } from './scrapeJobTypes'
 
@@ -109,7 +112,14 @@ export function metadataOf(
     genres: detail.genres ?? [],
     studios: detail.studio ? [detail.studio] : detail.maker ? [detail.maker] : [],
     tags: detail.tags ?? [],
-    providerIds: pluginId.length > 0 ? { [pluginId]: detail.id } : (previous?.providerIds ?? {}),
+    maker: detail.maker ?? '',
+    label: detail.label ?? '',
+    series: detail.series ?? '',
+    director: detail.director ?? '',
+    // provider 名统一走 providerKeyOf：文件名里的 `[r18id-xxx]` 与 NFO 的
+    // `<uniqueid type="r18">` 是同一套键，扫描读回来才对得上
+    providerIds:
+      pluginId.length > 0 ? { [providerKeyOf(pluginId)]: detail.id } : (previous?.providerIds ?? {}),
     scraperId: pluginId.length > 0 ? pluginId : (previous?.scraperId ?? ''),
     scrapedAt: Date.now()
   }
@@ -131,8 +141,38 @@ export async function refreshSourcePath(
   fromPath: string,
   toPath: string
 ): Promise<void> {
-  const source = findSourceByPath(connectionId, fromPath)
   updateItem(itemId, { path: toPath })
+  await refreshSourceLocation(client, connectionId, fromPath, toPath)
+}
+
+/**
+ * 目录型条目整体换位置（整个影片目录改名 / 搬走）：条目路径与它下面**所有**媒体源一起改写。
+ *
+ * 与 `refreshSourcePath` 的区别是条目路径只写一次、视频文件本身没动（只是父目录变了），
+ * 所以这里**不能**把条目路径写成某个视频的路径，否则目录型条目会退化成单文件条目。
+ */
+export async function refreshItemDir(
+  client: FileClient,
+  connectionId: string,
+  itemId: string,
+  toDir: string
+): Promise<void> {
+  updateItem(itemId, { path: toDir })
+  for (const source of listSourcesByItem(itemId)) {
+    const nextPath = joinRemotePath(toDir, basenameRemotePath(source.path))
+    if (nextPath === source.path) continue
+    await refreshSourceLocation(client, connectionId, source.path, nextPath)
+  }
+}
+
+/** 只把媒体源的路径与体积 / 时间刷到新位置（不动条目路径） */
+async function refreshSourceLocation(
+  client: FileClient,
+  connectionId: string,
+  fromPath: string,
+  toPath: string
+): Promise<void> {
+  const source = findSourceByPath(connectionId, fromPath)
   if (!source) return
   const name = basenameRemotePath(toPath)
   try {

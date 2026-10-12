@@ -117,7 +117,7 @@ storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
 ### 7.2 NSFW 与 nfo
 
 - **NSFW**：`StorageBrowser.vue` 用 `useNsfwProtection(toRef(props, 'connection')).active`（应用总开关 + 该连接的 `nsfw` 标记同时成立）算出 `protect`，打开抽屉时定格并透传。视频由 `MediaPlayer` 的遮罩挡住，点击后才起播；图片走 `SensitiveImage` 的遮罩，点击后本实例放行。nfo 与其它文本不受影响。
-- **nfo**：`StorageNfoPreview.vue` 用 `t-tabs` 提供「解析字段 / 原始 XML」两个视图。解析视图用原生 `<dl>/<dt>/<dd>` 事实格，字段标签与影视墙详情页 `nfoCells`（`pages/media/detail/mediaDetailCells.ts`）同一套口径（标题 / 番号 / 原名 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 演员 / 标签），但**空字段直接不渲染**（详情页是 `—` 占位），`studio` 只在与片商不同的时候单列「制作」；剧情用只读 `t-textarea` 展示。`parseNfoXml` 只认带 `<movie>` 的 nfo，解析不出时提示「不是标准的 movie nfo」并引导切到原始 XML；原文读取失败用 `t-alert` 展示文件域的中文原因。
+- **nfo**：`StorageNfoPreview.vue` 用 `t-tabs` 提供「解析字段 / 原始 XML」两个视图。解析视图用原生 `<dl>/<dt>/<dd>` 事实格，**按 NFO 自身的字段口径**列出（标题 / 番号 / 原名 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 演员 / 标签），**空字段直接不渲染**（不占位 `—`），`studio` 只在与片商不同的时候单列「制作」；剧情用只读 `t-textarea` 展示。这里是全应用唯一按 NFO 原文展示字段的地方——影视墙详情页只展示落库后的元信息，不再有按 NFO 口径排列的信息块（见[影视墙页面](./04-media-wall-page.md) §4）。`parseNfoXml` 只认带 `<movie>` 的 nfo，解析不出时提示「不是标准的 movie nfo」并引导切到原始 XML；原文读取失败用 `t-alert` 展示文件域的中文原因。
 - **播放器搬家**：`MediaPlayer.vue` 与 `mediaPlayerI18n.ts` 已从 `pages/media/detail/`（原来在 `detail/components/` 下）移到共用目录 `src/renderer/src/components/media/`，影视墙详情页与存储页预览共用同一个组件；搬家时新增 `fallbackText` prop（默认值仍是影视墙那套「……也可以在影视墙里对资料库重新扫描一次」的文案），封面 `alt` 从「影片封面」改成通用的「封面」。
 
 ## 8. 弹窗与页面约定对齐

@@ -35,11 +35,11 @@ src/main/src/modules/scrape/
 ├── scrapeRunSlot.ts      # 运行槽位单例（takeRunSlot / releaseRunSlot / currentRun / isRunActive），批量任务与手动匹配共用
 ├── scrapeManualPolicy.ts # 手动匹配的策略小模块：任务名前缀、forced 内存表（rememberForced / forcedOf / forgetForced）、applyForcedMatch（localFirst:false + CLEAR_KEEP）、assertManualTaskResumable（重启后拒绝继续）
 ├── scrapeUsablePlugins.ts # 「资料库刮削器 ∩ 可用插件」挑选（usablePlugins / assertUsablePlugins / LibraryPlugins），任务与手动匹配共用
-├── scrapeFileJob.ts      # 单文件流水线**编排**：本地优先、跨影片信息插件补全、命名、下载、NFO、移动、条目回写，最后挂参演演员并排队补全
+├── scrapeFileJob.ts      # 单文件流水线**编排**：本地优先、跨影片信息插件补全、命名、下载、NFO、移动（目录型条目整体改名）、条目回写，最后挂参演演员并排队补全
 ├── scrapeSeriesJob.ts    # 剧集流水线**编排**（`runSeriesJob`）：一次处理**整部剧**——剧集目录改名、季目录对齐、tvshow.nfo / season.nfo / 每集 NFO 与集文件命名移动（见 §5.3）
 ├── scrapeJobTypes.ts     # 流水线的上下文与结果类型（ScrapeJobContext / ScrapeJobOutcome / ScrapeSettingsSnapshot / ScrapeLibraryPolicy / ScrapePluginRef，后者指向影片信息插件）
 ├── scrapeJobPlan.ts      # 计算与下载：基名、资源计划、跨影片信息插件收集（collectFromPlugins）、本地图片就位、向连接上传（downloadAsset）
-├── scrapeJobApply.ts     # 写回与收尾：元数据映射（metadataOf，`genres` 供剧集 NFO 的 `<genre>`）、媒体源路径刷新（refreshSourcePath，影视墙还原与剧集流水线也复用）、还原记录合并（mergeRestoreFiles / carryRestore，剧集与影片共用）、搬空后删原目录
+├── scrapeJobApply.ts     # 写回与收尾：元数据映射（metadataOf，`genres` 供剧集 NFO 的 `<genre>`）、媒体源路径刷新（refreshSourcePath 单文件条目 / refreshItemDir 目录型条目）、还原记录合并（mergeRestoreFiles / carryRestore，剧集与影片共用）、搬空后删原目录
 ├── scrapeSeriesAssets.ts # 剧集资源落盘：远端集索引（indexRemoteEpisodes，键 `<季>:<集号>`）、单张 kind 取舍、剧照命名、搬空目录清理（pruneEmptyDirs）
 ├── scrapeLayout.ts       # 目录规范：文件夹名 / 影片文件名 / NFO 文件名（三者同名）与工作目录解析（剧集流水线复用它的 movieFileName / nfoFileName）
 ├── scrapeLocalMeta.ts    # 本地优先：读同目录本地 NFO（parseNfoXml）与本地图片并归类（**剧集流水线暂不支持本地优先**）
@@ -52,7 +52,6 @@ src/main/src/modules/scrape/
 
 src/common/types/scrape/
 ├── keyword.ts   # 视频扩展名、关键词与番号解析、分盘标记
-├── episode.ts   # 剧集解析：季号（目录名优先，特别篇 → 0）、集号 parseEpisodeName、花絮目录词表 isExtraVideoDir、剧集关键词 seriesKeywordOf / seriesYearOf
 ├── media.ts     # 分盘标记归一化、partTokenOf
 ├── asset.ts     # 资源 kind → 文件名 / 相对路径的落盘计划
 ├── naming.ts    # 命名模板渲染、清洗、截断；剧集多的 renderSeasonFolderName / renderEpisodeTemplate
@@ -63,11 +62,13 @@ src/common/types/scrape/
 └── task.ts      # 任务快照、逐文件记录、扫描条目、进度事件
 ```
 
+> 命名规则（季号 / 集号 / 花絮目录与文件名 / 剧集关键词 / 影片名与版本）已统一到 `src/common/types/media/mediaRules.ts`：剧集与影片**共用同一套纯函数**（`parseEpisodeNumbers` / `seasonNumberOfDir` / `isExtraVideoDir` / `extraKindOfName` / `seriesKeywordOf` / `seriesYearOf` / `parseMediaName` / `isVersionOfFolder`），原来的 `src/common/types/scrape/episode.ts` 已删除。
+
 ## 3. 候选来源：资料库的待刮削条目
 
 刮削不再由「选存储 + 扫一层根目录」发起，候选与刮削器全部来自资料库（[资料库](../media/01-media-library.md)）：
 
-- `libraryScrape.pendingEntries(libraryId)` 取本库 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）；主源取 `path` 与条目 `path` 相同的那条，没有就用第一条；`keyword` 由 `extractKeyword(item.name)` 解析，识别不到时退回条目上的 `num`。**注意**：扫描后条目即使已有 NFO / 图片（影视墙显示「已刮削」），只要没真跑过刮削，`scrapedAt` 仍是 0，依旧会出现在候选里——展示口径与刮削队列口径是两件事。
+- `libraryScrape.pendingEntries(libraryId)` 取本库 `scrapedAt === 0` 的**影片**条目（`listPendingMovieItems`）；**主源统一走 `primarySourceOf(item, listSourcesByItem(item.id))`**（`mediaWall.ts`）：先取 `path` 与条目 `path` 相同的那条媒体源（文件型条目），否则取「基础名与条目目录名相同」的那个版本（**目录型条目**，见 §5.1），再退回第一条；`keyword` 由 `extractKeyword(item.name)` 解析，识别不到时退回条目上的 `num`。**注意**：扫描后条目即使已有 NFO / 图片（影视墙显示「已刮削」），只要没真跑过刮削，`scrapedAt` 仍是 0，依旧会出现在候选里——展示口径与刮削队列口径是两件事。
 - **体积过滤**：库级 `minFileSizeMb`（0 = 不过滤）在 `collectCandidates` 里直接排除小于该体积的媒体源（`source.size > 0 && size < minBytes`；读不到体积时放行），与扫描的过滤是同一口径（见 [资料库](../media/01-media-library.md)）。
 - **同目录 + 同番号只留第一条**：以「目录 + 番号（或清洗后的关键词）」为键，后出现的候选带 `duplicateOf = 先出现者的名称`，任务里会被置为 `skipped`（`与 … 同番号，已跳过`），避免重复下载资源。判定完全在主进程完成，渲染层只负责展示与禁止勾选。
 - **剧集库的候选是「整部剧」**：`libraryScrapeDispatch.pendingEntries` 在 `type === 'tv'` 时走 `pendingSeriesEntries` → `collectSeriesCandidates`，取本库 `scrapedAt === 0` 的 **series 条目**（`listPendingSeriesItems` + `seriesStatsOf`）；**不做体积过滤、剧集之间不去重**，`keyword = seriesKeywordOf(item.name)`（**剧集目录名**，清洗后去掉结尾年份，见 §5.3）、`num` 恒为空串。分组仍按 `(connectionId, owningPath)` 分组、一次只跑一组，任务行的 `path` 就是**剧集目录**（`scrapeRunner.runFiles` 里 `dirPath = isSeries ? item.path : dirnameRemotePath(item.path)`），一次任务处理整个剧集。
@@ -102,7 +103,7 @@ src/common/types/scrape/
 
 ### 5.1 目录规范
 
-刮削后的影片**一定**落在影片文件夹里，且文件夹名 = 影片文件名 = NFO 文件名 = `base`：
+刮削后的影片**一定**落在影片文件夹里，且文件夹名 = 影片文件名 = NFO 文件名 = `base`（文件名以父文件夹全名为前缀 —— 对齐 Jellyfin）：
 
 ```text
 <工作目录>/<base>/
@@ -118,12 +119,16 @@ src/common/types/scrape/
     └── fanart2.jpg
 ```
 
-- 工作目录（`rootDir`）= 库级 `moveEnabled` 为真时取 `resolveOutputDir(policy.moveDirectory, context.dirPath)`（空串 = 原地；以 `/` 开头按连接内绝对路径；否则视为连接根下的子目录），否则就是文件所在目录（`context.dirPath`）。**「移动」只是把整个影片文件夹挪到目标目录**：无论开不开移动，影片都会先进 `<工作目录>/<base>/`。
+- **先判条目形态**（`scrapeFileJob.ts:74-75`）：`dirTyped = getItem(entry.itemId)?.path === context.dirPath && item.path !== entry.path`。目录型条目 = 条目 `path` 是**影片文件夹**、任务行 `path`（`entry.path`）是里面的主版本视频，于是 `context.dirPath`（`dirnameRemotePath(entry.path)`）正好等于影片文件夹；文件型条目 = 条目 `path` 就是视频文件（散装、未成目录）。两形态走两条路：
+  - **目录型（Jellyfin 规范形态，占多数）**：`base` 从**目录名**算起（`originalBase = basenameRemotePath(context.dirPath)`，本地 NFO 也按目录名找），要改名就 `client.move(context.dirPath, movieDir)` **整体搬这个目录**，视频文件名**一个都不改** —— 多版本靠 `- 1080p` / `- dc` 这类后缀区分，改名会毁掉版本信息（并且会把其中一个版本挑出来当正片）；搬完 `refreshItemDir(client, connectionId, entry.itemId, movieDir)` 一次性把条目 `path` 与**所有**媒体源路径挪到新目录；**移动失败回落为「保持原目录」**（warn `影片目录改名失败（保持原目录）：…`、`base = 原目录名`，绝不退化成文件型条目），WebDAV 这类连接对目录移动能力不确定时要靠这条兜底；搬走后**不做**空父目录清理（`context.dirPath` 指的是已经搬走的旧路径）。
+  - **文件型**：视频 `client.move(entry.path, <movieDir>/<base><ext>)`（已在目标位置就不动），成功后就地 `refreshSourcePath(...)` 刷新这个源，再按设置决定要不要删搬空的原目录。
+- 工作目录（`rootDir`）= 库级 `moveEnabled` 为真时取 `resolveOutputDir(policy.moveDirectory, context.dirPath)`（空串 = 原地；以 `/` 开头按连接内绝对路径；否则视为连接根下的子目录）；否则 —— **目录型条目或当前目录已经叫 `base`**（上次刮削的成果）时取它的**上一层**（否则会套娃成 `<base>/<base>/`），其余取 `context.dirPath`。**「移动」只是把整个影片文件夹挪到目标目录**：无论开不开移动，影片都会先进 `<工作目录>/<base>/`。
+- 资料库根自己就是影片文件夹时（库直接指向某个影片目录，条目是目录型）只在原地按规范改名，不再套一层。
 - 文件名映射由 `src/common/types/scrape/asset.ts` 的 `resolveAssetName(kind, source, index, context)` 给出（`source` 是插件 URL 或本地已有文件名）：`thumb` / `poster` / `fanart` / `banner` / `logo` 是固定名（`FIXED_BASE_NAMES`，fanart → `backdrop`），`still` → `fanart<序号>.<ext>` 落在 `fanartDirName` 下，`trailer` → `trailer[序号].<ext>`；`naming.assetNaming === 'movie'` 时统一加 `{base}-` 前缀。扩展名由 URL / 原文件名推断（`assetExtension`；图片兜底 `jpg`、`logo` 兜底 `png`、视频兜底 `mp4`）。
 
 ### 5.2 流水线顺序
 
-1. **本地优先**（库级 `localFirst` 为真时）：`scrapeLocalMeta.readLocalMeta(client, { dirPath, originalBase, fanartDirName })` 读同目录的本地 NFO（候选 `${原基名}.nfo` → `movie.nfo`，用 `parseNfoXml` 解析，解析不出就当作没有）与本地图片（固定名 / `{原基名}-` 前缀名 / 与影片同名的图 / `extrafanart` 下的全部图片，按 `LocalImage.kind` 归类）。`needRemote = 没有可用本地详情 || 某个启用 kind 本地没有 || 本地 NFO 缺关键信息（needsRemoteInfo：缺简介、缺演员、片商 / 厂牌 / 系列全空）`——命中才联网，且**只补缺的**：`mergeDetail(本地, 远程)` 逐字段以本地非空值优先。本地详情够用且不缺资源时，结果行插件列写「本地 NFO」，一次网络请求都不发。
+1. **本地优先**（库级 `localFirst` 为真时）：`scrapeLocalMeta.readLocalMeta(client, { dirPath, originalBase, fanartDirName })` 读同目录的本地 NFO（候选 `${原基名}.nfo` → `movie.nfo`，用 `parseNfoXml` 解析；**目录型条目的「原基名」就是影片目录名**，而 `readLocalNfo` **只接受根元素 `<movie>`** —— 同一目录里放着 `tvshow.nfo` / `season.nfo` 之类时不会被当成影片元数据，解析不出或种类不符都当作没有）与本地图片（固定名 / `{原基名}-` 前缀名 / 与影片同名的图 / `extrafanart` 下的全部图片，按 `LocalImage.kind` 归类）。`needRemote = 没有可用本地详情 || 某个启用 kind 本地没有 || 本地 NFO 缺关键信息（needsRemoteInfo：缺简介、缺演员、片商 / 厂牌 / 系列全空）`——命中才联网，且**只补缺的**：`mergeDetail(本地, 远程)` 逐字段以本地非空值优先。本地详情够用且不缺资源时，结果行插件列写「本地 NFO」，一次网络请求都不发。
 2. **跨影片信息插件补全**：按可用插件顺序，第一个插件先 `search(keyword)` → `pickCandidate(candidates, num, keyword)` 选候选 → `detail(movieId)`；拿到详情后，只对「仍缺失的、且被下载选项勾选的」封面类（`thumb` / `poster` / `fanart` / `banner` / `logo`，走 `covers`）与花絮类（`still` / `trailer`，走 `extras`）请求资源。`isSatisfied(detail, assets, enabled)` 计入本地已就位的 kind，命中即 `break`——即「A 插件只刮到 NFO、B 插件补封面」的补全语义，同时提前停止避免多余请求。单个插件抛错只 `log.warn` 后继续下一个插件，不让一个坏插件毁掉整个文件。到最后一个插件都没有可信详情时：结果行 `failed`、消息 `未找到匹配的刮削结果`，文件留在原目录不动（原 `file.moveAfterFailure` 与 `path.failedOutputDir` 已随设置瘦身删除）。
     **强制候选**：`ScrapeJobContext.forced = { pluginId, movieId }`（`scrapeJobTypes.ts`）非空且命中当前插件时，**跳过 `search` 与候选挑选**，直接用该 `movieId` 调 `detail`，其余（`covers` / `extras` 补全、`isSatisfied` 提前停止）不变。它由详情页「手动匹配」随任务传入：`scrapeManualMatch.matchItemManually` → `startScrapeTaskForEntries({ …, forced })` → `scrapeManualPolicy` 的内存表（`rememberForced` / `forcedOf`）→ `execute()` 取出后经 `applyForcedMatch(policy, settings, forced)` ① 把 `forced` 传给 `runFiles` / `ScrapeJobContext`，② 把 policy 改成 `localFirst: false`，③ 把 `settings.download` 的 5 个 `keepXxx` 全置 false（`CLEAR_KEEP`），任务结束时 `forgetForced(task.id)`。影片与剧集共用同一个 `collectFromPlugins`，所以两条流水线都支持（见 [手动匹配](../media/04-manual-match.md)）。
    **候选匹配口径**（`scrapeMatcher.ts`）：`num` 非空时先找 `isSameNum` 相等的候选；**对不上不再直接判失败**，而是与没有 `num` 时同路走**标题判定**——唯一候选 → 候选标题包含关键词 → 关键词包含候选标题（`normalizeNum` 后 ≥3 字符才算，多条命中取**标题最长**的一条）。这条回落是给**没有番号概念**的插件（如 [TMDB](../plugin/05-tmdb-plugin.md)）留的路：`Inception.2010.1080p.BluRay.mkv` 会被宿主猜出番号 `INCEPTION 2010`（见 §3），而插件候选不带番号，硬卡番号就永远匹配不上；副作用是番号对不上的成人站点插件也会转向标题判定。
@@ -134,9 +139,11 @@ src/common/types/scrape/
    - 每个落盘成功的资源都进 `planted`，最后统一转成 `media_image` 行（`connectionId` 就是真实连接，**图片一定与影片同目录**，没有 `imageSaveMode`）。
 5. **NFO 一律写**：`buildNfoXml(detail, settings.naming, artworkOf(planted), restore)` 写到 `<base>.nfo`（`overwrite: true`），并带上 `<thumb aspect="poster">` / `<banner>` / `<logo>` / `<fanart>` 等图片标签，让 NFO 自带封面信息。写成功后，如果这一步读过一份路径不同的本地 NFO，就删掉它（信息已经并进新 NFO，留着只会两份不一致）。
    NFO 末尾还会写一段**还原记录**，供影视墙的「还原刮削前」用（见[影视墙页面 §4](../page/04-media-wall-page.md)）：`<originalfilename>` 是刮削前的视频文件名、`<originaldirectory>` 是刮削前所在目录，另外本次**真的写下或搬过**的附属文件各一条 `<plantedfile relative="…" original="…" />`——联网下载的图片 / 预告片没有 `original`（还原时直接删），被 `adoptLocalImage` 改名就位的本地图片带 `original`（还原时搬回去）；沿用磁盘上已有文件（保留设置跳过）与没挪过位置的本地图片都不进记录，免得还原时删掉用户自己的文件。取值时机在移动视频之前，此时 `context.dirPath` + `entry.name` 正是刮削前的位置。如果这一步读到的旧本地 NFO 里已经带还原记录，新 NFO **原样沿用最外层那一份**位置（`fileName` / `directory` 保持最初的值），文件记录则是「本次写下 / 搬动的 + 旧的、这次没再出现的搬动记录（原文件还在时）」的合并结果——所以反复刮削后还原仍然回到最初的位置；旧版本刮削的 NFO 没有这段记录时，还原退化成「只清数据 + 删 NFO」。
-6. **移动视频并回写**：`client.move(entry.path, <movieDir>/<base><ext>, { overwrite: false })`（已在目标位置就不动），失败抛 `ScrapeError('moveFailed')`；成功后就地 `refreshSourcePath(context, targetPath)` 更新 `media_source.path`（源 id 不变），`settings.file.removeEmptyFolder` 为真时再删掉搬空的原目录（`removeSourceFolderIfEmpty`：原目录不等于影片目录、不是连接根、不在该库的根目录清单里、且 `list` 为空才删）。
+6. **移动视频并回写**（按形态走两条路，形态判定见 5.1）：
+   - **目录型**：整个影片目录已在第 2 步改好名（`client.move(context.dirPath, movieDir)`），这一步**不动视频文件名**，只用 `<movieDir>/<原视频名>` 作为结果行里的新路径 / `finalPath`；条目路径与**所有**媒体源路径已由 `refreshItemDir` 一次性改完，也不做空目录清理（`context.dirPath` 已是搬走的旧路径）。
+   - **文件型**：`client.move(entry.path, <movieDir>/<base><ext>, { overwrite: false })`（已在目标位置就不动），失败抛 `ScrapeError('moveFailed')`；成功后就地 `refreshSourcePath(context, targetPath)` 更新 `media_source.path`（源 id 不变），`settings.file.removeEmptyFolder` 为真时再删掉搬空的原目录（`removeSourceFolderIfEmpty`：原目录不等于影片目录、不是连接根、不在该库的根目录清单里、且 `list` 为空才删）。
 
-之后把结果**直接写回条目**：`updateItemMetadata(entry.itemId, metadataOf(detail, entry.num, pluginId, entry.itemId))` 整组覆盖刮削元数据（标题 / 番号 / 简介 / 评分 / 类型 / 外部 ID / `scrapedAt` / `scraperId`；本地优先跳过联网时沿用上次的 `providerIds` / `scraperId`），`replaceItemImages(entry.itemId, images)` 整组替换条目图片（**注意**：它先整组 delete 再 upsert，所以本地保留下来的图片也必须进 `images`，否则会被删掉）。**落盘后不需要额外通知扫描**：下一次扫描会按用途把这些产物（固定名、`{视频基名}-` 前缀名与 `extrafanart` 下的 `fanartN`）收进 `media_image`，并据此把条目算成「已刮削」（见 [资料库](../media/01-media-library.md)）。
+之后把结果**直接写回条目**：`updateItemMetadata(entry.itemId, metadataOf(detail, entry.num, pluginId, entry.itemId))` 整组覆盖刮削元数据（标题 / 番号 / 简介 / 评分 / 类型 / 片商 / **厂牌 / 系列 / 导演** / 外部 ID / `scrapedAt` / `scraperId`；本地优先跳过联网时沿用上次的 `providerIds` / `scraperId`）。`metadataOf` 里片商 / 厂牌 / 系列 / 导演是**各自一列**（`detail.maker` / `label` / `series` / `director`），只有 `studio` 仍进 JSON 列 `studios`——以前这四项被压进 `studios` 或干脆丢掉，详情页要显示就只能去读磁盘 NFO，现在直读库（见[影视墙页面 §4](../page/04-media-wall-page.md)）。`replaceItemImages(entry.itemId, images)` 整组替换条目图片（**注意**：它先整组 delete 再 upsert，所以本地保留下来的图片也必须进 `images`，否则会被删掉）。**落盘后不需要额外通知扫描**：下一次扫描会按用途把这些产物（固定名、`{视频基名}-` 前缀名与 `extrafanart` 下的 `fanartN`）收进 `media_image`，并据此把条目算成「已刮削」（见 [资料库](../media/01-media-library.md)）。
 
 写库失败只影响这一个文件的结果行，不影响任务其余文件；条目图片在没有刮到图片时保持原样。
 
@@ -165,6 +172,8 @@ src/common/types/scrape/
 ```
 
 **流程**：① `pickSeriesCandidate` 取详情（拿不到 → 结果行 `failed`「未找到匹配的刮削结果」，目录不动）；② 算剧集目录名后整树 `client.move` + `replacePathPrefix(libraryId, 旧前缀, 新前缀)`——**一次改写 `media_item` / `media_source` / `media_image` 三类路径，条目 id 与父子关系不动**，移动失败降级为逐集移动并 warn；③ 剧集级资源 + `tvshow.nfo`（`landAssets` + `carryRestore` + `mergeRestoreFiles`）；④ 逐季建季目录 + 季海报 + `season.nfo`；⑤ 逐集改名 / 移动 + 剧照 + 集 NFO + 回写元数据（`updateItemMetadata` + `updateItem` + `replaceItemImages`）；⑥ 剧集条目回写 + `enqueueItemActorScrape` + `pruneEmptyDirs`（只删空目录，跳过 `/`、库根及其祖先）。
+
+**同集多版本**：同一季同集号的多个文件（`S01E01.mkv` + `S01E01 - 1080p.mkv`）在扫描侧合成**一条** `episode`（条目 `path` = 自然序第一个，即主版本）。刮削时**只有主版本**会被改名 / 移动 —— `scrapeSeriesJob.ts:267-270` 的 `isPrimary = episodeItem === null || episodeItem.path === file.path`，非主版本 `finalBase = finalPath === targetPath ? base : baseNameOf(file.name)` 保持原文件名；但**每个版本各自写一份自己的同名集 NFO**（扫描侧逐个版本试读，见[资料库 §4.6](../media/01-media-library.md)），元数据只回写一次。详情页本期只播主版本，版本切换 UI 留后续。
 
 **剧集还原记录**：三件套都带还原记录，与影片共用 `nfo.ts` 的 `appendRestore` / `parseNfoRestore`。剧集根记「原剧集目录名 + 原目录」，季记季目录，**集记「原集文件名 + 原目录」**（这是「还原刮削前」逐集搬回的唯一依据）；旧 NFO 里的记录由 `mergeRestoreFiles` 合并、位置沿用最外层那一份，所以反复刮削仍回到最初位置；`carryRestore(context, nfoPath, fallback)` 负责在移动前后把记录带到新路径。
 
@@ -229,3 +238,8 @@ src/common/types/scrape/
     - 资料库 `scrapers` 为空或插件都停用 → 弹窗只显示「去资料库配置」的提示，**不出现搜索框**。
     - 先启动一次整库刮削，再开手动匹配 → 点「使用所选」立即提示「已有刮削任务在运行，请先等待或取消」；反过来在手动匹配跑的时候启动整库刮削也应同样被挡。
     - 进度页手动匹配这条任务可以「取消」；**重启应用后**再点它的「继续」应提示「手动匹配的任务在应用重启后无法继续，请在详情页重新手动匹配」。
+22. **目录型条目 + 多版本合并**（扫描与刮削的接缝）：影片库里放 `Mr. Nobody (2009)/Mr. Nobody (2009) - 1080p.mkv` 与 `Mr. Nobody (2009)/Mr. Nobody (2009) - 2160p.mp4` → 扫描后影视墙只有**一条**该影片（标题用**目录名整名**，不该被截成 `Mr`），详情页能播（主版本）；删掉 1080p 那个文件再扫一次，条目、标题、封面仍在（只少一条 `media_source`，`scraped_at` 不被清零）；抓一下条目 `path` 应等于影片目录。
+23. **花絮不入库**：同一影片目录里放整名就叫 `sample.mkv` 的文件，再加 `trailers/xxx.mkv`、`featurettes/xxx.mkv` → 扫描结果里不该出现任何独立影片条目，也不该进待刮削候选（花絮目录整棵不下钻）。
+24. **扫描读 NFO（不联网）**：手工放一份 `movie.nfo`（根 `<movie>`，含 `<title>` / `<plot>` / `<actor>`）再扫描 → 该条目仍是「待刮削」（`scrapedAt = 0`），但墙上标题、简介已来自 NFO、参演演员已挂上；再把 `tvshow.nfo` 放进同一目录 → 不该被当成影片元数据（根元素不符，按种类丢弃）。
+25. **刮目录型条目**：给一个已有多个版本的影片目录配好插件后刮削 → 目录被改成 `<片名 (年份)>/`、**里面所有视频的文件名一个都没动**（`- 1080p` 后缀必须保留）、目录里出现 `<目录名>.nfo`，结果行消息带上新路径；随后重扫仍是同一条目，**不会裂成「两个影片」**（目录型不改文件名正是为了这个）。
+26. **NFO 三类都能读到（剧集）**：给剧集目录放 `tvshow.nfo`、季目录放 `season.nfo`、集放与集文件同名的 NFO → 扫描后剧集 / 季 / 集三层 `hasNfo` 都为真，三层标题与简介都入库（原先「剧集写 `tvshow.nfo` 却扫不到」的 bug 已修）。

@@ -97,7 +97,8 @@ export async function clearSeriesNfo(item: MediaItemRow): Promise<MediaClearNfoR
     deleteImagesByItem(season.id)
 
     for (const episode of listEpisodeItems(libraryId, season.id)) {
-      const source = primarySourceOf(episode, listSourcesByItem(episode.id))
+      const sources = listSourcesByItem(episode.id)
+      const source = primarySourceOf(episode, sources)
       if (!source) {
         // 扫描之后文件已不在：只能清库内刮削数据
         clearItemMetadata(episode.id, { name: episode.name, num: '' })
@@ -106,9 +107,10 @@ export async function clearSeriesNfo(item: MediaItemRow): Promise<MediaClearNfoR
         continue
       }
 
-      // NFO 跟集文件同名，而条目 `name` 已经被刮削标题覆盖，名字只能从媒体源文件名反推
+      // NFO 跟集文件同名，而条目 `name` 已经被刮削标题覆盖，名字只能从媒体源文件名反推；
+      // 同一集的多个版本各自有一份 NFO，全都要删干净
       const episodeDir = dirnameRemotePath(source.path)
-      const names = [nfoFileName(stripExtension(source.name))]
+      const names = sources.map((row) => nfoFileName(stripExtension(row.name)))
       const episodeRecord = await readRestore(client, episodeDir, names)
       removedNfo.push(...(await removeNfoFiles(client, episodeDir, names)))
       const episodePlanted = await restorePlantedFiles(

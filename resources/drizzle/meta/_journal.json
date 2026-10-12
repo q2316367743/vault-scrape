@@ -15,6 +15,13 @@
       "when": 1791723751732,
       "tag": "0001_familiar_lifeguard",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1791786114428,
+      "tag": "0002_soft_masked_marvel",
+      "breakpoints": true
     }
   ]
 }

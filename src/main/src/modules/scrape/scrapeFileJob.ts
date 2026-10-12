@@ -40,8 +40,14 @@ import {
 } from '@common/types/scrape'
 import { enqueueItemActorScrape } from '$/modules/actor/actorScrape'
 import { replaceItemImages, type MediaImageDraft } from '$/db/repo/mediaImageRepo'
-import { updateItemMetadata } from '$/db/repo/mediaRepo'
-import { mergeRestoreFiles, metadataOf, refreshSourcePath, removeSourceFolderIfEmpty } from './scrapeJobApply'
+import { getItem, updateItemMetadata } from '$/db/repo/mediaRepo'
+import {
+  mergeRestoreFiles,
+  metadataOf,
+  refreshItemDir,
+  refreshSourcePath,
+  removeSourceFolderIfEmpty
+} from './scrapeJobApply'
 import {
   IMAGE_KIND_TYPE,
   SINGLE_KINDS,
@@ -63,7 +69,13 @@ import { mergeDetail, needsRemoteInfo, readLocalMeta } from './scrapeLocalMeta'
 export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOutcome> {
   const { entry, settings, client, policy } = context
   const enabled = enabledAssetKinds(settings.download)
-  const originalBase = baseNameOf(entry.name)
+  // 条目是「目录型」（条目路径 = 影片文件夹，视频在它里面）还是「文件型」（条目路径就是视频）。
+  // 目录型占多数：Jellyfin 规范就是一个影片一个文件夹。
+  const item = getItem(entry.itemId)
+  const dirTyped = item !== null && item.path === context.dirPath && item.path !== entry.path
+  // 目录型条目的视频文件名带着版本信息（`- 1080p` / `- dc`）或多版本共存：一律不改名，
+  // 基础名取**目录名**（本地 NFO 也按目录名找），要改名就整体搬这个目录
+  const originalBase = dirTyped ? basenameRemotePath(context.dirPath) : baseNameOf(entry.name)
   const extension = extensionOf(entry.name)
 
   // 1. 本地优先：先看本地 NFO 与本地图片，本地有的东西不再上网
@@ -100,17 +112,38 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
   }
 
   // 2. 目录规范：文件夹名 / 视频文件名 / NFO 文件名三处同值
-  const base = resolveVideoBase(detail, originalBase, settings.naming)
+  // 资料库根目录自己就是影片文件夹时（库直接指向某个影片目录 = 目录型条目）不改这一层的名字，
+  // 否则会套娃成 `<影片目录>/<base>/`
+  const atLibraryRoot = policy.libraryRoots.includes(context.dirPath)
+  let base = resolveVideoBase(detail, originalBase, settings.naming)
+  if (dirTyped && atLibraryRoot) base = originalBase
   // 原地整理时若当前目录已经叫 base（上次刮削的成果），rootDir 取它的上一层，
-  // 否则会套娃成 `<base>/<base>/`；移动模式下 rootDir 由移动目录决定，不受影响
+  // 否则会套娃成 `<base>/<base>/`；移动模式下 rootDir 由移动目录决定，不受影响。
+  // 目录型条目同理：它已经在自己的文件夹里，rootDir 必须取上一层，改的就是这个文件夹的名字
   const alreadyOrganized = basenameRemotePath(context.dirPath) === base
   const rootDir = policy.moveEnabled
     ? resolveOutputDir(policy.moveDirectory, context.dirPath)
-    : alreadyOrganized
+    : alreadyOrganized || dirTyped
       ? dirnameRemotePath(context.dirPath)
       : context.dirPath
-  const movieDir = movieDirOf(rootDir, base)
-  if (movieDir !== context.dirPath) await client.mkdir(movieDir, { recursive: true })
+  let movieDir = dirTyped && atLibraryRoot ? context.dirPath : movieDirOf(rootDir, base)
+  if (dirTyped) {
+    // 视频文件不动，整目录搬到规范名字下；搬不动就保持原目录，绝不改成文件型条目
+    if (movieDir !== context.dirPath) {
+      try {
+        await client.mkdir(dirnameRemotePath(movieDir), { recursive: true })
+        await client.move(context.dirPath, movieDir, { overwrite: false })
+        await refreshItemDir(client, context.connectionId, entry.itemId, movieDir)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '未知错误'
+        context.log.warn(`影片目录改名失败（保持原目录）：${message}`)
+        base = originalBase
+        movieDir = context.dirPath
+      }
+    }
+  } else if (movieDir !== context.dirPath) {
+    await client.mkdir(movieDir, { recursive: true })
+  }
   const assetContext: ScrapeAssetContext = {
     videoBase: base,
     naming: settings.naming,
@@ -211,8 +244,12 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
   }
 
   // 6. 视频落到影片文件夹里（文件名与文件夹名一致）
-  const targetPath = joinRemotePath(movieDir, movieFileName(base, extension))
-  if (targetPath !== entry.path) {
+  // 目录型条目不碰视频文件名：多版本靠 `- 1080p` 之类的后缀区分，改名会毁掉版本信息，
+  // 而且同一个文件夹里的多个版本都属于这一个条目，改名只会把其中一个挑出来
+  const targetPath = dirTyped
+    ? joinRemotePath(movieDir, basenameRemotePath(entry.path))
+    : joinRemotePath(movieDir, movieFileName(base, extension))
+  if (!dirTyped && targetPath !== entry.path) {
     try {
       await client.move(entry.path, targetPath, { overwrite: false })
     } catch (error) {

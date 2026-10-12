@@ -2,21 +2,23 @@
  * 影视墙（媒体库）的公共形状。
  *
  * 契约：
- * - 墙面以 `media_item`（条目）为准，一个视频文件 = 一个 Movie 条目；
+ * - 墙面以 `media_item`（条目）为准，影视库一个**影片目录**（或库根下的单个视频）= 一个 Movie 条目，
+ *   同一目录里以目录名为前缀的多个视频是该条目的多个版本（多个媒体源）；
  *   条目属于哪个资料库是**真实外键**（`libraryId`），不再按路径前缀推导；
- * - 元数据（标题、简介、番号、图片）来自刮削结果，写在条目与 `media_image` 上，
+ * - 元数据（标题、简介、番号、图片）来自刮削结果与扫描读到的 NFO，写在条目与 `media_image` 上，
  *   所以重扫不会丢元数据，磁盘上删掉的影片会在扫描清理时从墙上消失；
  * - 路径一律是连接内绝对路径，封面与播放地址一律是 `storage://` 协议地址（封面空串表示没有封面）；
- * - 播放地址由主进程用媒体源 ID 构造，渲染层拿不到磁盘路径、也构造不出越权地址。
+ * - 播放地址由主进程用媒体源 ID 构造，渲染层拿不到磁盘路径、也构造不出越权地址；
+ * - 目录 / 文件名规则（年份、版本标签、季集号、花絮识别）见 `./mediaRules`。
  */
 import type { MediaLibrarySummary } from '../library'
-import type { MediaNfoMeta } from './nfo'
 import type { MediaImageType } from './source'
 
 export { parseNfoRestore, parseNfoXml } from './nfo'
-export type { MediaNfoMeta, NfoRestoreFile, NfoRestoreInfo } from './nfo'
+export type { MediaNfoMeta, NfoKind, NfoRestoreFile, NfoRestoreInfo } from './nfo'
 export type { MediaLibrarySummary } from '../library'
 export * from './error'
+export * from './mediaRules'
 export * from './result'
 export * from './source'
 
@@ -149,13 +151,43 @@ export interface MediaDetailImage {
   url: string
 }
 
+/**
+ * 详情页的元信息：**全部来自本地库**（`media_item` 的刮削列）。
+ *
+ * 契约：主进程从库里组装，详情页不再为此读磁盘 NFO —— 刮削（插件）与扫描（NFO）
+ * 都会把这几个字段落库，所以列表与详情看到的是同一份数据，进详情页不产生磁盘 / 网络往返。
+ * 没刮削过的条目各字段是空值（空串 / 0 / 空数组），渲染层按「没内容就不画」处理。
+ */
+export interface MediaDetailMeta {
+  /** 展示名（刮削标题）；没刮过时是空串，渲染层回落到 `item.name` */
+  title: string
+  /** 番号 */
+  num: string
+  /** 原名 */
+  originalTitle: string
+  /** 简介 */
+  plot: string
+  /** 片商 */
+  maker: string
+  /** 厂牌 */
+  label: string
+  /** 系列 */
+  series: string
+  /** 导演 */
+  director: string
+  /** 发行日期（`YYYY-MM-DD`） */
+  releaseDate: string
+  /** 时长（分钟），0 表示没读到 */
+  duration: number
+  /** 标签 */
+  tags: string[]
+}
+
 export interface MediaDetailResult {
   /** 与墙上同一套解析结果；找不到该条目时主进程直接报错，不会返回空 item */
   item: MediaWallItem
-  /** 同目录 NFO 的解析结果；没有 NFO 或解析失败时为 null */
-  meta: MediaNfoMeta | null
-  /** 实际读到的 NFO 路径；没读到为空串 */
-  nfoPath: string
+  /** 库里的元信息；没刮削过的条目各字段为空值 */
+  meta: MediaDetailMeta
   /** 该影片的参演演员，按出演顺序；没有演员时为空数组 */
   actors: MediaActorRef[]
   /**
