@@ -1,5 +1,5 @@
 <template>
-  <div class="play-stage">
+  <div class="play-stage" :class="{ 'is-transparent': transparent }">
     <div ref="box" class="play-stage-canvas" @dblclick="onDblclick"></div>
     <div v-if="waiting" class="play-stage-waiting">
       <t-loading size="small" />
@@ -18,6 +18,8 @@
  * 契约：
  * - 这一块矩形**必须与 `playerStageRect` 算出来的视频区逐像素一致**（不加 margin / padding / 边框），
  *   Windows 下 mpv 的宿主窗口就贴在这块矩形上，偏一点画面就错位；
+ * - `transparent`（= `PlayerLayoutState.transparentStage`）为真时整块透明：macOS 下 mpv 是独立窗口，
+ *   播放窗口的这一块必须挖空，否则不透明的黑底会把 mpv 画面整块盖住；内置后端永远不透明；
  * - 容器元素通过 `stage` 事件交给窗口层（`usePlaySession.attachStage`），artplayer 挂上去；
  * - 双击切全屏；mpv 嵌入时点击其实落在宿主页上（`windows/host/HostApp.vue`），这里的双击只服务内置后端。
  */
@@ -28,6 +30,8 @@ const props = defineProps<{
   state: PlayerState
   /** 需要向用户说明的话（`usePlaySession.notice`） */
   notice: string
+  /** 视频区透明（macOS 给 mpv 独立窗口挖洞；当前不启用），默认纯黑 */
+  transparent?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -54,6 +58,11 @@ onBeforeUnmount(() => emit('stage', null))
   overflow: hidden;
   /* 视频区一律纯黑：letterbox 的底色由画面决定，不跟随主题 */
   background-color: #000;
+}
+
+/* 挖洞模式：透出下层 mpv 的独立窗口（当前不启用：macOS 已停用 mpv，`transparentStage` 恒为 false） */
+.play-stage.is-transparent {
+  background-color: transparent;
 }
 
 .play-stage-canvas {

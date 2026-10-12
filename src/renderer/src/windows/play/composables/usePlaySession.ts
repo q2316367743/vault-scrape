@@ -8,12 +8,15 @@
  *   渲染层据此切到 artplayer 并从 `position` 续播，同时把 `error` 原样提示；
  * - 命令按当前后缘分发：mpv 走 IPC，html5 直接调 artplayer；`fullscreen` 两个后端都交给主进程
  *   （嵌入模式下 mpv 管不了父窗口，全屏只能是窗口层的事）；
+ * - 排法（全屏 / 控制条占不占一行 / 视频区要不要透明）由主进程算，`player:layout` 推来；
+ *   主进程在「后端变化、页面加载完、进出全屏」时都会补推一次；
  * - 地址变化一律销毁重建 artplayer，避免上一部影片的缓冲与错误残留。
  */
-import { ref, type Ref } from 'vue'
+import { computed, ref, type Ref } from 'vue'
 import Artplayer from 'artplayer'
 import type { PlayerCommand, PlayerLoadResult, PlayerState } from '@common/types/player'
 import { buildPlayerState } from '@common/types/player'
+import type { PlayerLayoutState } from '@common/types/player/layout'
 import { playerApi } from '@/api'
 import { artplayerI18n } from '@/components/media/mediaPlayerI18n'
 
@@ -22,6 +25,8 @@ export interface PlaySession {
   state: Ref<PlayerState>
   /** 这次装载用的是哪个后端、播的什么地址、装的是哪个条目 */
   result: Ref<PlayerLoadResult | null>
+  /** 主进程推来的排法：全屏 / 控制条占不占一行 / 视频区要不要透明 */
+  layout: Ref<PlayerLayoutState>
   /** 窗口是不是全屏（全屏时收起标题栏、侧栏与控制条） */
   fullscreen: Ref<boolean>
   /** 非空时向用户提示这句话：mpv 起不来 / 播放中途退出 */
@@ -39,7 +44,9 @@ export interface PlaySession {
 export function usePlaySession(): PlaySession {
   const state = ref<PlayerState>(buildPlayerState())
   const result = ref<PlayerLoadResult | null>(null)
-  const fullscreen = ref(false)
+  // 主进程还没推之前按「独占一行 + 纯黑」算（改动前的行为），避免第一帧就摆错
+  const layout = ref<PlayerLayoutState>({ fullscreen: false, controlBarRow: true, transparentStage: false })
+  const fullscreen = computed(() => layout.value.fullscreen)
   const notice = ref('')
 
   let stage: HTMLDivElement | null = null
@@ -110,7 +117,7 @@ export function usePlaySession(): PlaySession {
     player.on('video:ratechange', () => sync({ rate: player.playbackRate }))
     player.on('video:ended', () => sync({ ended: true, paused: true, buffering: false }))
     player.on('video:error', () =>
-      sync({ ready: false, error: '内置播放器读不出这个视频：文件可能已被移动或删除，也可能是封装 / 编码放不了。' })
+      sync({ ready: false, error: '内置播放器放不了这个视频：文件可能已被移动或删除，也可能是视频格式不受支持。' })
     )
   }
 
@@ -150,8 +157,8 @@ export function usePlaySession(): PlaySession {
     unsubscribe = [
       playerApi.onState(onMainState),
       playerApi.onSwitch(applyResult),
-      playerApi.onLayout((layout) => {
-        fullscreen.value = layout.fullscreen
+      playerApi.onLayout((next) => {
+        layout.value = next
       })
     ]
     applyResult(await playerApi.load())
@@ -196,6 +203,7 @@ export function usePlaySession(): PlaySession {
   return {
     state,
     result,
+    layout,
     fullscreen,
     notice,
     attachStage: (el) => {

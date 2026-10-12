@@ -9,7 +9,11 @@
  * - 独立窗口模式（macOS）用 `--no-border` + `--geometry`；
  * - 只刻意避开版本相关的开关（如 `--focus-on-open`、`--window-dragging`）：参数不认识时 mpv 会直接退出，
  *   而那正是「起不来」最难排查的一类故障；
- * - stderr 只留最后几行：mpv 起不来时把原因回给用户，比只有一句「启动失败」有用。
+ * - 关脚本用 `--load-scripts=no`，**没有 `--no-scripts` 这个选项**（mpv 报 `Error parsing option no-scripts`
+ *   直接 fatal 退出）；`--terminal=yes` 是必需的：mpv 在 stdout/stderr 不是 tty 时一个字都不打印，
+ *   少了它日志里只剩一句「mpv 已退出（code=1）」，用户根本看不到原因；
+ * - stderr 只留最后几行：mpv 起不来时把原因回给用户，比只有一句「启动失败」有用；
+ * - 退出信息听 `close` 而不是 `exit`：`exit` 可能早于 stderr 读完，那会丢掉 mpv 的报错行。
  */
 import { spawn } from 'child_process'
 import type { ChildProcess } from 'child_process'
@@ -60,7 +64,8 @@ export interface MpvProcess {
 export function buildMpvArgs(options: MpvLaunchOptions): string[] {
   const args = [
     '--no-config',
-    '--no-scripts',
+    '--load-scripts=no',
+    '--terminal=yes',
     '--idle=yes',
     '--keep-open=yes',
     '--force-window=yes',
@@ -109,7 +114,7 @@ export function launchMpvProcess(options: MpvLaunchOptions): MpvProcess {
       exitInfo ??= info
       resolve(info)
     })
-    child.once('exit', (code) => {
+    child.once('close', (code) => {
       const info: MpvExitInfo = { code, stderr: lines.join(' | ') }
       exitInfo ??= info
       resolve(info)

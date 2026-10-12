@@ -29,7 +29,12 @@ export interface PlayerLoadResult {
   backend: PlayerBackend
   /** 交给 mpv / artplayer 的播放地址（回环 http）；条目没有媒体源时为空串 */
   url: string
-  /** 后端降级原因（仅「配置了 mpv 但它起不来」时非空） */
+  /**
+   * 后端降级原因（仅「配置了 mpv 但它起不来」时非空）。
+   *
+   * 契约：**面向用户的提示文案**，渲染层直接把它显示在播放画面上的提示条里，所以要写人话
+   * （如「mpv 播放失败，已改用内置播放器」）；mpv 的 stderr / 退出码这类技术细节只进主进程日志。
+   */
   reason: string
   /** 这次装的是哪个条目，右侧侧栏据此取详情（`media_item.id`） */
   itemId: string

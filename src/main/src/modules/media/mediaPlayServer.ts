@@ -6,7 +6,8 @@
  *   等于把「按媒体 ID 读文件」的权限临时给本机播放器，token 只在进程内存里；
  * - 请求路径去掉前缀与 token 后拼回 `storage://` 交给 `handleMediaRequest`，
  *   Range 读取、播放期路径自愈、远端缓存全部复用同一套逻辑，**不在这里重写**；
- * - `HEAD` 只回响应头不读流（播放器探测用），客户端断开时取消底层读取；
+ * - `HEAD` 只回响应头不读流（播放器探测用）；客户端断开（`ServerResponse` 的 `close`）时取消底层读取，
+ *   否则被掐掉的 range 请求会漏一个读取流 + 文件句柄；
  * - 懒启动的应用级单例，退出前调 `disposeMediaPlayServer()`。
  */
 import { randomBytes } from 'crypto'
@@ -98,7 +99,7 @@ async function serve(
       response.end()
       return
     }
-    await pipeBody(media.body, request, response)
+    await pipeBody(media.body, response)
     response.end()
   } catch (error) {
     const message = error instanceof Error ? error.message : '未知错误'
@@ -116,26 +117,41 @@ function headerRecord(headers: Headers): Record<string, string> {
   return record
 }
 
-/** 手工抽流：`res` 只是普通可写流，背压交给 `drain`，客户端断开就取消读取 */
-async function pipeBody(
-  body: ReadableStream<Uint8Array>,
-  request: IncomingMessage,
-  response: ServerResponse
-): Promise<void> {
+/**
+ * 手工抽流：`res` 只是普通可写流，背压交给 `drain`，客户端断开就取消读取。
+ *
+ * 断开信号必须听 `ServerResponse` 的 `close`：`IncomingMessage` 在「请求收完」时就 close 了
+ * （GET 没有请求体，基本等于请求头一读完就触发），而这里要 `await handleMediaRequest` 之后才挂监听，
+ * 挂上去时早就错过，等于没挂 —— Chromium 媒体栈缓冲够了会主动掐断 range 请求，
+ * 掐断后 `write` 返回 false、`drain` 永远不来，底层读取流会被一直吊着不放（文件句柄泄漏）。
+ */
+async function pipeBody(body: ReadableStream<Uint8Array>, response: ServerResponse): Promise<void> {
   const reader = body.getReader()
+  // 连接一断就让循环立刻醒过来（`drain` 在连接被掐之后不会再来）
+  const closed = new Promise<null>((resolve) => {
+    // 断开可能发生在 `handleMediaRequest` 期间（解析远端缓存能花上几秒），那时 `close` 早就发过了，
+    // 只挂监听会永远等不到 —— 先用 `destroyed` 兜住这种情况，循环第一轮就退出
+    if (response.destroyed) {
+      resolve(null)
+      return
+    }
+    response.once('close', () => resolve(null))
+  })
   const cancel = (): void => {
     void reader.cancel().catch(() => undefined)
   }
-  request.once('close', cancel)
+  response.once('close', cancel)
   try {
     for (;;) {
-      const chunk = await reader.read()
-      if (chunk.done) break
+      const chunk = await Promise.race([reader.read(), closed])
+      if (chunk === null || chunk.done) break
       if (!chunk.value) continue
-      if (!response.write(chunk.value)) await once(response, 'drain')
+      if (!response.write(chunk.value)) {
+        await Promise.race([once(response, 'drain').catch(() => null), closed])
+      }
     }
   } finally {
-    request.off('close', cancel)
+    response.off('close', cancel)
     reader.releaseLock()
   }
 }

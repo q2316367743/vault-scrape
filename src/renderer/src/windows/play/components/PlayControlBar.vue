@@ -1,5 +1,5 @@
 <template>
-  <div class="play-controls">
+  <div class="play-controls" :class="{ 'is-overlay': overlay }">
     <t-tooltip :content="playing ? '暂停（空格）' : '播放（空格）'" placement="top">
       <t-button
         class="ctrl-button"
@@ -64,8 +64,12 @@
  * 播放控制条：进度 / 播放暂停 / 音量 / 倍速 / 全屏。
  *
  * 契约：
- * - 高度固定 72px（`PLAY_LAYOUT.controlBarHeight`），**单独占一行，不能浮在视频区上**：
- *   Windows 下 mpv 的宿主窗口是原生子窗口，永远压在网页内容之上，浮层会被它整块盖住；
+ * - 高度固定 72px（`PLAY_LAYOUT.controlBarHeight`），**两种摆法由 `overlay` 决定**：
+ *   Windows 嵌入模式下 mpv 的宿主窗口是原生子窗口，永远压在网页内容之上，这时只能独占一行
+ *   （`overlay: false`，视频区扣掉这条的高度）；macOS「mpv 独立窗口 + 透明挖洞」模式下我们的窗口在
+ *   mpv 之上，控制条悬浮在画面底部（`overlay: true`，视频区不扣高度），由主进程的
+ *   `PlayerLayoutState.controlBarRow` 推导，两侧必须同源；
+ * - 只在 mpv 后端渲染：内置 artplayer 自带控制条，再来一条就是重复（见 `PlayApp`）；
  * - 自己不做播放控制，一切动作都 `emit('command', …)`，由 `usePlaySession.apply` 分流
  *   （mpv 走主进程 IPC，内置后端在渲染层本地执行）；
  * - 全屏时整条不渲染（`playerStageRect` 全屏会把视频区铺满整个窗口），退出全屏靠 Esc / 双击画面；
@@ -83,10 +87,15 @@ import type { DropdownOption } from 'tdesign-vue-next'
 import type { PlayerCommand, PlayerState } from '@common/types/player'
 import { formatClock } from '@/utils/format'
 
-const props = defineProps<{
-  /** 主进程推来的播放状态（内置后端由 `usePlaySession` 折算成同一份） */
-  state: PlayerState
-}>()
+const props = withDefaults(
+  defineProps<{
+    /** 主进程推来的播放状态（内置后端由 `usePlaySession` 折算成同一份） */
+    state: PlayerState
+    /** 悬浮在画面底部（macOS 挖洞模式，当前不启用），否则独占视频区下方一行 */
+    overlay?: boolean
+  }>(),
+  { overlay: false }
+)
 
 const emit = defineEmits<{ command: [PlayerCommand] }>()
 
@@ -149,6 +158,17 @@ function onFullscreen(): void {
   height: 72px;
   padding: 0 var(--td-comp-paddingLR-l);
   background-color: var(--td-bg-color-container);
+}
+
+/* 悬浮摆法（macOS「mpv 独立窗口 + 透明挖洞」，当前不启用）：贴住画面底部，用描边和阴影把它从视频里拎出来 */
+.play-controls.is-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  border-top: 1px solid var(--td-component-stroke);
+  box-shadow: var(--td-shadow-2);
 }
 
 .ctrl-button {

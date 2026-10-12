@@ -165,7 +165,8 @@ export async function loadTarget(payload: PlayerOpenPayload): Promise<PlayerLoad
     currentBackend = 'html5'
     state = buildPlayerState('html5')
     pushState(true)
-    return { backend: 'html5', url, reason, itemId: payload.itemId, episodeId }
+    // 回给界面的是人话，技术细节（stderr / 退出码）留在上面那条日志里
+    return { backend: 'html5', url, reason: 'mpv 播放失败，已改用内置播放器', itemId: payload.itemId, episodeId }
   }
 }
 
@@ -233,7 +234,8 @@ function degradeToHtml5(instance: MpvRuntime, reason: string): void {
     ready: false,
     ended: false,
     buffering: false,
-    error: reason
+    // 界面只看人话；`reason`（stderr / 退出码）进下面那条日志
+    error: 'mpv 已退出，已切回内置播放器'
   }
   appendLog({
     level: 'warn',

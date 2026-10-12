@@ -1,11 +1,17 @@
 <template>
-  <div class="play-root">
+  <div class="play-root" :class="{ 'is-hole': layout.transparentStage }">
     <app-title-bar v-if="!fullscreen" :title="sideTitle" />
 
     <div class="play-body">
-      <div class="play-video">
-        <play-stage :state="state" :notice="notice" @stage="attachStage" @command="apply" />
-        <play-control-bar v-if="!fullscreen" :state="state" @command="apply" />
+      <div class="play-video" :class="{ 'is-overlay': overlayControls }">
+        <play-stage
+          :state="state"
+          :notice="notice"
+          :transparent="layout.transparentStage"
+          @stage="attachStage"
+          @command="apply"
+        />
+        <play-control-bar v-if="showControls" :state="state" :overlay="overlayControls" @command="apply" />
       </div>
 
       <play-side-panel
@@ -31,12 +37,16 @@
  * 契约（与主进程的几何约定，逐像素相关，改这里要同步 `src/common/types/player/layout.ts`）：
  * - 标题栏 40px、右侧栏 360px、控制条 72px；除这三块外**不放任何 gap / padding / 边框**，
  *   Windows 下 mpv 的宿主窗口就贴在这一块视频区上；
+ * - 排法由主进程推来的 `layout` 决定，不在这里各平台分支：
+ *   `controlBarRow` 假 = 控制条悬浮在画面底部、视频区不扣那 72px（macOS 的 mpv 独立窗口）；
+ *   `transparentStage` 真 = 视频区透明挖洞给 mpv，标题栏得自己补底色；
+ * - 控制条只在 mpv 后端渲染：内置 artplayer 自带一条控制条，再来一条就是「多出一行」；
  * - 全屏时只留视频区（标题栏 / 控制条 / 侧栏都不渲染），退出靠 Esc 或双击画面；
  * - 侧栏数据由 `usePlaySidebar` 取，播放状态由 `usePlaySession` 管，键盘在 `useKeyboard`；
  * - 点某一集：先把侧栏选中拨过去（立刻高亮），再 `playerApi.open()` 让主进程换片——
  *   窗口已存在时主进程会推 `switch` 事件回来，`session` 自己切后端，本组件靠 `result` 变更刷新侧栏。
  */
-import { onBeforeUnmount, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, watch } from 'vue'
 import { playerApi } from '@/api'
 import AppTitleBar from '@/components/app/AppTitleBar.vue'
 import PlayControlBar from './components/PlayControlBar.vue'
@@ -47,10 +57,16 @@ import { usePlaySession } from './composables/usePlaySession'
 import { usePlaySidebar } from './composables/usePlaySidebar'
 
 const session = usePlaySession()
-const { state, result, fullscreen, notice, attachStage, start, apply, dispose } = session
+const { state, result, layout, fullscreen, notice, attachStage, start, apply, dispose } = session
 
 const { loading, failure, title: sideTitle, protect, poster, facts, seasons, activeId, load, select } =
   usePlaySidebar()
+
+/** 控制条悬浮在画面上（否则独占视频区下方一行） */
+const overlayControls = computed(() => !layout.value.controlBarRow)
+
+/** 只有 mpv 后端需要这条自绘控制条；内置播放器用 artplayer 自己的 */
+const showControls = computed(() => !fullscreen.value && state.value.backend === 'mpv')
 
 useKeyboard(session)
 
@@ -95,18 +111,32 @@ function onSelect(episodeId: string): void {
   background-color: var(--td-bg-color-page);
 }
 
+/* 挖洞模式（当前不启用：macOS 已停用 mpv，`transparentStage` 恒为 false；字段保留是为了将来恢复该方案）
+   ——标题栏这一圈得自己补底色 */
+.play-root.is-hole {
+  background-color: transparent;
+}
+
+.play-root.is-hole :deep(.title-bar) {
+  background-color: var(--td-bg-color-page);
+}
+
 .play-body {
   display: flex;
   flex: 1;
   min-height: 0;
 }
 
-/* 视频区 + 控制条：控制条不浮在画面上（Windows 下会被 mpv 原生子窗口盖住） */
 .play-video {
   display: flex;
   flex: 1;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+}
+
+/* 控制条悬浮时的定位参照；独占一行时不需要（省一层 position） */
+.play-video.is-overlay {
+  position: relative;
 }
 </style>

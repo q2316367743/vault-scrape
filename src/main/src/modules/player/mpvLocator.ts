@@ -1,7 +1,12 @@
 /**
- * 找 mpv 可执行文件（Windows / macOS）。
+ * 找 mpv 可执行文件（**实际只在 Windows 上启用**，macOS 已停用，见下）。
  *
  * 契约：
+ * - **macOS 上停用**：mpv 的 `--wid`（嵌进已有窗口）只在 X11 / win32 / Android 有官方支持，macOS 只剩
+ *   「mpv 独立原生窗口 + 播放窗口透明挖洞」一条路，而实测透明窗口会让播放周期性卡顿、窗口跟随还有可见
+ *   延迟，所以 macOS 一律返回「没找到」，调用方静默走内置播放器；
+ * - 总开关 `app.mpvEnabled` 关掉时一律算「没找到」，调用方静默回退内置播放器；设置页的「检测」走
+ *   `detectMpv`，不受总开关影响（关掉也能检测路径填得对不对）；
  * - 顺序：设置项 `app.mpvPath` → PATH（`where` / `which`）→ 常见安装位置；
  * - 只判「能不能执行」，找不到就返回 `found: false`，不抛错——由调用方静默回退内置播放器；
  * - 自动探测结果缓存 30 秒（每次开播放窗口都会问一次）；设置页点「检测」走 `detectMpv`，强制重探。
@@ -16,6 +21,8 @@ import { loadSetting } from '$/modules/setting/settingStore'
 const run = promisify(execFile)
 
 const CACHE_MS = 30_000
+
+const isMac = process.platform === 'darwin'
 
 /** 探测结果（带来源，设置页据此说明「用的是你填的还是自动找到的」） */
 export interface MpvLocation {
@@ -43,6 +50,11 @@ export function resetMpvCache(): void {
 
 /** 当前该用哪个 mpv；`found: false` 时调用方走内置播放器 */
 export async function locateMpv(): Promise<MpvLocation> {
+  // macOS 上停用 mpv：`--wid` 在 macOS 没有官方支持，macOS 只能用「独立窗口 + 播放窗口透明挖洞」，而透明
+  // 窗口是播放卡顿的根因（详见 docs/media/03-mpv-playback.md）。放在缓存判断之前，改动立即生效。
+  if (isMac) return { found: false, path: '', origin: 'none' }
+  // 总开关关掉 = 用户明确不想用 mpv：路径与自动探测都不看，直接算「没找到」
+  if (!loadSetting().app.mpvEnabled) return { found: false, path: '', origin: 'none' }
   const now = Date.now()
   if (cache && now - cache.at < CACHE_MS) return cache.location
   const location = await resolve(loadSetting().app.mpvPath)
