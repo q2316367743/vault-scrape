@@ -180,7 +180,7 @@ onMounted(() => {
   padding-bottom: 6px;
 
   :deep(.media-card) {
-    flex: 0 0 180px;
+    flex: 0 0 200px;
   }
 }
 </style>
