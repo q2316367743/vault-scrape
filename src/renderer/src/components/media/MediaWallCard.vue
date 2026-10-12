@@ -1,3 +1,41 @@
+<template>
+  <div class="media-card" :title="item.title" @click="openDetail">
+    <div class="card-cover">
+      <sensitive-image
+        v-if="item.coverUrl"
+        :src="item.coverUrl"
+        :protect="protect"
+        :alt="item.type === 'series' ? '剧集封面' : '影片封面'"
+        fit="cover"
+      />
+      <div v-else class="cover-placeholder">
+        <film-icon size="28px" />
+        <span>没有封面</span>
+      </div>
+    </div>
+
+    <div class="card-body">
+      <t-tooltip :content="item.title" placement="top-left">
+        <div class="card-title">{{ item.title }}</div>
+      </t-tooltip>
+      <div class="card-meta">
+        <t-tag v-if="item.num" size="small" theme="primary" variant="light-outline">
+          <template #icon><tag-icon /></template>{{ item.num }}
+        </t-tag>
+        <t-tag v-if="episodeSummary" size="small" theme="success" variant="light-outline">
+          {{ episodeSummary }}
+        </t-tag>
+        <t-tag size="small" variant="outline">
+          {{ item.libraryName }}
+        </t-tag>
+      </div>
+      <div class="card-foot">
+        <span>{{ formatSize(item.size) }}</span>
+        <span>{{ formatTime(item.modifiedAt) }}</span>
+      </div>
+    </div>
+  </div>
+</template>
 <script setup lang="ts">
 /**
  * 影视墙的一张卡片：磁盘上的一条记录（影片是一个视频，剧集是整部剧）能补上的刮削信息。
@@ -40,46 +78,6 @@ function openDetail(): void {
   })
 }
 </script>
-
-<template>
-  <div class="media-card" @click="openDetail">
-    <div class="card-cover">
-      <sensitive-image
-        v-if="item.coverUrl"
-        :src="item.coverUrl"
-        :protect="protect"
-        :alt="item.type === 'series' ? '剧集封面' : '影片封面'"
-        fit="cover"
-      />
-      <div v-else class="cover-placeholder">
-        <film-icon size="28px" />
-        <span>没有封面</span>
-      </div>
-    </div>
-
-    <div class="card-body">
-      <t-tooltip :content="item.title" placement="top-left">
-        <div class="card-title">{{ item.title }}</div>
-      </t-tooltip>
-      <div class="card-meta">
-        <t-tag v-if="item.num" size="small" theme="primary" variant="light-outline">
-          <template #icon><tag-icon /></template>{{ item.num }}
-        </t-tag>
-        <t-tag v-if="episodeSummary" size="small" theme="success" variant="light-outline">
-          {{ episodeSummary }}
-        </t-tag>
-        <t-tag size="small" variant="outline">
-          {{ item.libraryName }}
-        </t-tag>
-      </div>
-      <div class="card-foot">
-        <span>{{ formatSize(item.size) }}</span>
-        <span>{{ formatTime(item.modifiedAt) }}</span>
-      </div>
-    </div>
-  </div>
-</template>
-
 <style scoped lang="less">
 .media-card {
   display: flex;
@@ -101,8 +99,19 @@ function openDetail(): void {
 
 .card-cover {
   position: relative;
+  /* 封面高度只由宽度与 aspect-ratio 决定：不收缩、不吃内容的自动最小高度，
+     否则竖版原图（比 3/4 更高）会把封面撑高，有没有封面的卡片标题就对不齐 */
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
   aspect-ratio: 3 / 4;
   background-color: var(--td-bg-color-container-hover);
+
+  /* 图片整层绝对定位，彻底不参与封面高度计算 */
+  :deep(.sensitive-image) {
+    position: absolute;
+    inset: 0;
+  }
 }
 
 .cover-placeholder {
@@ -121,7 +130,7 @@ function openDetail(): void {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 8px 10px 10px;
+  padding: 8px 6px;
   min-width: 0;
 }
 
@@ -133,7 +142,7 @@ function openDetail(): void {
   color: var(--td-text-color-primary);
   word-break: break-word;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 1;
 }
 
 .card-meta {

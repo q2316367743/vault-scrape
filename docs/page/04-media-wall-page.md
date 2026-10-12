@@ -42,7 +42,9 @@
 
 `MEDIA_HOME_ROW_LIMIT = 24`（`src/common/types/media/index.ts`）。每排行头 = 标题 + 「N 部」，卡片复用 `pages/media/components/MediaWallCard.vue`，`connection` 由 `useFileConnections().connections` 按 `item.connectionId` 匹配。
 
-**资料库卡片**（`home/components/LibraryCard.vue`）：props `{ library: MediaLibrarySummary }`；封面是 `library.coverUrls` 的**四宫格**（`.lib-cover` 网格 `repeat(2, 1fr)`、`aspect-ratio: 16/9`），没有封面时显示 `CollectionIcon`；标题行 = 库名 + 类型标签（`libraryTypeLabel(library.type)`）；meta 按库类型分说「`影片 N 部`」/「`剧集 N 部`」（**整部剧集算一条**）；点击跳 `{ name: '影视墙资料库', query: { libraryId: library.id } }`。
+**卡片封面高度必须只由宽度决定**（`MediaWallCard.vue` 的 `.card-cover`：`flex: none` + `min-height: 0` + `aspect-ratio: 3/4`，`SensitiveImage` 那层再 `position: absolute; inset: 0`）：`aspect-ratio` 的盒子是 flex 项，默认 `min-height: auto` 会引入图片的自动最小尺寸——竖版原图（比 3/4 更高）与默认封面比例冲突时会把封面撑高，于是**有封面的卡片比没封面（占位图标）的高，同排标题就参差不齐**。图片绝对定位后不参与高度计算，横竖原图、有无封面一律 `宽度 × 4/3`，同排标题天然对齐。
+
+**资料库卡片**（`home/components/LibraryCard.vue`）：props `{ library: MediaLibrarySummary }`；封面是 `library.coverUrls` 的**四宫格**（`.lib-cover` 恒为 2×2 轨道 `repeat(2, minmax(0, 1fr))`、`aspect-ratio: 16/9`，轨道用 `minmax(0, …)` 抹掉自动最小尺寸，**不足 4 张封面也不塌、原图比例再高也撑不大**），没有封面时显示 `CollectionIcon`；标题行 = 库名 + 类型标签（`libraryTypeLabel(library.type)`）；meta 按库类型分说「`影片 N 部`」/「`剧集 N 部`」（**整部剧集算一条**）；点击跳 `{ name: '影视墙资料库', query: { libraryId: library.id } }`。
 
 `coverUrls` 由主进程 `libraryStore.coverUrlsOf()` 生成：取该库**最近添加且有封面**的前 `COVER_URL_LIMIT = 4` 张，拼成 `storage://` 地址；为空数组时卡片退化成文字封面。首页不自己找封面。
 

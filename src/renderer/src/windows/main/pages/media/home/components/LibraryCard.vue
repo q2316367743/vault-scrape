@@ -58,8 +58,11 @@ function open(): void {
 
 .lib-cover {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  grid-auto-rows: 1fr;
+  /* 轨道写死 2×2 且用 minmax(0, 1fr) 抹掉轨道的自动最小尺寸：
+     封面数量不足 4 张时布局不塌，原图比例再高也撑不大封面，整体恒为 16/9 */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
   aspect-ratio: 16 / 9;
   background-color: var(--td-bg-color-secondarycontainer);
 }
@@ -76,8 +79,10 @@ function open(): void {
 }
 
 .lib-cover-img {
+  display: block;
   width: 100%;
   height: 100%;
+  min-height: 0;
   object-fit: cover;
 }
 
