@@ -5,7 +5,7 @@
  * 契约：没有写操作（新建 / 上传 / 重命名 / 复制 / 移动 / 删除 / 编辑文本全部下线），
  * 工具栏只留「上级目录 / 刷新」；预览统一走 StoragePreviewDrawer。
  */
-import { computed, toRef } from 'vue'
+import { computed } from 'vue'
 import { RefreshIcon } from 'tdesign-icons-vue-next'
 import { FILE_PROTOCOL_LABELS, type FileConnection, type FileEntry } from '@common/types/file'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
@@ -22,8 +22,8 @@ const props = defineProps<{
 const connectionId = computed(() => props.connection?.id ?? '')
 const { entries, loading, isRoot, breadcrumb, load, go, goParent, open } = useStorageBrowser(connectionId)
 
-/** NSFW 保护：带存储上下文必须用 active（应用总开关 + 该连接的 nsfw 标记同时成立） */
-const { active } = useNsfwProtection(toRef(props, 'connection'))
+/** NSFW 保护：存储页没有资料库上下文，只看应用设置里的总开关 */
+const { protection } = useNsfwProtection()
 
 /**
  * 面包屑跳转。
@@ -39,7 +39,7 @@ function onCrumbClick(segment: StorageBreadcrumb, isCurrent: boolean): void {
 function onPreview(entry: FileEntry): void {
   const connection = props.connection
   if (!connection) return
-  openStoragePreviewDrawer({ connection, entry, protect: active.value })
+  openStoragePreviewDrawer({ connection, entry, protect: protection.value })
 }
 </script>
 

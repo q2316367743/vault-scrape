@@ -2,7 +2,7 @@
 
 演员有三处界面：**演员列表页**、**演员详情页**、**演员编辑弹窗**；影视墙的影片详情页上还有一条**参演演员条**，点击即跳演员详情。主进程实现见 [演员模块](../actor/01-actor-module.md)。
 
-**演员图片不参与 NSFW 保护**：演员的头像与图集一律直接显示，不接 `useNsfwProtection`、不传 `SensitiveImage` 的 `protect`（演员图片没有存储上下文，也不属于要遮罩的影片内容）；演员页里的**影片封面**仍按影视墙规则遮罩，见下文与 [影视墙页面](./04-media-wall-page.md) 第 7 节。
+**演员图片不参与 NSFW 保护**：演员的头像与图集一律直接显示，不接 `useNsfwProtection`、不传 `SensitiveImage` 的 `protect`（演员图片不属于要遮罩的影片内容，也没有对应的资料库标记）；演员页里的**影片封面**仍按影视墙规则遮罩，见下文与 [影视墙页面](./04-media-wall-page.md) 第 7 节。
 
 ## 1. 路由与入口
 
@@ -44,7 +44,7 @@
 
 - `components/ActorProfileBlock.vue`：头像（`SensitiveImage`，**不传 `protect`**，不做 NSFW 遮罩；没有头像时显示姓名首字占位）+ 资料格（性别 / 生日 / 出生地（`actorBirthplaceText`）/ 身高（`actorHeightText`）/ **仅女演员**：三围（`actorMeasurementsText`）/ 罩杯 / 收录时间 / 刮削插件 / 资料锁定），别名与用户标签用 `t-tag`，简介按原文换行展示；空值统一显示「未填写」。资料格由 `isFemale = computed(() => actor.gender === 'female')` 控制，非女演员时三围与罩杯两项**不出现在列表中**（不是显示空值）。**「来源链接」不在资料格里**：单独一行放在资料块最后（简介之后），有值用 `t-link theme="primary"` 展示完整地址、点击调 `window.open(url, '_blank')`——主窗口的 `setWindowOpenHandler` 会把它交给 `shell.openExternal`（`src/main/index.ts:65-68`），由系统默认浏览器打开，应用窗口不会被导航走，所以 `t-link` **不写 `href`**；没有来源链接时这一行显示「未填写」。**「简介」是描述性正文**：不跟字段值同色平铺，而是装进 `.profile-overview-box`（`1px solid var(--td-component-border)` + `var(--td-radius-medium)` + 10/12px 内边距）里、正文用 `var(--td-text-color-secondary)`（空态仍用 placeholder 色显示「还没有简介。」），一眼能和上面的字段值区分开。
 - `components/ActorGalleryBlock.vue`：图集缩略图（`SensitiveImage`，同样不传 `protect`）+ 「导入图片」「导入头像」按钮（`dialogApi.open({ multiple: true, filters: [{ name: '图片', extensions: ACTOR_IMAGE_EXTENSIONS }] })`，初始目录取 `app.actorImageDir`；「导入头像」是单选），每张图可「设为头像」或删除（删除走二次确认，这张图片的文件与记录一起清掉）；导入失败项用 `MessageUtil.warning` 列出「路径：原因」。
-- 出演作品：`MediaWallCard` 网格（`connectionOf` 从 `useFileConnections()` 取连接，用于 NSFW 判定——这里是**影片封面**，不属于上文的豁免范围），空态 `t-empty`。
+- 出演作品：`MediaWallCard` 网格（卡片自带 `nsfwProtected`，按所属资料库口径判定——这里是**影片封面**，不属于上文的豁免范围），空态 `t-empty`。
 
 取数组合式 `detail/composables/useActorDetail.ts`：从 `route.query.actorId` 取参，缺失时只写中文 `failure`「地址里缺少演员参数，请从演员列表点进来」并且**不发请求**；`load()` 调 `actorApi.detail({ actorId })`。
 

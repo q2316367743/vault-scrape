@@ -1,7 +1,7 @@
 /**
  * 数据源（连接）的全局状态：加载、选中、删除、连通性测试。
  *
- * 存储页与影视墙共用：两侧都需要「当前数据源」和它是否标记了 NSFW。
+ * 存储页与影视墙共用：两侧都需要「当前数据源」。
  * 选中项持久化到 localStorage，重开页面仍停在上次的数据源；
  * 该连接已被删除时自动回落到第一个可用连接。
  */
@@ -24,7 +24,6 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
       id: connection.id,
       protocol: 'local',
       name: connection.name,
-      nsfw: connection.nsfw,
       rootPath: connection.rootPath
     }
   }
@@ -33,7 +32,6 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
       id: connection.id,
       protocol: 'webdav',
       name: connection.name,
-      nsfw: connection.nsfw,
       url: connection.url,
       username: connection.username,
       authType: connection.authType
@@ -43,7 +41,6 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
     id: connection.id,
     protocol: 'smb',
     name: connection.name,
-    nsfw: connection.nsfw,
     host: connection.host,
     port: connection.port,
     share: connection.share,

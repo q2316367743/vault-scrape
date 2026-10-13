@@ -33,8 +33,8 @@ const props = defineProps<{ library: MediaLibrarySummary }>()
 
 const router = useRouter()
 
-/** 库卡片只有资料库上下文，没有单条存储，所以只传库级标记（见 `useNsfwProtection`） */
-const { protect } = useNsfwProtection(null, () => props.library.nsfwProtection)
+/** 库卡片只有资料库上下文，所以只传库级标记（见 `useNsfwProtection`） */
+const { protect } = useNsfwProtection(() => props.library.nsfwProtection)
 const covers = computed(() => (protect.value ? [] : props.library.coverUrls.slice(0, 4)))
 const typeText = computed(() => libraryTypeLabel(props.library.type))
 const countText = computed(

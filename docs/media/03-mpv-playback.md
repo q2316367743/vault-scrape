@@ -180,7 +180,7 @@ preload 侧 `src/preload/src/modules/player/player.ts` 暴露 `playerApi`（`ope
 | `windows/play/components/PlayControlBar.vue` | 高 72px 控制条：播放/暂停、时钟、进度、音量、倍速、全屏；`overlay` 决定悬浮（绝对定位贴画面底部）还是独占一行；只 `emit('command', …)`，不做播放控制 |
 | `windows/play/components/PlaySidePanel.vue` | 宽 360px 侧栏：`SensitiveImage` 封面 + 标题 + 关键元信息 + 复用 `MediaEpisodeList`；只 `emit('select', itemId)` |
 | `windows/play/composables/usePlaySession.ts` | 播放会话：订阅 `onState` / `onSwitch` / `onLayout`、`playerApi.load()` 起播；`layout`（`PlayerLayoutState`，默认「独占一行 + 纯黑」，等主进程推）；`fullscreen` 由 `layout.fullscreen` 派生；mpv 走主进程，html5 自建 artplayer 并把事件折算成同一份 `PlayerState`；`apply(command)` 分流 |
-| `windows/play/composables/usePlaySidebar.ts` | 侧栏取数：`mediaApi.detail({ itemId })` + `useFileConnections` + `useNsfwProtection` + `useEpisodeSelection`；折出 `facts`（番号 / 首播 / 时长 / N 季 M 集 / 体积 / 资料库 / 加入时间） |
+| `windows/play/composables/usePlaySidebar.ts` | 侧栏取数：`mediaApi.detail({ itemId })` + `useNsfwProtection`（按 `detail.item.nsfwProtected`，即所属库的 `nsfwProtection`）+ `useEpisodeSelection`；折出 `facts`（番号 / 首播 / 时长 / N 季 M 集 / 体积 / 资料库 / 加入时间） |
 | `windows/play/composables/useKeyboard.ts` | 快捷键：空格 / `k` 播放暂停、`←→` ±10s、`↑↓` 音量 ±0.05、`m` 静音、`f` 全屏、`Esc` 退出全屏；输入框内不响应 |
 | `windows/host/HostApp.vue` | 宿主页：单击（220ms 延迟，避开双击）播放暂停、双击全屏 |
 | `components/app/AppTitleBar.vue` | 自绘标题栏（主窗口与播放窗口共用，`title` prop + `leading` / `afterTitle` / `trailing` 插槽） |

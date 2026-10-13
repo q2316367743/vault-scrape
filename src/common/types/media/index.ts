@@ -33,7 +33,7 @@ export interface MediaWallItem {
   libraryId: string
   /** 所属资料库名称，未归库（历史数据）时为空串 */
   libraryName: string
-  /** 所属资料库是否按敏感内容处理；与全局开关、存储的 nsfw 标记任一命中即遮罩封面 */
+  /** 所属资料库是否按敏感内容处理；应用设置的全局开关与它同时成立才遮罩封面 */
   nsfwProtected: boolean
   connectionId: string
   /** 主媒体源在连接内的绝对路径；剧集条目就是剧集目录 */

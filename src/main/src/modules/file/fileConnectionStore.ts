@@ -5,7 +5,8 @@
  * 1. 落盘位置 `~/.vault-scrape/file/connections.json`，与设置文件相互独立；
  * 2. 密码不落明文：优先 `safeStorage`（系统钥匙串）加密，不可用时回落 base64 明文并在控制台告警；
  * 3. 对外只暴露 `hasPassword`，**密码永不跨 IPC**；
- * 4. 读取失败一律回落空列表，绝不因为配置损坏而阻塞启动。
+ * 4. 读取失败一律回落空列表，绝不因为配置损坏而阻塞启动；
+ * 5. 连接上没有策略字段：旧版本写下的 `nsfw` 键在归一化时被直接忽略，不再回写。
  */
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -20,7 +21,7 @@ import {
   type FileConnectionDraft,
   type WebdavAuthType
 } from '@common/types/file'
-import { readBoolean, readEnum, readNumber, readString, toSource } from '@common/types/setting/shared'
+import { readEnum, readNumber, readString, toSource } from '@common/types/setting/shared'
 import { decodeSecret, encodeSecret } from '$/utils/secretCodec'
 
 /** 主进程私有的落盘形状：只比公开类型多一个 secret 字段 */
@@ -28,7 +29,6 @@ interface StoredLocalConnection {
   id: string
   name: string
   protocol: 'local'
-  nsfw: boolean
   rootPath: string
 }
 
@@ -36,7 +36,6 @@ interface StoredWebdavConnection {
   id: string
   name: string
   protocol: 'webdav'
-  nsfw: boolean
   url: string
   username: string
   authType: WebdavAuthType
@@ -47,7 +46,6 @@ interface StoredSmbConnection {
   id: string
   name: string
   protocol: 'smb'
-  nsfw: boolean
   host: string
   port: number
   share: string
@@ -90,10 +88,9 @@ function normalizeStored(raw: unknown): StoredConnection | null {
   if (id.length === 0 || name.length === 0) return null
   const protocol = readEnum(source, 'protocol', FILE_PROTOCOLS, 'local')
   const secret = readString(source, 'secret', '')
-  const nsfw = readBoolean(source, 'nsfw', false)
   if (protocol === 'local') {
     const rootPath = readString(source, 'rootPath', '')
-    return rootPath.length === 0 ? null : { id, name, protocol, nsfw, rootPath }
+    return rootPath.length === 0 ? null : { id, name, protocol, rootPath }
   }
   if (protocol === 'webdav') {
     const url = readString(source, 'url', '')
@@ -102,7 +99,6 @@ function normalizeStored(raw: unknown): StoredConnection | null {
       id,
       name,
       protocol,
-      nsfw,
       url,
       username: readString(source, 'username', ''),
       authType: readEnum(source, 'authType', WEBDAV_AUTH_TYPES, 'auto'),
@@ -116,7 +112,6 @@ function normalizeStored(raw: unknown): StoredConnection | null {
     id,
     name,
     protocol,
-    nsfw,
     host,
     port: readPort(source),
     share,
@@ -178,7 +173,6 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
       name: stored.name,
       protocol: 'local',
       hasPassword: false,
-      nsfw: stored.nsfw,
       rootPath: stored.rootPath
     }
   }
@@ -188,7 +182,6 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
       name: stored.name,
       protocol: 'webdav',
       hasPassword: stored.secret.length > 0,
-      nsfw: stored.nsfw,
       url: stored.url,
       username: stored.username,
       authType: stored.authType
@@ -199,7 +192,6 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
     name: stored.name,
     protocol: 'smb',
     hasPassword: stored.secret.length > 0,
-    nsfw: stored.nsfw,
     host: stored.host,
     port: stored.port,
     share: stored.share,
@@ -226,11 +218,10 @@ function buildStored(
 ): StoredConnection {
   const name = draft.name.trim()
   if (name.length === 0) throw new FileError('invalidArgument', '连接名称不能为空')
-  const nsfw = draft.nsfw === true
   if (draft.protocol === 'local') {
     const rootPath = draft.rootPath.trim()
     if (rootPath.length === 0) throw new FileError('invalidArgument', '本机根目录不能为空')
-    return { id, name, protocol: 'local', nsfw, rootPath }
+    return { id, name, protocol: 'local', rootPath }
   }
   const username = draft.username.trim()
   const secret = draft.password === undefined ? previousSecret(previous) : encodeSecret(draft.password, 'file')
@@ -238,7 +229,7 @@ function buildStored(
     const url = draft.url.trim()
     if (!isValidUrl(url)) throw new FileError('invalidArgument', '服务地址不是合法的 URL')
     const authType = WEBDAV_AUTH_TYPES.includes(draft.authType) ? draft.authType : 'auto'
-    return { id, name, protocol: 'webdav', nsfw, url, username, authType, secret }
+    return { id, name, protocol: 'webdav', url, username, authType, secret }
   }
   const host = draft.host.trim()
   const share = draft.share.trim()
@@ -252,7 +243,6 @@ function buildStored(
     id,
     name,
     protocol: 'smb',
-    nsfw,
     host,
     port,
     share,

@@ -7,8 +7,8 @@
 `FileResult` 信封。
 
 它的下游是刮削模块：刮削流程只需「列目录 → 读 NFO / 图片 → 写回」，因此本模块只暴露文件级能力，不做媒体库解析。
-**连接只描述「怎么访问一份数据」**（协议 + 地址 + 凭据 + 一个 `nsfw`
-策略标记），刮削器、媒体目录、命名等策略一律归资料库（见[资料库](../media/01-media-library.md)）。
+**连接只描述「怎么访问一份数据」**（协议 + 地址 + 凭据），
+刮削器、媒体目录、命名、NSFW 等策略一律归资料库（见[资料库](../media/01-media-library.md)）。
 
 本轮范围：接口 + 三个实现 + 连接配置存储 + IPC 契约 + 公共类型 + 文档。 **不含连接管理 UI**
 ；界面随后落在独立的一级页面「存储」（见[存储管理页面](../page/02-storage-page.md)），渲染层直接调用 `@/api/file`。
@@ -23,7 +23,7 @@ src/common/types/file/          # 三端共享的纯类型与纯函数（不含�
 ├── path.ts                     # 统一 POSIX 路径：归一化 / 拼接 / 父目录 / 扩展名 / 拆段
 ├── entry.ts                    # FileEntry 统一形状 + MIME 兜底表 + 排序
 ├── preview.ts                  # storage:// 路径形式的预览地址：buildFilePreviewUrl / parseFilePreviewUrl / filePreviewKindOf（存储页预览用）
-├── connection.ts               # 三种连接与草稿的形状 + describeConnection（策略字段只剩 nsfw）
+├── connection.ts               # 三种连接与草稿的形状 + describeConnection（连接上没有任何策略字段）
 ├── request.ts                  # 各 IPC 方法的请求载荷
 ├── transfer.ts                 # 传输进度 / 结束事件
 ├── result.ts                   # FileResult 信封 + fileOk / fileFail / isFileOk
@@ -134,10 +134,10 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 - 落盘前校验：名称不能为空；本地根目录不能为空；WebDAV 地址必须是合法 URL；SMB 主机与共享名不能为空、端口必须是 1–65535
   的整数。校验失败抛 `invalidArgument`（中文提示）。
 - 读取失败（文件损坏 / JSON 非法）一律 `console.error` 后回落空列表，不阻塞启动；逐条归一化时 `id` 或 `name` 为空的记录会被丢弃。
-- 连接上 **只剩一个策略字段** `nsfw: boolean`：标记为敏感数据源，只有标记过的存储才会被 NSFW 保护处理（渲染层用
-  `useNsfwProtection(connection)` 判定；**总开关（应用设置 `nsfwProtection`）关着时该标记不产生任何遮罩**，见[设置项清单](../setting/02-setting-items.md)）。 **`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从
+- 连接上 **没有任何策略字段**：NSFW 标记归资料库的 `nsfwProtection`（渲染层用 `useNsfwProtection(库级标记)` 判定，
+  总开关见[设置项清单](../setting/02-setting-items.md)）；旧版本写下的 `nsfw` 键在归一化时被直接忽略，不再回写。 **`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从
   `FileConnection`、连接草稿与落盘形状里删除**：刮削器是资料库自己的配置（见[资料库](../media/01-media-library.md)
-  ），一个存储可以被多个资料库复用、各自选不同的刮削器；存储页的连接弹窗（`ConnectionPolicyField.vue`）因此也只剩 NSFW 开关，旧的
+  ），一个存储可以被多个资料库复用、各自选不同的刮削器；存储页的连接弹窗里既没有刮削器多选、也没有 NSFW 开关，旧的
   `useScraperOptions` 只再被资料库表单复用。
 
 ## 6. IPC 通道与信封
@@ -217,5 +217,5 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
    而密码正确，先确认服务端未禁用 SMB2。
 5. 密码安全性：检查 `~/.vault-scrape/file/connections.json` 中 WebDAV / SMB 的 `secret` 是否为 `safe:` 前缀（钥匙串可用时）；手工把
    `secret` 改坏后再 `list` 该连接，应得到 `authFailed` 并提示重新填写密码。
-6. 连接策略只剩 NSFW：新建 / 编辑任一连接（本地 / WebDAV / SMB）时，弹窗里 **不应**再出现刮削器选择；`listConnections()`
-   返回的每个连接对象上也不应再有 `scrapers` 字段（类型已删，草稿里多余的同名字段不进入落盘形状）。
+6. 连接上没有策略字段：新建 / 编辑任一连接（本地 / WebDAV / SMB）时，弹窗里 **不应**再出现刮削器选择与 NSFW 开关；`listConnections()`
+   返回的每个连接对象上也不应再有 `scrapers` / `nsfw` 字段（类型已删，草稿里多余的同名字段不进入落盘形状）。

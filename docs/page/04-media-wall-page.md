@@ -40,13 +40,13 @@
 | `recent` | 最近添加 | 整个墙面按 `dateAdded > 0 ? dateAdded : modifiedAt` 倒序，取前 `MEDIA_HOME_ROW_LIMIT` 条 |
 | `discover` | 推荐 | 对**整份**列表按步长 `items.length / limit` 均匀取样（`spreadSample`），避免与「最近添加」整排重复 |
 
-`MEDIA_HOME_ROW_LIMIT = 24`（`src/common/types/media/index.ts`）。每排行头 = 标题 + 「N 部」，卡片复用 `pages/media/components/MediaWallCard.vue`，`connection` 由 `useFileConnections().connections` 按 `item.connectionId` 匹配。
+`MEDIA_HOME_ROW_LIMIT = 24`（`src/common/types/media/index.ts`）。每排行头 = 标题 + 「N 部」，卡片复用 `pages/media/components/MediaWallCard.vue`（卡片只需要条目自己的数据，不再传 `connection`）。
 
 **卡片封面高度必须只由宽度决定**（`MediaWallCard.vue` 的 `.card-cover`：`flex: none` + `min-height: 0` + `aspect-ratio: 3/4`，`SensitiveImage` 那层再 `position: absolute; inset: 0`）：`aspect-ratio` 的盒子是 flex 项，默认 `min-height: auto` 会引入图片的自动最小尺寸——竖版原图（比 3/4 更高）与默认封面比例冲突时会把封面撑高，于是**有封面的卡片比没封面（占位图标）的高，同排标题就参差不齐**。图片绝对定位后不参与高度计算，横竖原图、有无封面一律 `宽度 × 4/3`，同排标题天然对齐。
 
 **资料库卡片**（`home/components/LibraryCard.vue`）：props `{ library: MediaLibrarySummary }`；封面是 `library.coverUrls` 的**四宫格**（`.lib-cover` 恒为 2×2 轨道 `repeat(2, minmax(0, 1fr))`、`aspect-ratio: 16/9`，轨道用 `minmax(0, …)` 抹掉自动最小尺寸，**不足 4 张封面也不塌、原图比例再高也撑不大**），没有封面时显示 `CollectionIcon`；标题行 = 库名 + 类型标签（`libraryTypeLabel(library.type)`）；meta 按库类型分说「`影片 N 部`」/「`剧集 N 部`」（**整部剧集算一条**）；点击跳 `{ name: '影视墙资料库', query: { libraryId: library.id } }`。
 
-单独说明 **NSFW**：卡片读 `useNsfwProtection(null, () => props.library.nsfwProtection)`，在全局 NSFW 开关开启（`connection.nsfw === true`）且该库勾了 NSFW 保护时，**封面一律不渲染**，直接走无封面的 `CollectionIcon` 占位（不请求、也不显示任何拼贴图）；总开关关掉时照常显示。`covers` 是 `computed(() => (protect.value ? [] : props.library.coverUrls.slice(0, 4)))`。
+单独说明 **NSFW**：卡片读 `useNsfwProtection(() => props.library.nsfwProtection)`，在全局 NSFW 开关开启且该库勾了 NSFW 保护时，**封面一律不渲染**，直接走无封面的 `CollectionIcon` 占位（不请求、也不显示任何拼贴图）；总开关关掉时照常显示。`covers` 是 `computed(() => (protect.value ? [] : props.library.coverUrls.slice(0, 4)))`。
 
 `coverUrls` 由主进程 `libraryStore.coverUrlsOf()` 生成，**两轮取图**：第一轮按 `dateAdded` 倒序取「条目自己的主图 → 父目录条目的主图」，第二轮继续按同样顺序补同一条目的**其它类型图片**（按 `MEDIA_COVER_IMAGE_TYPE_ORDER`：主图 → 缩略图 → 背景图 → 剧照 → 其他），剧集库再补各季条目的主图与其它图片；每张都按图片 id 去重，凑够 `COVER_URL_LIMIT = 4` 或取完为止，拼成 `storage://` 地址。为空数组时卡片退化成文字封面。首页不自己找封面。
 
@@ -231,12 +231,12 @@ src/renderer/src/windows/main/pages/media/
 
 ## 7. NSFW 保护
 
-- 首页 / 内容页卡片：`MediaWallCard.vue` 调 `useNsfwProtection(computed(() => props.connection), () => props.item.nsfwProtected)`（第 2 个参数是所属资料库的 `nsfwProtection`）拿 `protect`，封面统一走 `@/components/SensitiveImage.vue`。判定**以总开关为前提**：总开关关闭时一律不遮；开启时命中「该存储的 `nsfw` 标记」或「库级 `nsfwProtection`」任一即遮罩。所以资料库表单里的「NSFW 保护」是「把本库划入敏感范围」，不是独立开关，总开关关掉后它也跟着失效。
-- 首页的资料库卡片封面（`coverUrls`，`LibraryCard.vue`）不走 `SensitiveImage` 的遮罩，而是**命中保护时整块不渲染**：`useNsfwProtection(null, () => props.library.nsfwProtection)` 的 `protect` 为真就把 `covers` 置空，卡片退成 `CollectionIcon` 占位（与「一张封面都没有」同形）。判定仍以**总开关为前提**：总开关关闭时不遮（照常显示拼贴），开启且库勾了 NSFW 保护才隐藏。
-- 详情页**自己**拉一次连接列表（`useFileConnections().refresh()`），按 `detail.item.connectionId` 找到连接后再 `useNsfwProtection(connection, () => detail.value?.item.nsfwProtected === true)` 判定；不从列表页传保护快照，所以进详情页后立刻切换总开关，行为与列表页一致。
+- 首页 / 内容页卡片：`MediaWallCard.vue` 调 `useNsfwProtection(() => props.item.nsfwProtected)`（参数是所属资料库的 `nsfwProtection`，由主进程随条目下发）拿 `protect`，封面统一走 `@/components/SensitiveImage.vue`。判定**以总开关为前提**：总开关关闭时一律不遮；开启时命中所属资料库的 `nsfwProtection` 即遮罩。所以资料库表单里的「NSFW 保护」是「把本库划入敏感范围」，不是独立开关，总开关关掉后它也跟着失效。**连接（存储）上没有任何 NSFW 标记**，卡片也不再需要连接上下文。
+- 首页的资料库卡片封面（`coverUrls`，`LibraryCard.vue`）不走 `SensitiveImage` 的遮罩，而是**命中保护时整块不渲染**：`useNsfwProtection(() => props.library.nsfwProtection)` 的 `protect` 为真就把 `covers` 置空，卡片退成 `CollectionIcon` 占位（与「一张封面都没有」同形）。判定仍以**总开关为前提**：总开关关闭时不遮（照常显示拼贴），开启且库勾了 NSFW 保护才隐藏。
+- 详情页**不拉连接列表**，直接用 `useNsfwProtection(() => detail.value?.item.nsfwProtected === true)` 判定（`nsfwProtected` 就是所属库的 `nsfwProtection`，`useDetailView.ts` / `MediaDetailPage.vue` 与播放窗口侧栏 `usePlaySidebar.ts` 同一套口径）；不从列表页传保护快照，所以进详情页后立刻切换总开关，行为与列表页一致。
 - 存储页预览的 `MediaPlayer` 在 `protect` 为真时盖一层不透明遮罩（`--td-bg-color-container`）+「内容已隐藏，点击播放」，点击后撤遮罩并 `art.play()`；详情页的头部**在保护命中时先给模糊底图 + 「点击查看原图」**（点一下才换成清晰原图，见 §4），海报与剧照仍沿用 `SensitiveImage` 自己的遮罩（剧照逐张点开）。**播放窗口只遮侧栏封面、不做画面遮罩**：Windows 嵌入模式下画面是 mpv 的原生子窗口，网页遮罩盖不住它（见[播放窗口与 mpv 播放](../media/03-mpv-playback.md) §11）。
 - `SensitiveImage` 的遮罩容器带 `@click.stop`：在卡片上点「内容已隐藏，点击查看」只放行图片，不会顺带跳进详情页。
-- `protect`（卡片 / 详情页）/ `active`（存储预览）都依赖 `connections` 与模块级的总开关缓存，两者都到位才有遮罩。总开关由应用设置保存成功后的回调刷新（见[设置存储](../setting/01-setting-storage.md)）：在影视墙（或详情页）开着的时候去打开「应用设置 → NSFW 保护」，回来约 300ms 内遮罩应当直接出现，不需要刷新页面；反过来关掉开关，遮罩应立即消失——**即使该资料库开着「NSFW 保护」也一样消失**（总开关是唯一前提）。
+- `protect`（卡片 / 详情页 / 播放侧栏）/ `protection`（存储预览）都依赖模块级的总开关缓存，它到位才有遮罩；卡片与详情页的库级标记由条目自己在手上，不再需要连接列表。总开关由应用设置保存成功后的回调刷新（见[设置存储](../setting/01-setting-storage.md)）：在影视墙（或详情页）开着的时候去打开「应用设置 → NSFW 保护」，回来约 300ms 内遮罩应当直接出现，不需要刷新页面；反过来关掉开关，遮罩应立即消失——**即使该资料库开着「NSFW 保护」也一样消失**（总开关是唯一前提）。
 
 ## 8. 手工验证清单
 
@@ -268,7 +268,7 @@ src/renderer/src/windows/main/pages/media/
 24. **详情页只查一次库**：同目录没有 NFO 的影片进详情页 → 两块信息照常显示（「文件信息」五项 + 有刮削数据时的「影片信息」），**不应出现「同目录没有可用的 NFO…」这类提示**；WebDAV / SMB 数据源上反复进出同一部影片的详情页，**不应再出现进页面转圈**（原先每条详情都要按候选顺序读一次磁盘 NFO），元信息全部来自 `media_item` 的刮削列。左栏「影片信息」在没刮过 / 没刮到片商等值时**整块不渲染**，不会留一个空标题。
     - **元信息落库**：对一部影片刮削一次 → 片商 / 厂牌 / 系列 / 导演出现在左栏「影片信息」（不再挤在 `studios` 里当分类）；数据文件里应是 `media_item` 的 `maker` / `label` / `series` / `director` 四列；对该条「还原刮削前」→ 这四列一起被清空、左栏整块消失。
     - **回归**：对同目录有 NFO 的旧条目（刮削前扫描导入过）进详情页，标题 / 原名 / 简介 / 标签应与改成直读库之前一致 —— 说明扫描导入 `scannedMetadataOf()` 的落库路径没漏字段。
-25. 开启 NSFW 保护并把数据源标记 NSFW：列表封面显示遮罩；**首页资料库卡片上的拼贴封面整个不渲染（只剩占位图标）**；点进详情页后头部是模糊底图 + 「点击查看原图」、封面与剧照逐张点开才显示；点「播放」进播放窗口后**只遮侧栏封面、画面本身不遮**（Windows 嵌入模式下 mpv 是原生子窗口，网页遮罩盖不住，见 §7 与 [播放窗口与 mpv 播放](../media/03-mpv-playback.md) §11）。**再关掉应用设置里的总开关**（该资料库的「NSFW 保护」仍开着）：列表封面、资料库卡片拼贴、详情页头部 / 封面 / 剧照、播放窗口侧栏封面都应在约 300ms 内变成直接显示 —— 库级标记不能越过总开关单独遮罩。
+25. 开启 NSFW 保护并在资料库表单里勾上「NSFW 保护」：列表封面显示遮罩；**首页资料库卡片上的拼贴封面整个不渲染（只剩占位图标）**；点进详情页后头部是模糊底图 + 「点击查看原图」、封面与剧照逐张点开才显示；点「播放」进播放窗口后**只遮侧栏封面、画面本身不遮**（Windows 嵌入模式下 mpv 是原生子窗口，网页遮罩盖不住，见 §7 与 [播放窗口与 mpv 播放](../media/03-mpv-playback.md) §11）。**再关掉应用设置里的总开关**（该资料库的「NSFW 保护」仍开着）：列表封面、资料库卡片拼贴、详情页头部 / 封面 / 剧照、播放窗口侧栏封面都应在约 300ms 内变成直接显示 —— 库级标记不能越过总开关单独遮罩。再单独验证一遍：**存储页预览**只看总开关，总开关开着时预览任意连接的图片都会遮罩（与连接无关）；**连接弹窗与连接列表里都不该再出现任何 NSFW 开关或标签**。
 26. 缩放窗口宽度：首页资料库横排与两排横向滚动正常（卡片不压缩），内容页网格列数自适应，详情页各块随宽度自适应（播放条与选集区不溢出、要点行与标签正常换行）。
 27. **播放失败兜底 + 路径自愈**：把一个已入库影片的**文件名改掉**（或真删掉）后直接进详情页（不重扫）→ 播放条仍可点（地址来自索引），但播放窗口里会给出读不出来的说明（内置后端是「内置播放器放不了这个视频：文件可能已被移动或删除，也可能是视频格式不受支持。」；配了 mpv 时按「mpv 报错 → 回退内置并用一句人话说明」处理），不再是黑屏；把文件放回去重新进页面 → 正常起播。只是**挪到别的目录**（同名同大小）时不该看到失败，见第 21 条的自愈；存储页预览的兜底层见[存储页](./02-storage-page.md)。
 28. **还原刮削前**：进一个已刮削影片的详情页 → 封面图右上角的「更多」里应有「还原刮削前」（详情没读到时「更多」整枚不显示，菜单项在读取 / 还原中禁用）；展开点它 → 二次确认写明「清空刮削数据 + 删磁盘 NFO 与刮削下载的图片 / 预告片 + 视频改回原名并搬回原位，原位置有同名文件时不覆盖，不自动重刮」，点「取消」什么都不发生。确认后：标题回到**刮削前的原始文件名**、简介 / 分类 / 封面 / 参演名单消失，`movie.nfo` / `<目录名>.nfo` / `<文件名>.nfo` 与刮削下载的图片 / 预告片被删掉，本地沿用的图片搬回原文件名，视频回到刮削前的位置与文件名（被搬进 `<根>/<base>/` 的应搬回原目录，空掉的影片文件夹一并删掉）；**目录型条目**（原始形态就是 `<片名 (年份)>/` + 里面几个版本）则整个影片目录搬回原名、目录里各版本的文件名从头到尾没被改过，演员本人档案仍在，提示形如「已清除刮削数据，视频已改回原文件名并移回原位置，删掉 1 个 NFO 文件」；库里这条的 `scraped_at` 与 `has_nfo` **都已归零**（不必等下次扫描），所以下一次点「刮削」它就能重新入队。

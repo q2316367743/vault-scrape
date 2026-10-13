@@ -5,14 +5,13 @@
  * - 只认主进程给的结果：`itemId` 由播放窗口的装载结果（`player:load` / `player:switch`）决定，不读路由；
  * - 侧栏比详情页**轻**：不搬详情页那套「展示口径」（封面块 / 剧照墙 / 信息格），
  *   只折算封面、标题与几项关键元信息，避免播放窗口被详情页的模块拖住；
- * - NSFW 判定与详情页同一套规则（以总开关为前提，命中该存储 nsfw 标记或所属资料库的 nsfwProtection），
+ * - NSFW 判定与详情页同一套规则（以总开关为前提，命中所属资料库的 nsfwProtection），
  *   用的是共享的 `useNsfwProtection`；
  * - 换集不在这里落状态：`select` 只改本地高亮，真正的换集由窗口层重新 `open`（主进程是权威）。
  */
 import { computed, ref, type Ref } from 'vue'
 import { mediaApi } from '@/api'
 import { useEpisodeSelection } from '@/hooks/UseEpisodeSelection'
-import { useFileConnections } from '@/hooks/UseFileConnections'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { formatDuration, formatSize, formatTime } from '@/utils/format'
 import type { MediaDetailResult, MediaEpisodeRef, MediaSeasonRef } from '@common/types/media'
@@ -35,7 +34,7 @@ export interface PlaySidebar {
   seasons: Ref<MediaSeasonRef[]>
   activeId: Ref<string>
   activeEpisode: Ref<MediaEpisodeRef | null>
-  /** 装载某一部的详情（含它自己的连接，用来算 NSFW） */
+  /** 装载某一部的详情 */
   load: (itemId: string) => Promise<void>
   /** 用户点了某一集：本地先高亮，换集命令由调用方发 */
   select: (episodeId: string) => void
@@ -45,14 +44,10 @@ export function usePlaySidebar(): PlaySidebar {
   const detail = ref<MediaDetailResult | null>(null)
   const loading = ref(false)
   const failure = ref('')
-  const { connections, refresh } = useFileConnections()
   const { seasons, activeId, activeEpisode, select } = useEpisodeSelection(detail)
 
-  const connection = computed(
-    () => connections.value.find((item) => item.id === detail.value?.item.connectionId) ?? null
-  )
-  /** 最终遮罩口径：总开关为前提，存储标记或库级 nsfwProtection 命中即遮罩 */
-  const { protect } = useNsfwProtection(connection, () => detail.value?.item.nsfwProtected === true)
+  /** 最终遮罩口径：总开关为前提，库级 nsfwProtection 命中才遮 */
+  const { protect } = useNsfwProtection(() => detail.value?.item.nsfwProtected === true)
 
   const title = computed(() => {
     const item = detail.value?.item
@@ -87,8 +82,6 @@ export function usePlaySidebar(): PlaySidebar {
     }
     loading.value = true
     failure.value = ''
-    // 连接列表是用来算 NSFW 的：失败不挡住详情，遮罩判定会退化成「只看全局开关」
-    await refresh()
     const result = await mediaApi.detail({ itemId })
     loading.value = false
     if (!result.ok) {

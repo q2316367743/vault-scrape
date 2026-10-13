@@ -9,7 +9,6 @@
 import { type FileConnection } from '@common/types/file'
 import { PROTOCOL_HINTS } from '../storageUtils'
 import { useConnectionForm } from '../composables/useConnectionForm'
-import ConnectionPolicyField from './ConnectionPolicyField.vue'
 
 const props = defineProps<{ connection?: FileConnection }>()
 const emit = defineEmits<{ success: [connection: FileConnection] }>()
@@ -111,8 +110,6 @@ defineExpose({ submit: onSubmit, saving, test: onTest, testing })
         :placeholder="passwordPlaceholder"
       />
     </div>
-
-    <connection-policy-field v-model:nsfw="form.nsfw" />
   </div>
 </template>
 

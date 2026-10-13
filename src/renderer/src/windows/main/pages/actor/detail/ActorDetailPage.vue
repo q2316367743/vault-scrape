@@ -32,7 +32,6 @@
               v-for="film in detail.films"
               :key="film.itemId"
               :item="film"
-              :connection="connectionOf(film.connectionId)"
             />
           </div>
           <t-empty v-else description="这位演员还没有关联到任何影片" />
@@ -53,7 +52,7 @@
  * - 「抓取资料」是手动入口：弹窗里选一个演员插件（默认上次选过的），只跑选中这一个；
  * - 打开页面且资料不全时，按 `scrape.actorScrapeOnOpen` 自动补一次（静默，同一演员一次会话只试一次，
  *   这里仍然把全部启用的插件交给主进程按顺序试——自动流程没有人工决策环节）；
- * - 出演作品用影视墙的卡片渲染，点进影片详情；连接信息从 `useFileConnections` 反查；
+ * - 出演作品用影视墙的卡片渲染，点进影片详情；
  * - 返回按钮由 SubPageLayout 提供，本页不在 `#extra` 里再放。
  */
 import { computed, onMounted } from 'vue'
@@ -62,12 +61,10 @@ import { useRouter } from 'vue-router'
 import { DeleteIcon, EditIcon, UserAddIcon } from 'tdesign-icons-vue-next'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
 import MediaWallCard from '@/components/media/MediaWallCard.vue'
-import { useFileConnections } from '@/hooks/UseFileConnections'
 import { MessageBoxUtil, MessageUtil } from '@/utils/modal'
 import { actorApi, pluginApi } from '@/api'
 import { useSettingScrapeStore } from '@/windows/main/store'
 import type { ActorDetail } from '@common/types/actor'
-import type { FileConnection } from '@common/types/file'
 import ActorProfileBlock from './components/ActorProfileBlock.vue'
 import ActorGalleryBlock from './components/ActorGalleryBlock.vue'
 import { useActorDetail } from './composables/useActorDetail'
@@ -76,17 +73,12 @@ import { openActorScrapeDialog } from './modals/ActorScrapeDialog'
 
 const router = useRouter()
 const { actorId, detail, loading, failure, load } = useActorDetail()
-const { connections, refresh } = useFileConnections()
 
 const actor = computed(() => detail.value?.actor ?? null)
 const title = computed(() => actor.value?.name ?? actorId)
 const { setting } = storeToRefs(useSettingScrapeStore())
 /** 本次会话已经自动抓过的演员：来回进出详情页不重复打插件 */
 const autoScraped = new Set<string>()
-
-function connectionOf(connectionId: string): FileConnection | null {
-  return connections.value.find((connection) => connection.id === connectionId) ?? null
-}
 
 /** 资料不全：没抓过、没头像或没生日；锁定过的演员不抓（抓了也只填空白，没意义） */
 function needsScrape(target: ActorDetail): boolean {
@@ -143,7 +135,6 @@ async function onRemove(): Promise<void> {
 }
 
 onMounted(async () => {
-  void refresh()
   await load()
   void autoScrape()
 })

@@ -21,7 +21,6 @@ src/renderer/src/windows/main/pages/storage/
 │   └── useScraperOptions.ts         # 插件候选项（已启用且编译通过的插件）：连接弹窗已不用，只被资料库表单复用
 ├── modals/                          # 命令式弹窗：外壳 .tsx + 内容 .vue
 │   ├── ConnectionDialog.tsx / ConnectionDialogContent.vue
-│   ├── ConnectionPolicyField.vue    # 弹窗内的策略字段：现在只剩 NSFW 开关（刮削器已随连接字段下线）
 │   └── StoragePreviewDrawer.tsx / StoragePreviewContent.vue   # 只读预览抽屉
 └── components/
     ├── StorageConnectionPanel.vue   # 左侧数据源列表（固定 300px）
@@ -49,11 +48,11 @@ src/renderer/src/windows/main/pages/storage/
 | `remove(connection)` | `fileApi.deleteConnection` → 提示 → 刷新 |
 | `test(connection)` | 返回 `ConnectionTestResult`，页面按 `ok` 分别 `MessagePlugin.success / error` |
 
-左栏列表项是**两行式**（`StorageConnectionPanel.vue`）：第一行协议图标 + 名称（`font-weight: 500`，超出省略，`title` 兜底），测试连通 / 编辑 / 删除按钮只在悬停或选中时出现；第二行是连接描述（`describeConnection`，超出省略，同样带 `title`）与标签组（协议标签、`nsfw` 的 `NSFW` 标签）。名称与标签**必须分行**：标签与操作按钮都是 `flex-shrink: 0`，一旦和名称挤在同一个 flex 行里，`flex: 1; min-width: 0` 的名称会被压成零宽，在界面上直接「消失」。
+左栏列表项是**两行式**（`StorageConnectionPanel.vue`）：第一行协议图标 + 名称（`font-weight: 500`，超出省略，`title` 兜底），测试连通 / 编辑 / 删除按钮只在悬停或选中时出现；第二行是连接描述（`describeConnection`，超出省略，同样带 `title`）与标签组（协议标签）。名称与标签**必须分行**：标签与操作按钮都是 `flex-shrink: 0`，一旦和名称挤在同一个 flex 行里，`flex: 1; min-width: 0` 的名称会被压成零宽，在界面上直接「消失」。
 
-连接上的 `nsfw` 标记（连接弹窗里「NSFW」开关，`ConnectionDialogContent.vue`）表示该数据源是敏感内容：列表里的连接会带一个 `NSFW` 标签（`StorageConnectionPanel.vue`，`theme="danger"`，`variant="light"`），并在应用设置开启「NSFW 保护」后让该数据源的页面隐藏敏感图片与视频（见[设置项清单 · 应用设置](../setting/02-setting-items.md)），预览抽屉同样受它约束（见 §7）。转换草稿时 `nsfw` 原样带上（`toConnectionDraft` 已包含该字段）。
+连接上**没有任何策略字段**：NSFW 标记只存在于资料库（库级 `nsfwProtection`，见[资料库](../media/01-media-library.md)），存储页因此没有 `NSFW` 标签、连接弹窗里也没有 NSFW 开关。存储页自己的预览抽屉只按应用设置的总开关遮罩（见 §7.2）。旧版本 `connections.json` 里写过的 `nsfw` 键在归一化时被直接忽略，不再回写。
 
-连接上**不再有 `scrapers` 字段**：刮削器是资料库自己的配置（见[资料库](../media/01-media-library.md)），一个存储可以被多个资料库复用、各自选不同的刮削器。因此存储页没有刮削器标签，连接弹窗里也没有刮削器多选；`FileConnection` / `FileConnectionDraft` 只保留 `nsfw` 这一个策略字段，`scraperIdsOf` / `describeScrapers` 随之下线。
+连接上**不再有 `scrapers` 字段**：刮削器是资料库自己的配置（见[资料库](../media/01-media-library.md)），一个存储可以被多个资料库复用、各自选不同的刮削器。因此存储页没有刮削器标签，连接弹窗里也没有刮削器多选；`FileConnection` / `FileConnectionDraft` 上既没有 `scrapers` 也没有 `nsfw`，`scraperIdsOf` / `describeScrapers` 随之下线。
 
 **删除连接会级联删除它名下的资料库**：`deleteConnection` 除了释放缓存的客户端，还会按连接级联删掉媒体条目、媒体源与图片，以及这个连接上所有资料库（`deleteLibrariesByConnection`），影视墙首页的资料库横排与资料库抽屉里随之消失、库内影片也从墙上移除（每个影片都归属于某个资料库，没有「未归入资料库」这一档）；磁盘文件与历史刮削任务记录都不受影响。
 
@@ -64,7 +63,7 @@ src/renderer/src/windows/main/pages/storage/
 - 外壳 `modals/ConnectionDialog.tsx` 导出 `openConnectionDialog({ connection?, onSaved? })`：`DialogPlugin({ width: 560, destroyOnClose: true, body: () => <ConnectionDialogContent … /> })`（`.tsx` 里用 JSX，不用 `h()`）；底部 `footer` 由外壳渲染「测试连接 / 取消 / 保存」三个按钮，动作与加载状态由内容组件 `defineExpose` 暴露（`test` / `testing` / `submit` / `saving`）给外壳的模板 ref 读。内容组件只用 `emit('success', connection)` 回传结果，外壳负责关闭弹窗并回调 `onSaved`。
 - 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码。
 - 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增字段只改这一个文件。
-- 协议无关的策略字段抽在 `modals/ConnectionPolicyField.vue`：现在只剩一个 NSFW 开关（props `{ nsfw }`，emit `update:nsfw`）。刮削器选择已随连接字段一起下线——要限制刮削器请到资料库表单里配置（`useScraperOptions` 仍被资料库表单复用，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)）。
+- 协议无关的策略字段已全部下线：`modals/ConnectionPolicyField.vue` 随 NSFW 开关一起删除，连接弹窗只剩「怎么访问这份数据」的字段。刮削器在资料库表单里配置（`useScraperOptions` 仍被资料库表单复用，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)）。
 - 本地磁盘的根目录字段由 `src/renderer/src/components/DirectoryPickerField.vue` 提供：输入框 + 「选择」按钮，按钮走 `dialogApi.open({ title, directory: true })` 选**本机绝对路径**（取消或失败都不改动原值），`ConnectionDialogContent.vue:53` 在 `protocol === 'local'` 分支里渲染它。资料库的媒体目录**不**走它——那里必须是连接内路径，改用资料库自己的 `RemoteDirDialog`（见[影视墙页面 · 表单](./04-media-wall-page.md)）。详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md)。
 - 协议在编辑态不可切换（连接协议是身份的一部分，改协议等于换连接）。
 - 密码草稿语义与主进程一致：**留空 = 沿用已存密码（`undefined`）**，填了就是新密码，显式清空才写空串；编辑时占位文案提示这一点，新建时提示「密码只写入本机钥匙串，不落明文」。
@@ -116,7 +115,7 @@ storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
 
 ### 7.2 NSFW 与 nfo
 
-- **NSFW**：`StorageBrowser.vue` 用 `useNsfwProtection(toRef(props, 'connection')).active`（应用总开关 + 该连接的 `nsfw` 标记同时成立）算出 `protect`，打开抽屉时定格并透传。视频由 `MediaPlayer` 的遮罩挡住，点击后才起播；图片走 `SensitiveImage` 的遮罩，点击后本实例放行。nfo 与其它文本不受影响。
+- **NSFW**：`StorageBrowser.vue` 调 `useNsfwProtection()` 拿 `protection`（存储页没有资料库上下文，**只看应用设置里的总开关**），打开抽屉时把 `protection.value` 定格成 `protect` 并透传。视频由 `MediaPlayer` 的遮罩挡住，点击后才起播；图片走 `SensitiveImage` 的遮罩，点击后本实例放行。nfo 与其它文本不受影响。
 - **nfo**：`StorageNfoPreview.vue` 用 `t-tabs` 提供「解析字段 / 原始 XML」两个视图。解析视图用原生 `<dl>/<dt>/<dd>` 事实格，**按 NFO 自身的字段口径**列出（标题 / 番号 / 原名 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 演员 / 标签），**空字段直接不渲染**（不占位 `—`），`studio` 只在与片商不同的时候单列「制作」；剧情用只读 `t-textarea` 展示。这里是全应用唯一按 NFO 原文展示字段的地方——影视墙详情页只展示落库后的元信息，不再有按 NFO 口径排列的信息块（见[影视墙页面](./04-media-wall-page.md) §4）。`parseNfoXml` 只认带 `<movie>` 的 nfo，解析不出时提示「不是标准的 movie nfo」并引导切到原始 XML；原文读取失败用 `t-alert` 展示文件域的中文原因。
 - **播放器搬家**：`MediaPlayer.vue` 与 `mediaPlayerI18n.ts` 已从 `pages/media/detail/`（原来在 `detail/components/` 下）移到共用目录 `src/renderer/src/components/media/`，影视墙详情页与存储页预览共用同一个组件；搬家时新增 `fallbackText` prop（默认值仍是影视墙那套「……也可以在影视墙里对资料库重新扫描一次」的文案），封面 `alt` 从「影片封面」改成通用的「封面」。
 
@@ -136,8 +135,8 @@ storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
 4. 视频预览：点一个 `.mp4` 的名称或「预览」，抽屉标题是文件名、顶部有大小 / 修改时间 / 完整路径；起播后拖动进度条应能立刻跳转（区间请求）；把文件在文件管理器里改名或移走后刷新目录再预览，应落到「视频读不出来……」兜底层而不是黑屏。
 5. 图片 / 音频预览：点 `.jpg` / `.mp3`，图片在抽屉里等比完整显示、音频能起播；对不支持的类型（例如 `.zip`），行上应显示 `—`、点名称无反应。
 6. nfo 预览：点一个 `.nfo`，默认「解析字段」应出现中文标签与剧情；切到「原始 XML」应显示原文；拿一个非 movie 的 nfo（或随便一个 `.nfo` 文本）确认提示「不是标准的 movie nfo」而不是报错。
-7. NSFW：打开应用设置的「NSFW 保护」，选一个带 `NSFW` 标签的连接，预览图片应先显示遮罩、点击后放行，预览视频应显示「内容已隐藏，点击播放」；关掉总开关后两者直接可见。
+7. NSFW：打开应用设置的「NSFW 保护」，预览任一图片应先显示遮罩、点击后放行，预览视频应显示「内容已隐藏，点击播放」；关掉总开关后两者直接可见（存储页没有库级标记，总开关是唯一口径）。
 8. 切换数据源与离开页面：选中项应被记住；抽屉不残留上一个文件的播放（关掉抽屉后再开另一个文件，标题与内容都应是新的）。
 9. 本地数据源根目录字段：点「选择」弹出系统目录框、选中后回填本机绝对路径到该字段的输入框；在系统框里点「取消」不改动原值、也不报错。切到 WebDAV / SMB 时该控件不出现，表单其余字段与保存流程无变化。
-10. 连接弹窗里应**只有 NSFW 开关**、没有刮削器多选；开关保存后列表项出现 `NSFW` 标签，关掉即消失。（刮削器改在影视墙的资料库表单里选，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)。）
+10. 连接弹窗里应**没有 NSFW 开关**、也没有刮削器多选；连接列表项上不应再出现 `NSFW` 标签。（NSFW 标记改在影视墙的资料库表单里勾，见[资料库](../media/01-media-library.md)；刮削器同处配置，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)。）
 11. 级联删除：先在这个存储上建一个资料库（影视墙首页 →「资料库」→ 新建），确认它出现在首页的资料库横排里；回到本页删除该存储，再去影视墙刷新——该资料库应从横排与抽屉里消失、库内影片也从墙上移除，磁盘文件与刮削记录都还在。

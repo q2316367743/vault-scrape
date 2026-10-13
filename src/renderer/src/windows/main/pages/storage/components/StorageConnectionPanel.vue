@@ -82,9 +82,6 @@ const emit = defineEmits<{
               <t-tag size="small" theme="primary" variant="light">
                 {{ FILE_PROTOCOL_LABELS[connection.protocol] }}
               </t-tag>
-              <t-tag v-if="connection.nsfw" size="small" theme="danger" variant="light">
-                NSFW
-              </t-tag>
             </div>
           </div>
         </li>

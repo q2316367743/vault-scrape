@@ -76,7 +76,7 @@
         <t-switch v-model="nsfwProtection" />
         <span class="form-note">
           开启后，本库影片按敏感内容处理（图片默认隐藏、点击才显示）；需先打开应用设置里的 NSFW
-          保护总开关，存储的 nsfw 标记同样生效
+          保护总开关
         </span>
       </div>
     </div>

@@ -15,7 +15,7 @@
 - **类型（`type`）建库后不可修改**：`LibraryType = 'movie' | 'tv'`（表单里显示「影视」/「剧集」），类型既决定扫描时按哪份后缀清单识别媒体文件（见 §4.2），也决定**条目粒度**——影视库一个视频一条影片，**剧集库一整部剧一条剧集**（扫描层级与刮削口径见 [剧集支持](./02-series-support.md)）。类型与后缀是「索引口径」的一部分，中途改会让已索引的条目变成孤儿，所以只允许新建时选。
 - 索引结果是**条目化**的：`media_item`（影视库 `movie` / `folder`；剧集库 `series` / `season` / `episode`）→ `media_source`（一个条目多源，本阶段一源；**只有集挂媒体源**，剧集与季靠 `parent_id` 串起来）→ `media_image`（primary / backdrop / thumb / logo / banner / other）。刮削元数据写在**条目**上，重扫只更新媒体源，**元数据与图片不会丢**。
 - 删除库只删配置与库内的条目 / 媒体源 / 图片行（`removeLibrary` = `purgeLibraryMedia` + `deleteLibrary`），**磁盘文件一个都不动**；删除存储则级联删掉它名下的库与媒体行（见 [存储页](../page/02-storage-page.md)）。
-- 刮削器**只来自资料库**：连接的 `FileConnection` 上已经**没有** `scrapers` 字段（`scraperIdsOf` / `usesAllScrapers` / `describeScrapers` 一并下线），存储页只留 NSFW。**空的 `scrapers` 数组 = 该库不刮削**，不再回落到「存储（连接）的刮削器」。可选的候选只有**影片信息插件**（`kind: 'movie'`），演员信息插件与翻译插件不出现在这个列表里（见 [插件类别](../plugin/03-plugin-categories.md)）。
+- 刮削器与 NSFW 都**只来自资料库**：连接的 `FileConnection` 上已经**没有** `scrapers`，也**没有** `nsfw`（`scraperIdsOf` / `usesAllScrapers` / `describeScrapers` 一并下线）。**空的 `scrapers` 数组 = 该库不刮削**，不再回落到「存储（连接）的刮削器」。可选的候选只有**影片信息插件**（`kind: 'movie'`），演员信息插件与翻译插件不出现在这个列表里（见 [插件类别](../plugin/03-plugin-categories.md)）。
 
 ## 2. 关键文件
 
@@ -286,7 +286,7 @@
 | 字段 | 默认 | 作用 |
 | --- | --- | --- |
 | `type` | `'movie'` | 库类型（「影视」/「剧集」）；决定扫描用哪份后缀清单与**条目粒度**——影视库一个视频一条影片、剧集库一整部剧一条剧集，**建库后不可修改** |
-| `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：总开关（应用设置 `nsfwProtection`）是前提，开启时命中「存储 `nsfw` 标记」或「库级 `nsfwProtection`」任一即遮罩，**总开关关闭时本标记不生效**（`MediaWallItem.nsfwProtected` 由墙面下发，渲染层与总开关、连接标记合并成 `protect`） |
+| `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：总开关（应用设置 `nsfwProtection`）是前提，开启时命中所属资料库的这个标记即遮罩，**总开关关闭时本标记不生效**（`MediaWallItem.nsfwProtected` 由墙面下发，渲染层把它与总开关合并成 `protect`；连接上没有 NSFW 标记） |
 | `minFileSizeMb` | `10`（新建默认） | 小于该体积（MB）的视频不参与扫描与刮削；`0` = 不过滤。表单里是数字输入（步进 100）；已建库沿用库里存的值（不会被默认值覆盖） |
 | `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息（译文 NFO 不当元数据、仍联网取原文，见 [翻译能力接入](../plugin/10-translate-integration.md)） |
 | `language` | `''`（未指定） | **该库内容的源语言**（表单里的「内容语言」，5 种语言码 + 「未指定」）：空串 = 不参与自动翻译；非空且与全局目标语言不同时，刮削完成后自动把译文写进 `media_translation`（并按设置决定要不要写进磁盘 NFO）。库只声明源语言，**目标语言仍由全局设置决定** |
@@ -301,7 +301,7 @@
 - **入口分工**：**扫描**与**刮削**都在影视墙的资料库抽屉里，刮削走整库待刮削候选（`library:scrape { libraryId }`）。原「工作台」的手动挑片入口（`scrape:browse` + `scrape:start { libraryId, itemIds }`）已下线，两个通道保留但渲染层没有调用方；刮削的进度 / 取消 / 继续 / 逐文件结果在概览页看（[刮削进度与详情页](../page/03-scrape-detail-page.md)）。刮削阶段**不扫盘、不自己建索引**。
 - **影视墙**：[影视墙页面](../page/04-media-wall-page.md)分首页（`/media`：资料库横排 + 最近添加 / 推荐两排）与内容页（`/media/library?libraryId=…`，空串 = 全部条目）；**影视库只列 `type='movie'` 条目、剧集库只列 `type='series'` 条目**（整部剧一张卡，`MediaWallItem.type='series'`，卡上多一枚「N 季 M 集」标签、没有番号与 `playUrl`），不属于任何库的条目不会出现在墙上；封面取条目自己的 primary 图、否则退回父目录条目的 primary 图（`readNfoInDir` 统一了「读哪个 NFO」的口径：影片按 `nfoCandidates` 读同目录 `movie.nfo` → `<目录名>.nfo` → `<基础名>.nfo`（目录型条目靠目录名对上），剧集读 `<剧集目录>/tvshow.nfo`）；`indexedAt` = 最新媒体源的 `indexed_at`。**影视墙不按刮削与否分类**（没有「待刮削 / 已刮削」标记、排序与统计，详情页也没有「刮削状态」格）。
 - **概览页**：[刮削进度与详情页](../page/03-scrape-detail-page.md)展示主进程最近一条任务的进度（可取消 / 继续）与全部刮削记录，点记录行进只读详情页（任务信息 + 逐文件结果）。
-- **存储页**：[存储页](../page/02-storage-page.md)是只读浏览 + 预览：删连接时主进程会级联 `deleteLibrariesByConnection(connectionId)`（删库 + 媒体条目 / 媒体源 / 图片），避免留下悬空数据；连接上不再有刮削器配置。预览走 `storage://` 的**路径形式**（不依赖媒体索引），因此未入库的任意视频 / 图片 / 音频 / nfo 也能看，与影视墙走的是同一条区间流式通道。
+- **存储页**：[存储页](../page/02-storage-page.md)是只读浏览 + 预览：删连接时主进程会级联 `deleteLibrariesByConnection(connectionId)`（删库 + 媒体条目 / 媒体源 / 图片），避免留下悬空数据；连接上既没有刮削器配置、也没有 NSFW 标记（都归资料库）。预览走 `storage://` 的**路径形式**（不依赖媒体索引），因此未入库的任意视频 / 图片 / 音频 / nfo 也能看，与影视墙走的是同一条区间流式通道。
 - **数据落盘位置**：
 
 | 内容 | 位置 |
@@ -320,7 +320,7 @@
 - **两种库类型、且不能改**：`LIBRARY_TYPES` 是 `'movie'` / `'tv'`，新增类型需要同时补 `LIBRARY_TYPE_LABELS` 与 `DEFAULT_LIBRARY_EXTENSIONS`；已有库的类型锁死是刻意设计（改类型会让已索引条目变成孤儿）。
 - **剧集库的已知限制**：剧集库不支持「优先本地 NFO」（`localFirst`）、不做体积过滤、剧集之间不去重；「还原刮削前」**季目录名不回改**（旧季目录由集文件搬回时重建，规范化后的季目录按空目录删掉）；渲染层没有剧集库的目录浏览入口（`mediaBrowse.ts` 只认影片库）。清单见 [剧集支持 §10](./02-series-support.md)。
 - **没有增量扫描，也没有实时监控**：每次扫描都把整库重新走一遍，靠 `scanId` 对比来做清理；磁盘变动必须手动点「扫描」才会反映。唯一例外是 §4.5 的**播放期路径自愈**：只在起播 `stat` 报「文件不存在」时按文件名 + 字节数找回一次，不改条目、不做全库扫描。
-- **没有库封面列**：`library` 表没有封面字段；首页资料库卡片的四宫格是**影片封面拼贴**（`MediaLibrarySummary.coverUrls`，最多 4 张、按最近添加排序；不足 4 张用同一条目的其它图片、剧集库再补各季海报凑满），不是库自己的封面。**NSFW 库不展示这张拼贴**：卡片在全局 NSFW 开关开启时直接按无封面渲染（图标占位），主进程照常返回 `coverUrls`（判断在渲染层，见 [影视墙页面](../page/04-media-wall-page.md)）。
+- **没有库封面列**：`library` 表没有封面字段；首页资料库卡片的四宫格是**影片封面拼贴**（`MediaLibrarySummary.coverUrls`，最多 4 张、按最近添加排序；不足 4 张用同一条目的其它图片、剧集库再补各季海报凑满），不是库自己的封面。**NSFW 库不展示这张拼贴**：全局 NSFW 开关开启且该库勾了 `nsfwProtection` 时，卡片直接按无封面渲染（图标占位），主进程照常返回 `coverUrls`（判断在渲染层，见 [影视墙页面](../page/04-media-wall-page.md)）。
 - 路径冲突统一报 `invalidArgument`：同库重复报「媒体目录重复添加」，同库嵌套报「媒体目录不能互相嵌套：A 与 B」，跨库重叠报「媒体目录与资料库「N」的 X 重叠，请改用不重叠的目录」——旧的 `findPathOwner` 精确归属规则与 `pathOverlap` 错误码都已移除。
 - 扫描上限是**全局计数**（`listed > 200_000` 即停），触顶时结果可能不完整，只给 `truncated` 提示、不做断点续扫。
 - **多版本只播主版本**：详情页本期固定播放 `primarySourceOf` 选出的主版本（无版本标签优先，其次路径 / 名称序第一），版本切换 UI 留后续；媒体源列表本身已经完整入库。

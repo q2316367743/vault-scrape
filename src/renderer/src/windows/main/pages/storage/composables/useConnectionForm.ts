@@ -7,7 +7,7 @@
  * 契约：
  * - 空串密码表示清空已存密码，`undefined` 表示沿用密钥串里的旧密码；
  * - 缺省 id 即新建；协议在编辑态不可切换（由模板控制）；
- * - 刮削器不再属于存储（Jellyfin 口径），改由资料库自己配置。
+ * - 刮削器与 NSFW 都不属于存储（Jellyfin 口径），分别归资料库与资料库的 `nsfwProtection`。
  */
 import { computed, reactive, ref } from 'vue'
 import { MessagePlugin } from 'tdesign-vue-next'
@@ -32,7 +32,6 @@ const AUTH_LABELS: Record<WebdavAuthType, string> = {
 
 export interface ConnectionForm {
   name: string
-  nsfw: boolean
   rootPath: string
   url: string
   username: string
@@ -51,7 +50,6 @@ export function useConnectionForm(options: {
   const protocol = ref<FileProtocol>(options.connection?.protocol ?? 'local')
   const form = reactive<ConnectionForm>({
     name: '',
-    nsfw: false,
     rootPath: '',
     url: '',
     username: '',
@@ -84,7 +82,6 @@ export function useConnectionForm(options: {
   function initForm(connection: FileConnection | undefined): void {
     if (!connection) return
     form.name = connection.name
-    form.nsfw = connection.nsfw
     if (connection.protocol === 'local') {
       form.rootPath = connection.rootPath
       return
@@ -105,10 +102,8 @@ export function useConnectionForm(options: {
 
   function buildDraft(): FileConnectionDraft {
     const name = form.name.trim()
-    const nsfw = form.nsfw
     const identity = {
       name,
-      nsfw,
       ...(options.connection ? { id: options.connection.id } : {})
     }
     if (protocol.value === 'local') {

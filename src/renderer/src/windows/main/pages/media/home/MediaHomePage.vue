@@ -57,7 +57,6 @@
               v-for="item in row.items"
               :key="item.itemId"
               :item="item"
-              :connection="connectionOf(item.connectionId)"
             />
           </div>
         </section>
@@ -80,8 +79,6 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { CollectionIcon, RefreshIcon } from 'tdesign-icons-vue-next'
 import PageLayout from '@/components/PageLayout/PageLayout.vue'
-import { useFileConnections } from '@/hooks/UseFileConnections'
-import type { FileConnection } from '@common/types/file'
 import LibraryCard from './components/LibraryCard.vue'
 import MediaWallCard from '@/components/media/MediaWallCard.vue'
 import { openLibraryDrawer } from '../library/components/LibraryDrawer'
@@ -91,7 +88,6 @@ import { formatTime } from '@/utils/format'
 const router = useRouter()
 const keyword = ref('')
 
-const { connections, refresh: refreshConnections } = useFileConnections()
 const { libraries, rows, loading, failure, total, indexedAt, load } = useMediaHome()
 
 /** 整排为空就不渲染这一排（主进程给的排可能还没有内容） */
@@ -101,10 +97,6 @@ const summary = computed(() => {
   const indexed = indexedAt.value > 0 ? ` · 最近扫描 ${formatTime(indexedAt.value)}` : ''
   return `共 ${total.value} 部 · ${libraries.value.length} 个资料库${indexed}`
 })
-
-function connectionOf(connectionId: string): FileConnection | null {
-  return connections.value.find((connection) => connection.id === connectionId) ?? null
-}
 
 /** 首页搜索 = 跳去「全部影片」并带上关键词；筛选口径由内容页负责 */
 function onSearch(): void {
@@ -124,7 +116,6 @@ function openDrawer(): void {
 }
 
 onMounted(() => {
-  void refreshConnections()
   void load()
 })
 </script>

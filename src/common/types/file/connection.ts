@@ -5,7 +5,9 @@
  * - 密码永不跨 IPC：对外形状只有 `hasPassword` 布尔值，密文只存在主进程的存储文件里；
  * - 一个 SMB 连接对应一个共享（share），连接根即该共享根；
  * - 草稿（Draft）的 `id` 缺省表示新建，`password` 缺省表示保持已存密码、空串表示清空；
- * - 刮削器不再挂在存储上，改由资料库（library）配置。
+ * - 刮削器不再挂在存储上，改由资料库（library）配置；
+ * - **连接上没有任何策略字段**：NSFW 只由资料库的 `nsfwProtection` 与应用设置的
+ *   `nsfwProtection` 总开关决定（见 `@/hooks/UseNsfwProtection`）。
  */
 export type FileProtocol = 'local' | 'webdav' | 'smb'
 
@@ -28,8 +30,6 @@ export interface LocalConnection {
   name: string
   protocol: 'local'
   hasPassword: false
-  /** NSFW 标记：只有标记的存储才会被 NSFW 保护处理 */
-  nsfw: boolean
   /** 本机绝对路径 */
   rootPath: string
 }
@@ -39,8 +39,6 @@ export interface WebdavConnection {
   name: string
   protocol: 'webdav'
   hasPassword: boolean
-  /** NSFW 标记：只有标记的存储才会被 NSFW 保护处理 */
-  nsfw: boolean
   url: string
   username: string
   authType: WebdavAuthType
@@ -51,8 +49,6 @@ export interface SmbConnection {
   name: string
   protocol: 'smb'
   hasPassword: boolean
-  /** NSFW 标记：只有标记的存储才会被 NSFW 保护处理 */
-  nsfw: boolean
   host: string
   port: number
   /** 共享名，即连接根 */
@@ -68,7 +64,6 @@ export interface LocalConnectionDraft {
   id?: string
   protocol: 'local'
   name: string
-  nsfw: boolean
   rootPath: string
 }
 
@@ -76,7 +71,6 @@ export interface WebdavConnectionDraft {
   id?: string
   protocol: 'webdav'
   name: string
-  nsfw: boolean
   url: string
   username: string
   authType: WebdavAuthType
@@ -87,7 +81,6 @@ export interface SmbConnectionDraft {
   id?: string
   protocol: 'smb'
   name: string
-  nsfw: boolean
   host: string
   port?: number
   share: string

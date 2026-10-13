@@ -43,8 +43,7 @@
  * 契约：
  * - 剧集卡多一枚「N 季 M 集」标签、不显示番号（剧集没有番号，`item.num` 恒为空串）；
  * - 封面只走 `item.coverUrl`（`storage://` 协议），没有封面时显示占位，不自己拼路径；
- * - NSFW 保护以总开关为前提，命中「存储 nsfw 标记」或「所属资料库的 nsfwProtection」任一即遮罩，
- *   总开关关闭时一律显示；
+ * - NSFW 保护以总开关为前提，命中「所属资料库的 nsfwProtection」才遮罩，总开关关闭时一律显示；
  * - 点击整张卡片跳详情页，参数只带 `itemId`（影片身份），播放与更细的信息都在那边；
  *   卡片内其它可点击元素（如遮罩按钮）必须自己阻止冒泡。
  */
@@ -53,22 +52,16 @@ import { useRouter } from 'vue-router'
 import { FilmIcon, TagIcon } from 'tdesign-icons-vue-next'
 import SensitiveImage from '@/components/SensitiveImage.vue'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
-import type { FileConnection } from '@common/types/file'
 import type { MediaWallItem } from '@common/types/media'
 import { formatSize, formatTime } from '@/utils/format'
 
 const props = defineProps<{
   item: MediaWallItem
-  /** 本条记录所属的存储；连接列表还没加载完时可能为 null */
-  connection: FileConnection | null
 }>()
 
 const router = useRouter()
-/** 最终遮罩口径：总开关为前提，存储标记或库级 nsfwProtection 命中即遮罩（见 `useNsfwProtection`） */
-const { protect } = useNsfwProtection(
-  computed(() => props.connection),
-  () => props.item.nsfwProtected
-)
+/** 最终遮罩口径：总开关为前提，库级 nsfwProtection 命中才遮（见 `useNsfwProtection`） */
+const { protect } = useNsfwProtection(() => props.item.nsfwProtected)
 /** 剧集卡的第二枚标签：N 季 M 集；影片返回空串，模板里不渲染 */
 const episodeSummary = computed(() =>
   props.item.type === 'series' ? `${props.item.seasonCount} 季 ${props.item.episodeCount} 集` : ''

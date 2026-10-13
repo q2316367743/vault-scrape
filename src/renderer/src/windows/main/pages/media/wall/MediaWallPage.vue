@@ -34,7 +34,6 @@
           v-for="item in visible"
           :key="item.itemId"
           :item="item"
-          :connection="connectionOf(item.connectionId)"
         />
       </div>
 
@@ -57,13 +56,11 @@
  *   首页的搜索也会把 `keyword` 带过来，作为搜索框初值；
  * - 过滤与排序都在渲染层（见 useMediaWall），资料库的增删改与扫描 / 刮削在抽屉里，
  *   抽屉里任何变更都让本页重拉一次，保证计数与卡片同步；
- * - 卡片的 NSFW 遮罩由卡片自己按所属存储 + 库级标记判定，本页只负责把连接信息传下去。
+ * - 卡片的 NSFW 遮罩由卡片自己按库级 `nsfwProtection` 判定，本页不参与。
  */
 import { RefreshIcon } from 'tdesign-icons-vue-next'
 import { libraryApi } from '@/api'
 import SubPageLayout from '@/components/PageLayout/SubPageLayout.vue'
-import { useFileConnections } from '@/hooks/UseFileConnections'
-import type { FileConnection } from '@common/types/file'
 import type { LibraryType } from '@common/types/library'
 import MediaWallCard from '@/components/media/MediaWallCard.vue'
 import { useMediaWall } from './composables/useMediaWall'
@@ -91,7 +88,6 @@ const libraryName = ref('')
 /** 库类型只影响文案（影片 / 剧集），与 `libraryApi.list()` 的同一次查询一起取回 */
 const libraryType = ref<LibraryType>('movie')
 
-const { connections, refresh: refreshConnections } = useFileConnections()
 const { loading, failure, indexedAt, keyword, sort, visible, load } = useMediaWall(libraryId)
 
 keyword.value = queryText(route.query.keyword)
@@ -117,10 +113,6 @@ const summary = computed(() => {
   const indexed = indexedAt.value > 0 ? ` · 最近扫描 ${formatTime(indexedAt.value)}` : ''
   return `共 ${visible.value.length} 部${indexed}`
 })
-
-function connectionOf(connectionId: string): FileConnection | null {
-  return connections.value.find((connection) => connection.id === connectionId) ?? null
-}
 
 function onSortChange(value: unknown): void {
   if (value === 'title' || value === 'size' || value === 'modified') {
@@ -150,7 +142,6 @@ watch(
 )
 
 onMounted(() => {
-  void refreshConnections()
   void loadLibraryName()
 })
 </script>

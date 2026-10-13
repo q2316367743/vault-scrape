@@ -7,7 +7,7 @@ export interface StoragePreviewDrawerOptions {
   connection: FileConnection
   /** 要预览的文件条目 */
   entry: FileEntry
-  /** NSFW 保护是否生效（应用总开关 + 该连接的 nsfw 标记），在打开时定格 */
+  /** NSFW 保护是否生效（应用设置里的总开关），在打开时定格 */
   protect: boolean
 }
 
