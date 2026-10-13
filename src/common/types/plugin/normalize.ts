@@ -20,6 +20,12 @@ import {
 import { isPluginKind } from './kind'
 import { PLUGIN_ID_PATTERN, type PluginMeta } from './manifest'
 import type { PluginEpisode, PluginMovieCandidate, PluginMovieDetail } from './movie'
+import {
+  isPluginStorageEntryType,
+  type PluginStorageEntry,
+  type PluginStorageListResult,
+  type PluginStorageResolveResult
+} from './storage'
 
 /** 单个列表最多保留的条目数 */
 export const PLUGIN_LIST_LIMIT = 500
@@ -265,5 +271,57 @@ export function normalizeActorDetail(raw: unknown, fallbackName: string): Plugin
     sourceUrl: optional(source, 'sourceUrl'),
     overview: optional(source, 'overview'),
     tags: optionalStringArray(source, 'tags')
+  }
+}
+
+/** 存储条目：path 必填；name 缺失时由宿主从 path 末段推断；type 只认 file / directory */
+export function normalizeStorageEntry(raw: unknown): PluginStorageEntry | null {
+  const source = toSource(raw)
+  if (!source) return null
+  const path = required(source, 'path')
+  if (path === null) return null
+  const type = source.type
+  if (!isPluginStorageEntryType(type)) return null
+  return {
+    path,
+    name: optional(source, 'name') ?? '',
+    type,
+    size: readNumber(source, 'size', 0, 0),
+    modifiedAt: readNumber(source, 'modifiedAt', 0, 0)
+  }
+}
+
+/** list 返回：entries 非法项丢弃，nextCursor 必须是非空字符串 */
+export function normalizeStorageListResult(raw: unknown): PluginStorageListResult | null {
+  const source = toSource(raw)
+  if (!source) return null
+  const entries = limitList(
+    toRawList(source.entries)
+      .map(normalizeStorageEntry)
+      .filter(isPresent),
+    '目录列表'
+  )
+  return {
+    entries,
+    nextCursor: optional(source, 'nextCursor')
+  }
+}
+
+/** 单个条目查询返回：缺 path / type 即非法 */
+export function normalizeStorageStatResult(raw: unknown): PluginStorageEntry | null {
+  return normalizeStorageEntry(raw)
+}
+
+/** 直链解析返回：url 必填；headers 只留非空字符串；ttlSeconds 限 30 到 86400 秒 */
+export function normalizeStorageResolveResult(raw: unknown): PluginStorageResolveResult | null {
+  const source = toSource(raw)
+  if (!source) return null
+  const url = required(source, 'url')
+  if (url === null) return null
+  const ttl = readNumber(source, 'ttlSeconds', 300, 1)
+  return {
+    url,
+    headers: readHeaders(source),
+    ttlSeconds: Math.min(Math.max(ttl, 30), 86400)
   }
 }

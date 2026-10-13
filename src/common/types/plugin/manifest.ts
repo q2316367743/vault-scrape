@@ -83,8 +83,10 @@ function leadingNumber(part: string | undefined): number {
 /**
  * 插件声明的环境变量。
  *
- * 账号类参数（站点地址、Cookie、Token…）都是文本，所以声明只描述「要填什么」，
- * 值一律按敏感文本处理：多行文本域填写、加密落盘、界面只回「是否已填写」。
+ * 账号类参数（站点地址、Cookie、Token…）都是文本，所以声明只描述「要填什么」。
+ * 影片 / 演员 / 翻译三类插件：值一律按敏感文本处理（多行文本域填写、加密落盘、
+ * 界面只回「是否已填写」）；存储插件：值挂在连接上，`secret: true` 的字段加密落盘、
+ * 界面不回显，其余字段明文存储、可回显。
  */
 export interface PluginEnvField {
   key: string
@@ -92,6 +94,8 @@ export interface PluginEnvField {
   required?: boolean
   placeholder?: string
   description?: string
+  /** 敏感字段：加密落盘、界面不回显；缺省 false（仅存储插件连接配置区分，其余类别一律按敏感处理） */
+  secret?: boolean
 }
 
 /** 环境变量取值：插件方法拿到的 `env`，键值都是字符串 */

@@ -3,7 +3,8 @@
  *
  * 契约：
  * - 声明表来自插件源码，取值来自落盘文件，两者都可能被手工改坏，一律逐项校验；
- * - 环境变量一律按敏感文本处理（多行文本域填写、密文落盘、界面只回「是否已填写」）；
+ * - 影片 / 演员 / 翻译三类：取值一律按敏感文本处理（密文落盘、界面只回「是否已填写」）；
+ * - 存储插件：取值挂在连接上，`secret: true` 的字段加密落盘、界面不回显，其余字段可回显；
  * - 归一化绝不抛错、绝不引入 any。
  */
 import { readString, toSource } from '../setting/shared'
@@ -32,7 +33,8 @@ function normalizeField(raw: unknown): PluginEnvField | null {
     label,
     required: source.required === true,
     placeholder: placeholder.length > 0 ? placeholder : undefined,
-    description: description.length > 0 ? description : undefined
+    description: description.length > 0 ? description : undefined,
+    secret: source.secret === true
   }
 }
 

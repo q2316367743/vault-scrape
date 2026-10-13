@@ -16,9 +16,9 @@ import { MessagePlugin } from 'tdesign-vue-next'
 import { libraryApi } from '@/api'
 import { useScraperOptions } from '@/windows/main/pages/storage/composables/useScraperOptions'
 import {
-  FILE_PROTOCOL_LABELS,
   FILE_ROOT,
   normalizeRemotePath,
+  protocolLabel,
   type FileConnection
 } from '@common/types/file'
 import {
@@ -79,7 +79,7 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
   const connectionOptions = computed(() =>
     options.connections.map((item) => ({
       value: item.id,
-      label: `${item.name}（${FILE_PROTOCOL_LABELS[item.protocol]}）`
+      label: `${item.name}（${protocolLabel(item.protocol)}）`
     }))
   )
 

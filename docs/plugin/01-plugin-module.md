@@ -1,6 +1,6 @@
-# 插件模块（影片信息 / 演员信息 / 翻译）
+# 插件模块（影片信息 / 演员信息 / 翻译 / 存储）
 
-站点适配逻辑从主程序剥离为**本机 JS 脚本**：影片信息（搜索、详情、封面、花絮）、演员信息（资料、头像图集）与翻译各成一类独立的插件，用户可导入、编辑、启停、测试；插件只负责「产出数据与下载配置」，真正的下载与落盘由后续调度器实现。插件声明的环境变量统一在**插件页右栏的配置区块**填写。
+站点适配逻辑从主程序剥离为**本机 JS 脚本**：影片信息（搜索、详情、封面、花絮）、演员信息（资料、头像图集）、翻译与存储（网盘等云端存储接入文件模块）各成一类独立的插件，用户可导入、编辑、启停、测试；影片 / 演员 / 翻译插件只负责「产出数据与下载配置」，真正的下载与落盘由后续调度器实现；存储插件的职责与宿主分工见 [11-storage-plugins.md](./11-storage-plugins.md)。插件声明的环境变量统一在**插件页右栏的配置区块**填写（存储插件例外：声明的是连接配置字段模板，取值挂在存储页的连接上）。
 
 ## 1. 为什么是 JS 脚本而不是 WASM
 
@@ -19,7 +19,7 @@
 
 ## 2. 插件契约
 
-文件插件脚本是**纯 JS**（没有 `import` / `require` / TypeScript），顶层调用一次 `definePlugin(...)`（内置插件不走这条契约，见 2.4 节）。**`meta.kind` 声明插件类别且必填**：`movie`（影片信息）/ `actor`（演员信息）/ `translate`（翻译）三类互相独立，目录、IPC 通道、内存缓存与启停状态都按类别隔离，设计说明与迁移见 [03-plugin-categories.md](./03-plugin-categories.md)。
+文件插件脚本是**纯 JS**（没有 `import` / `require` / TypeScript），顶层调用一次 `definePlugin(...)`（内置插件不走这条契约，见 2.4 节）。**`meta.kind` 声明插件类别且必填**：`movie`（影片信息）/ `actor`（演员信息）/ `translate`（翻译）/ `storage`（存储）四类互相独立，目录、IPC 通道、内存缓存与启停状态都按类别隔离，类别设计说明见 [03-plugin-categories.md](./03-plugin-categories.md)，存储插件的完整契约见 [11-storage-plugins.md](./11-storage-plugins.md)。
 
 ```js
 // 影片信息插件（kind: 'movie'）：四个方法全部必填
@@ -52,7 +52,7 @@ definePlugin({
 - **方法表按类别校验**（`PLUGIN_KIND_METHODS`）：影片类缺 `search` / `detail` / `covers` / `extras` 之一、演员类缺 `actor`、翻译类缺 `translate`，或者实现了别的类别的方法，都报 `invalidPlugin` 且源码不落盘；
 - 脚本「以 `definePlugin(...)` 结尾」和「没有返回值但调用过 definePlugin」两种写法都支持（宿主同时记录调用槽与顶层完成值）；
 - 每个方法的第二个参数都是 `env`：插件自己声明、用户在插件页配置区块填写的环境变量取值（已解密为明文，只在沙箱内），具体见第 7 节；
-- 三类的方法入参形状不同：影片 / 演员是一个字符串（关键字 / 影片 ID / 演员姓名），翻译是一个 `{ text, from?, to }` 对象、返回 `{ text }`，语言码用宿主的 5 种（见 [09-translate-plugins.md](./09-translate-plugins.md)）。
+- 各类别的方法入参形状不同：影片 / 演员是一个字符串（关键字 / 影片 ID / 演员姓名），翻译是一个 `{ text, from?, to }` 对象、返回 `{ text }`，语言码用宿主的 5 种（见 [09-translate-plugins.md](./09-translate-plugins.md)），存储是 `{ path, cursor? }` 等对象（见 [11-storage-plugins.md](./11-storage-plugins.md)）。
 
 ### 2.1 返回类型（`@common/types/plugin`）
 
@@ -150,8 +150,8 @@ interface PluginAsset {
 
 1. `new vm.Script(source)` 解析语法，失败即 `evalFailed`，不落盘；
 2. 在 `node:vm` 沙箱里**执行一次顶层代码**（超时 5 秒），拿到 `definePlugin(...)` 的返回值；
-3. 校验 `meta`——`id` 是 kebab-case、`name` / `version` 非空、**`kind` 必须是 `movie` / `actor` / `translate` 之一**，缺失或非法即 `invalidPlugin`；同时校验 `meta.kind` 与「正在导入的类别」一致，不一致的报「插件声明的类别是「X」，不能在「Y」类别里加载或导入」；
-4. 按该类别的 `PLUGIN_KIND_METHODS` 校验方法：缺必需方法、或实现了别类方法都报 `invalidPlugin`（三个类别各自有必需方法，见 §2）；
+3. 校验 `meta`——`id` 是 kebab-case、`name` / `version` 非空、**`kind` 必须是 `movie` / `actor` / `translate` / `storage` 之一**，缺失或非法即 `invalidPlugin`；同时校验 `meta.kind` 与「正在导入的类别」一致，不一致的报「插件声明的类别是「X」，不能在「Y」类别里加载或导入」；
+4. 按该类别的 `PLUGIN_KIND_METHODS` 校验方法：缺必需方法、或实现了别类方法都报 `invalidPlugin`（四个类别各自有必需方法，见 §2 与 [11-storage-plugins.md](./11-storage-plugins.md)）；
 5. 读取 `env` 数组并归一化（丢弃非法项、截断超量、去重），把结果缓存进该类别的 `plugins.json` 的 `envFields`；
 6. 只有以上全部通过才写盘；声明表随之出现在插件页右栏的配置区块，由用户填写取值。
 
@@ -279,7 +279,7 @@ interface PluginResponse {
 | 类别清单 | `~/.vault-scrape/plugin/<类别>/plugins.json`（`{ version: 1, plugins: StoredPlugin[] }`，每个类别各一份） |
 | 类别源码 | `~/.vault-scrape/plugin/<类别>/<id>.js` |
 
-`<类别>` 是 `movie` / `actor` / `translate` 三者之一。**同一个 id 允许在不同类别里各存一份**：索引、源码文件、编译缓存与加载错误都按类别各一套，互不影响。
+`<类别>` 是 `movie` / `actor` / `translate` / `storage` 四者之一。**同一个 id 允许在不同类别里各存一份**：索引、源码文件、编译缓存与加载错误都按类别各一套，互不影响。
 
 - 单个源码文件上限 1 MB；
 - 同名覆盖导入（版本更高时自动触发，或确认 `overwrite: true`）只更新元信息、`envFields` 与源码文件，**保留**原有的 `enabled` 与 `envValues`（已保存的环境变量密文不丢）；
@@ -294,7 +294,7 @@ interface PluginResponse {
 
 ## 6. IPC 通道
 
-通道常量定义在 `src/preload/src/modules/plugin/pluginChannels.ts`，preload 桥与 main handler 共用。三个类别各有一套同名通道，由 `channelsOf(kind)` 生成 `` `plugin:<类别>:<动作>` ``，`pluginIpc.ts` 对三类各注册一遍。全部返回 `PluginResult` 信封，**绝不跨 IPC 抛异常**。
+通道常量定义在 `src/preload/src/modules/plugin/pluginChannels.ts`，preload 桥与 main handler 共用。四个类别各有一套同名通道，由 `channelsOf(kind)` 生成 `` `plugin:<类别>:<动作>` ``，`pluginIpc.ts` 对四类各注册一遍。全部返回 `PluginResult` 信封，**绝不跨 IPC 抛异常**。
 
 | 通道 | 参数 | 返回 |
 | --- | --- | --- |
@@ -310,9 +310,9 @@ interface PluginResponse {
 | `plugin:<类别>:invoke` | `{ id, method, keyword?, movieId?, actorName?, text?, from?, to? }` | `PluginMovieCandidate[]` / `PluginMovieDetail` / `PluginAsset[]` / `PluginActorDetail` / `PluginTranslateResult`（`translate` 方法用 `text` / `from?` / `to`，`to` 必须是宿主 5 种语言码之一，否则 `invalidArgument`） |
 | `plugin:legacy` | — | `{ dir, files }`（旧版平铺目录的残留 `.js`，只读探测） |
 
-`<类别>` 是 `movie` / `actor` / `translate`；`invoke` 的 `method` 必须属于该类别的方法表，否则 `invalidArgument`——`translate` 类别只认 `translate` 一个方法（`PLUGIN_KIND_METHODS`），入参 `{ text, from?, to }`、返回 `{ text }`。
+`<类别>` 是 `movie` / `actor` / `translate` / `storage`；`invoke` 的 `method` 必须属于该类别的方法表，否则 `invalidArgument`——`translate` 类别只认 `translate` 一个方法（`PLUGIN_KIND_METHODS`），入参 `{ text, from?, to }`、返回 `{ text }`。`storage` 类别的 invoke 恒定返回 `unsupported`：存储插件的配置取值挂在连接上，插件页没有 env 来源，试运行无意义；实际调用方是文件模块的 `PluginFileClient`，走注册表的 `invokeStorageMethod`（入参对象、env 来自连接配置），见 [11-storage-plugins.md](./11-storage-plugins.md)。
 
-preload 桥也按类别暴露：`pluginApi.movie` / `pluginApi.actor` / `pluginApi.translate` 各是同一套九项通用操作，`movie` 桥额外提供 `search` / `detail` / `covers` / `extras` 四个 `invoke` 快捷方法，另有只读的 `pluginApi.legacy()`。渲染层只通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`。
+preload 桥也按类别暴露：`pluginApi.movie` / `pluginApi.actor` / `pluginApi.translate` / `pluginApi.storage` 各是同一套九项通用操作，`movie` 桥额外提供 `search` / `detail` / `covers` / `extras` 四个 `invoke` 快捷方法，另有只读的 `pluginApi.legacy()`。渲染层只通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`。
 
 ## 7. 环境变量声明
 
@@ -331,7 +331,7 @@ interface PluginEnvField {
 - 取值最终以第二个参数 `env`（`Record<string, string>`）传给插件方法；
 - 最多 50 项，非法项直接丢弃（插件仍可加载，只是少了变量）；
 - 没有类型概念：账号类参数（站点地址、Cookie、Token…）都是文本，统一渲染成**多行文本域**；
-- 填写入口在**插件页右栏的配置区块**（`pages/plugin/components/PluginConfigPanel.vue`，三个类别共用，按 `kind` 调用对应类别的桥），配置清单存在该类别的 `plugin/<类别>/plugins.json`：按选中插件渲染多行文本域，一个插件一个「保存」，已保存的值不回显（占位提示「已保存，留空表示保持不变」）；只有在插件声明了环境变量（`hasEnv`）时才渲染这个区块，内置插件与没写 `env` 的脚本插件都不会看到空区域；
+- 填写入口在**插件页右栏的配置区块**（`pages/plugin/components/PluginConfigPanel.vue`，影片 / 演员 / 翻译三类共用，按 `kind` 调用对应类别的桥），配置清单存在该类别的 `plugin/<类别>/plugins.json`：按选中插件渲染多行文本域，一个插件一个「保存」，已保存的值不回显（占位提示「已保存，留空表示保持不变」）；只有在插件声明了环境变量（`hasEnv`）时才渲染这个区块，内置插件与没写 `env` 的脚本插件都不会看到空区域；**存储插件例外**——声明是连接配置字段模板，取值挂在存储页的连接上，插件页不渲染配置区块、`envReady` 恒为 true；
 - `required` 的项未填写时 `envReady` 为 false，界面显示「待填写变量」；此时调用直接失败：`envMissing`，提示缺失项的名称。
 
 ## 8. 错误码
@@ -371,13 +371,13 @@ interface PluginEnvField {
 | `src/main/src/modules/plugin/pluginRuntime.ts` | vm 沙箱编译（按类别校验方法表）、方法调用与超时 |
 | `src/main/src/modules/plugin/pluginHost.ts` | `ctx` 构造：共享 http 客户端请求（超时 / 重试 / 限速）、cheerio 注入、日志桥（scope 为 `plugin:<类别>:<id>`；环境变量不经 ctx） |
 | `src/main/src/modules/plugin/pluginRegistry.ts` | `createPluginRegistry(kind)` 工厂：该类别的内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/排序/环境变量/调用入口 |
-| `src/main/src/modules/plugin/pluginRegistries.ts` | 三个类别注册表单例：`moviePlugins` / `actorPlugins` / `translatePlugins`（各调用方按类别取用） |
+| `src/main/src/modules/plugin/pluginRegistries.ts` | 四个类别注册表单例：`moviePlugins` / `actorPlugins` / `translatePlugins` / `storagePlugins`（各调用方按类别取用） |
 | `src/main/src/modules/plugin/pluginImport.ts` | 导入预处理：按 `kind` 编译校验、同批同名择优（版本比较） |
 | `src/main/src/modules/plugin/pluginIpc.ts` | 三套类别通道 + `plugin:legacy` 的注册与信封转换（唯一转换点），系统文件选择框 |
 | `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义与实现（当前仅影片类别的 `r18-offline`，见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)） |
 | `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
 | `src/preload/src/modules/plugin/` | `channelsOf(kind)` 通道常量与 `pluginApi.{movie,actor,translate,legacy}` 桥 |
-| `src/renderer/src/windows/main/pages/plugin/` | 插件页：外壳（`PluginHomePage.vue` 三个 tab + 旧版残留提示）与三个类别子页；共用管理视图 `components/PluginManagerView.vue`（左列表 + 右详情，`props: kind`，导入与批量删除的确认弹窗）、列表（`PluginList.vue`，transparent 左栏，sortablejs 拖拽重排、整行可拖、行内勾选多选）与面板头 `components/PluginListHeader.vue`（全选 + 数量 + 刷新 / 导入 + 批量操作条）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停 + `#extra` 类别专属插槽）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`）；`composables/usePluginManager.ts` 按类别各维护一份状态（批量启停 / 删除为串行循环，复用既有单条 IPC），`composables/usePluginSelection.ts` 管多选 UI 状态 |
+| `src/renderer/src/windows/main/pages/plugin/` | 插件页：外壳（`PluginHomePage.vue` 四个 tab + 旧版残留提示）与四个类别子页（存储子页 `storage/StoragePluginPage.vue`，不渲染配置区块与试运行）；共用管理视图 `components/PluginManagerView.vue`（左列表 + 右详情，`props: kind`，导入与批量删除的确认弹窗）、列表（`PluginList.vue`，transparent 左栏，sortablejs 拖拽重排、整行可拖、行内勾选多选）与面板头 `components/PluginListHeader.vue`（全选 + 数量 + 刷新 / 导入 + 批量操作条）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停 + `#extra` 类别专属插槽）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`）；`composables/usePluginManager.ts` 按类别各维护一份状态（批量启停 / 删除为串行循环，复用既有单条 IPC），`composables/usePluginSelection.ts` 管多选 UI 状态 |
 | `src/renderer/src/windows/main/pages/tools/` | 工具箱：索引页在根（`ToolsPage.vue` + `toolRegistry.ts`），子路由各自成目录——搜索工具在 `search/`（`ToolSearchPage.vue` 用 `SubPageLayout`：标题左侧返回图标 + 选插件 + 两个入口，插件选择与「影片信息插件」页共享 `usePluginManager('movie')`），影片详情抽屉在 `search/modals/`（`MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `search/composables/useMoviePreview.ts`） |
 
 ## 10. 完整示例插件

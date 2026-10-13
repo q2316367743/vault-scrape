@@ -16,7 +16,7 @@ import type {
 import { PLUGIN_LEGACY_CHANNEL, channelsOf } from './pluginChannels'
 
 /**
- * 插件模块桥：**每个类别一个桥**（`movie` / `actor` / `translate`），
+ * 插件模块桥：**每个类别一个桥**（`movie` / `actor` / `translate` / `storage`），
  * 各自走自己的通道，互不影响。
  *
  * 契约：所有 invoke 都返回 `PluginResult` 信封而**不抛异常**；
@@ -94,6 +94,8 @@ export const pluginApi = {
   actor: createBridge('actor'),
   /** 翻译插件：文本进、译文出 */
   translate: createTranslateBridge(),
+  /** 存储插件：只有管理操作（导入 / 启停 / 源码），实际调用在文件模块内部完成 */
+  storage: createBridge('storage'),
   /** 旧版平铺插件目录的残留检查（插件页提示用） */
   legacy: (): Promise<PluginResult<PluginLegacyNotice>> =>
     ipcRenderer.invoke(PLUGIN_LEGACY_CHANNEL)

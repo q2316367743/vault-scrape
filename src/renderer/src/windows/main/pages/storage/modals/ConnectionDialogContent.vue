@@ -3,23 +3,29 @@
  * 连接弹窗的内容组件（外壳见同目录 ConnectionDialog.tsx）。
  *
  * 表单状态与提交逻辑都委托给 `useConnectionForm`，本文件只负责字段排布；
+ * 插件存储的动态字段在 `PluginConnectionFields.vue`（字段表来自插件声明）；
  * 「测试连接」「保存」两个按钮在外壳 footer，这里用 `defineExpose` 把动作与状态交出去
  * （见 `@/utils/modal/ModalContent`）。
  */
-import { type FileConnection } from '@common/types/file'
-import { PROTOCOL_HINTS } from '../storageUtils'
+import { computed } from 'vue'
+import { isBuiltinFileProtocol, type FileConnection } from '@common/types/file'
+import { protocolHint } from '../storageUtils'
 import { useConnectionForm } from '../composables/useConnectionForm'
+import PluginConnectionFields from './PluginConnectionFields.vue'
 
 const props = defineProps<{ connection?: FileConnection }>()
 const emit = defineEmits<{ success: [connection: FileConnection] }>()
 
 const {
+  storagePlugins,
   protocol,
   form,
   saving,
   testing,
   protocolOptions,
   authOptions,
+  pluginFields,
+  isPluginProtocol,
   showPassword,
   passwordPlaceholder,
   onTest,
@@ -28,6 +34,16 @@ const {
   connection: props.connection,
   onSaved: (connection) => emit('success', connection)
 })
+
+/** 提示文案：内置协议用固定说明，插件协议用插件自己的描述 */
+const hint = computed(() =>
+  protocolHint(
+    protocol.value,
+    isBuiltinFileProtocol(protocol.value as string)
+      ? undefined
+      : storagePlugins.descriptionOf(protocol.value as string)
+  )
+)
 
 /** 交给外壳 footer：左侧「测试连接」+ 右侧「保存」，状态用于按钮 loading（契约见 ModalContentExpose） */
 defineExpose({ submit: onSubmit, saving, test: onTest, testing })
@@ -44,7 +60,7 @@ defineExpose({ submit: onSubmit, saving, test: onTest, testing })
         :disabled="connection !== undefined"
       />
     </div>
-    <p class="form-hint">{{ PROTOCOL_HINTS[protocol] }}</p>
+    <p class="form-hint">{{ hint }}</p>
 
     <div class="form-row">
       <span class="form-label">名称</span>
@@ -76,6 +92,10 @@ defineExpose({ submit: onSubmit, saving, test: onTest, testing })
         <span class="form-label">用户名</span>
         <t-input v-model="form.username" class="form-control" placeholder="可留空" />
       </div>
+    </template>
+
+    <template v-else-if="isPluginProtocol">
+      <plugin-connection-fields v-model="form.pluginConfig" :fields="pluginFields" />
     </template>
 
     <template v-else>

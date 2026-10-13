@@ -21,11 +21,16 @@ import {
   type PluginEnvDraft,
   type PluginEnvField,
   type PluginEnvSnapshot,
+  type PluginEnvValue,
   type PluginImportResult,
   type PluginInvokeData,
   type PluginInvokePayload,
   type PluginKind,
   type PluginMethod,
+  type PluginStorageEntry,
+  type PluginStorageListInput,
+  type PluginStorageListResult,
+  type PluginStorageResolveResult,
   type PluginSummary,
   type PluginTranslateRequest
 } from '@common/types/plugin'
@@ -360,6 +365,11 @@ export function createPluginRegistry(kind: PluginKind) {
         `「${PLUGIN_KIND_LABELS[kind]}」插件不支持方法：${method}`
       )
     }
+    if (kind === 'storage') {
+      // 存储插件的配置取值挂在连接上，插件页没有 env 来源，试运行无意义：
+      // 实际调用方是文件模块的 PluginFileClient（走 invokeStorageMethod）。
+      throw new PluginError('unsupported', '存储插件请在存储页新增连接后使用')
+    }
     const stored = storedPlugin(id)
     if (!stored) throw new PluginError('notFound', `插件 ${id} 不存在`)
     if (!stored.enabled) {
@@ -433,6 +443,60 @@ export function createPluginRegistry(kind: PluginKind) {
     return data
   }
 
+  /**
+   * 存储插件专用调用：入参是对象、`env` 由调用方传入（连接配置，已含解密后的敏感字段），
+   * 不做插件级环境变量校验。返回值已在 runtime 层归一化，按 method 收窄成对应形状。
+   *
+   * 仅 storage 类别注册表可用，调用方是文件模块的 PluginFileClient。
+   * 实现处的一次断言是必要的：运行时返回值由 runtime 的归一化层保证与 method 对应。
+   */
+  async function invokeStorageMethod<T extends 'list' | 'stat' | 'resolve'>(
+    id: string,
+    method: T,
+    input: PluginStorageListInput | { path: string },
+    env: PluginEnvValue
+  ): Promise<
+    T extends 'list'
+      ? PluginStorageListResult
+      : T extends 'stat'
+        ? PluginStorageEntry
+        : PluginStorageResolveResult
+  > {
+    if (kind !== 'storage') {
+      throw new PluginError('unsupported', `「${PLUGIN_KIND_LABELS[kind]}」插件不支持该调用`)
+    }
+    const path = typeof input.path === 'string' ? input.path.trim() : ''
+    if (path.length === 0) throw new PluginError('invalidArgument', '缺少文件路径 path')
+    const stored = storedPlugin(id)
+    if (!stored) throw new PluginError('notFound', `插件 ${id} 不存在`)
+    if (!stored.enabled) {
+      throw new PluginError('invokeFailed', `存储插件 ${stored.name} 已停用，请先在插件页启用`)
+    }
+    const compiled = ensureCompiled(id)
+    const plugin = compiled.plugin
+    if (!('list' in plugin) || !('stat' in plugin) || !('resolve' in plugin)) {
+      throw new PluginError('invokeFailed', `存储插件 ${stored.name} 未实现必需方法`)
+    }
+    const ctx = createPluginContext(kind, id)
+    const data = await invokeWithTimeout<PluginStorageListResult | PluginStorageEntry | PluginStorageResolveResult>(
+      () => {
+        if (method === 'list') {
+          const cursor = 'cursor' in input && typeof input.cursor === 'string' ? input.cursor : undefined
+          return plugin.list(cursor !== undefined ? { path, cursor } : { path }, env, ctx)
+        }
+        if (method === 'stat') return plugin.stat({ path }, env, ctx)
+        return plugin.resolve({ path }, env, ctx)
+      },
+      { id, method, timeoutMs: callTimeoutMs(), log: createPluginLogSink(kind, id) }
+    )
+    appendLog({ level: 'debug', scope: `plugin:${kind}:${id}`, message: `${method} 调用完成` })
+    return data as T extends 'list'
+      ? PluginStorageListResult
+      : T extends 'stat'
+        ? PluginStorageEntry
+        : PluginStorageResolveResult
+  }
+
   return {
     listPluginSummaries,
     reorderPlugins,
@@ -443,7 +507,8 @@ export function createPluginRegistry(kind: PluginKind) {
     setEnabled,
     readPluginEnv,
     saveEnv,
-    invokePlugin
+    invokePlugin,
+    invokeStorageMethod
   }
 }
 

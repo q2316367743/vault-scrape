@@ -4,21 +4,31 @@
  * 契约：
  * 1. 缓存的是 **Promise**，并发取同一个连接不会重复建连；
  * 2. 初始化失败不留坏缓存；
- * 3. 连接配置变更 / 删除后必须 `invalidateFileClient`，退出前 `disposeFileClients`。
+ * 3. 连接配置变更 / 删除后必须 `invalidateFileClient`，退出前 `disposeFileClients`；
+ * 4. 实现类的分派：内置协议（local / webdav / smb）各走一个构造，其余 protocol
+ *    一律按存储插件 id 走 `PluginFileClient`——新增内置协议才需要改这里的工厂。
  */
 import {
   describeConnection,
   describeFileError,
   FileError,
+  isPluginConnection,
   type ConnectionTestResult,
   type FileConnection,
   type FileConnectionDraft
 } from '@common/types/file'
 import type { FileClient, FileClientOptions } from './FileClient'
-import { buildConnectionFromDraft, getConnection, loadConnectionPassword } from './fileConnectionStore'
+import {
+  buildConnectionFromDraft,
+  getConnection,
+  loadConnectionCredential,
+  type ConnectionCredential
+} from './fileConnectionStore'
 import { LocalFileClient } from './impl/local/LocalFileClient'
+import { PluginFileClient } from './impl/plugin/PluginFileClient'
 import { SmbFileClient } from './impl/smb/SmbFileClient'
 import { WebdavFileClient } from './impl/webdav/WebdavFileClient'
+import { storagePlugins } from '../plugin/pluginRegistries'
 import { loadSetting } from '../setting/settingStore'
 
 const DEFAULT_TIMEOUT_MS = 30 * 1000
@@ -31,15 +41,20 @@ function resolveTimeoutMs(): number {
   return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : DEFAULT_TIMEOUT_MS
 }
 
-function createClient(connection: FileConnection, password: string): FileClient {
+function createClient(connection: FileConnection, credential: ConnectionCredential): FileClient {
   const options: FileClientOptions = {
     connectionId: connection.id,
     label: describeConnection(connection),
     timeoutMs: resolveTimeoutMs()
   }
+  if (isPluginConnection(connection)) {
+    return new PluginFileClient(storagePlugins, connection, credential.config, options)
+  }
   if (connection.protocol === 'local') return new LocalFileClient(connection, options)
-  if (connection.protocol === 'webdav') return new WebdavFileClient(connection, password, options)
-  return new SmbFileClient(connection, password, options)
+  if (connection.protocol === 'webdav') {
+    return new WebdavFileClient(connection, credential.password, options)
+  }
+  return new SmbFileClient(connection, credential.password, options)
 }
 
 export function getFileClient(connectionId: string): Promise<FileClient> {
@@ -50,7 +65,7 @@ export function getFileClient(connectionId: string): Promise<FileClient> {
     return Promise.reject(new FileError('notFound', `连接不存在：${connectionId}`))
   }
   const created = (async (): Promise<FileClient> => {
-    const client = createClient(connection, loadConnectionPassword(connectionId))
+    const client = createClient(connection, loadConnectionCredential(connectionId))
     await client.init()
     return client
   })()
@@ -82,8 +97,12 @@ type DraftClientResult =
 /** 草稿可能不合法（缺名称 / URL 非法 / 密码解不开），这里统一收敛成结果对象 */
 function prepareDraftClient(draft: FileConnectionDraft): DraftClientResult {
   try {
-    const { connection, password } = buildConnectionFromDraft(draft)
-    return { ok: true, client: createClient(connection, password), label: describeConnection(connection) }
+    const { connection, credential } = buildConnectionFromDraft(draft)
+    return {
+      ok: true,
+      client: createClient(connection, credential),
+      label: describeConnection(connection)
+    }
   } catch (error) {
     return { ok: false, message: describeFileError(error).message }
   }

@@ -405,7 +405,12 @@ export function savePluginEnv(
   return next
 }
 
-/** 渲染层可见的插件摘要：不含源码、不含环境变量明文 */
+/**
+ * 渲染层可见的插件摘要：不含源码、不含环境变量明文。
+ *
+ * 存储插件的 `env` 声明是连接配置字段模板，取值挂在每个连接上（加密落盘），
+ * 不存在「插件级必填未填」的概念，因此 `envReady` 恒为 true，避免列表与详情误报「待填写变量」。
+ */
 export function toPluginSummary(
   kind: PluginKind,
   stored: StoredPlugin,
@@ -422,7 +427,7 @@ export function toPluginSummary(
     source: stored.builtin ? 'builtin' : 'file',
     filePath: stored.builtin ? '' : pluginSourcePath(kind, stored.id),
     hasEnv: stored.envFields.length > 0,
-    envReady: isEnvReady(stored.envFields, filled),
+    envReady: kind === 'storage' ? true : isEnvReady(stored.envFields, filled),
     loadError
   }
 }

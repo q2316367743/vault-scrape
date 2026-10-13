@@ -7,17 +7,20 @@
  */
 import { computed } from 'vue'
 import { RefreshIcon } from 'tdesign-icons-vue-next'
-import { FILE_PROTOCOL_LABELS, type FileConnection, type FileEntry } from '@common/types/file'
+import type { FileConnection, FileEntry } from '@common/types/file'
 import { useNsfwProtection } from '@/hooks/UseNsfwProtection'
 import { useStorageBrowser, type StorageBreadcrumb } from '../composables/useStorageBrowser'
+import { useStoragePlugins } from '../composables/useStoragePlugins'
 import { openStoragePreviewDrawer } from '../modals/StoragePreviewDrawer'
-import { PROTOCOL_ICONS } from '../storageUtils'
+import { protocolIcon, protocolName } from '../storageUtils'
 import StorageEntryTable from './StorageEntryTable.vue'
 
 const props = defineProps<{
   /** 当前选中的数据源，未选中时展示占位 */
   connection: FileConnection | null
 }>()
+
+const { nameOf } = useStoragePlugins()
 
 const connectionId = computed(() => props.connection?.id ?? '')
 const { entries, loading, isRoot, breadcrumb, load, go, goParent, open } = useStorageBrowser(connectionId)
@@ -52,10 +55,10 @@ function onPreview(entry: FileEntry): void {
     <template v-else>
       <header class="browser-head">
         <div class="browser-title">
-          <component :is="PROTOCOL_ICONS[connection.protocol]" class="browser-title-icon" />
+          <component :is="protocolIcon(connection.protocol)" class="browser-title-icon" />
           <span class="browser-title-name">{{ connection.name }}</span>
           <t-tag theme="primary" variant="light">
-            {{ FILE_PROTOCOL_LABELS[connection.protocol] }}
+            {{ protocolName(connection.protocol, nameOf(connection.protocol)) }}
           </t-tag>
         </div>
         <div class="browser-toolbar">

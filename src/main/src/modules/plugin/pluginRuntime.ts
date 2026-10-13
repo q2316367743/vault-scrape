@@ -25,6 +25,9 @@ import {
   normalizeEnvFields,
   normalizeDetail,
   normalizeMeta,
+  normalizeStorageListResult,
+  normalizeStorageResolveResult,
+  normalizeStorageStatResult,
   normalizeTranslateResult,
   type ActorPlugin,
   type MoviePlugin,
@@ -36,7 +39,12 @@ import {
   type PluginKind,
   type PluginMeta,
   type PluginMethod,
+  type PluginStorageEntry,
+  type PluginStorageListInput,
+  type PluginStorageListResult,
+  type PluginStorageResolveResult,
   type PluginTranslateRequest,
+  type StoragePluginContract,
   type TranslatePlugin
 } from '@common/types/plugin'
 import { readString, toSource } from '@common/types/setting/shared'
@@ -59,6 +67,13 @@ export type PluginHandler = (
 /** 翻译方法的签名：入参是对象（`{ text, from?, to }`），与其余方法的字符串入参区分开 */
 export type PluginTranslateHandler = (
   request: PluginTranslateRequest,
+  env: PluginEnvValue,
+  ctx: PluginContext
+) => unknown
+
+/** 存储方法的签名：入参是对象（`{ path, cursor? }` 等），见 `@common/types/plugin` 的 storage 契约 */
+export type PluginStorageHandler = (
+  input: Record<string, unknown>,
   env: PluginEnvValue,
   ctx: PluginContext
 ) => unknown
@@ -162,6 +177,9 @@ interface PluginHandlers {
   actor?: PluginHandler
   actorAssets?: PluginHandler
   translate?: PluginTranslateHandler
+  list?: PluginStorageHandler
+  stat?: PluginStorageHandler
+  resolve?: PluginStorageHandler
 }
 
 function readHandlers(source: Record<string, unknown>): PluginHandlers {
@@ -173,6 +191,9 @@ function readHandlers(source: Record<string, unknown>): PluginHandlers {
   const actor = readHandler<PluginHandler>(source, 'actor')
   const actorAssets = readHandler<PluginHandler>(source, 'actorAssets')
   const translate = readHandler<PluginTranslateHandler>(source, 'translate')
+  const list = readHandler<PluginStorageHandler>(source, 'list')
+  const stat = readHandler<PluginStorageHandler>(source, 'stat')
+  const resolve = readHandler<PluginStorageHandler>(source, 'resolve')
   if (search) handlers.search = search
   if (detail) handlers.detail = detail
   if (covers) handlers.covers = covers
@@ -180,6 +201,9 @@ function readHandlers(source: Record<string, unknown>): PluginHandlers {
   if (actor) handlers.actor = actor
   if (actorAssets) handlers.actorAssets = actorAssets
   if (translate) handlers.translate = translate
+  if (list) handlers.list = list
+  if (stat) handlers.stat = stat
+  if (resolve) handlers.resolve = resolve
   return handlers
 }
 
@@ -260,6 +284,53 @@ function buildTranslatePlugin(meta: PluginMeta, handlers: PluginHandlers): Trans
   }
 }
 
+/**
+ * 在宿主 realm 里重建存储插件：三个方法的返回值一律归一化成宿主 realm 的纯对象。
+ *
+ * 契约：
+ * - `list` 返回 null（entries 缺失等）按空目录处理；调用方（PluginFileClient）负责游标翻页；
+ * - `stat` 返回 null 视为「目标不存在」，调用方按 notFound 收敛；
+ * - `resolve` 返回 null 视为「拿不到直链」，文案给用户看。
+ */
+function buildStoragePlugin(meta: PluginMeta, handlers: PluginHandlers): StoragePluginContract {
+  const { list, stat, resolve } = handlers
+  if (!list || !stat || !resolve) {
+    throw new PluginError('invalidPlugin', '存储插件缺少必需方法（list / stat / resolve）')
+  }
+  const label = meta.name
+  return {
+    meta,
+    list: async (input: PluginStorageListInput, env, ctx): Promise<PluginStorageListResult> => {
+      const raw = toSource(await list({ ...input }, env, ctx))
+      const normalized = raw ? normalizeStorageListResult(raw) : null
+      return normalized ?? { entries: [] }
+    },
+    stat: async (input: { path: string }, env, ctx): Promise<PluginStorageEntry> => {
+      const raw = toSource(await stat({ ...input }, env, ctx))
+      const normalized = raw ? normalizeStorageStatResult(raw) : null
+      if (!normalized) {
+        throw new PluginError('invokeFailed', `未找到目标：${input.path}（${label} 返回的条目不合法）`)
+      }
+      return normalized
+    },
+    resolve: async (
+      input: { path: string },
+      env,
+      ctx
+    ): Promise<PluginStorageResolveResult> => {
+      const raw = toSource(await resolve({ ...input }, env, ctx))
+      const normalized = raw ? normalizeStorageResolveResult(raw) : null
+      if (!normalized) {
+        throw new PluginError(
+          'invokeFailed',
+          `无法读取该文件：${label} 没有返回有效的下载地址（${input.path}）`
+        )
+      }
+      return normalized
+    }
+  }
+}
+
 function buildPlugin(
   kind: PluginKind,
   meta: PluginMeta,
@@ -267,6 +338,7 @@ function buildPlugin(
 ): PluginDefinition {
   if (kind === 'movie') return buildMoviePlugin(meta, handlers)
   if (kind === 'actor') return buildActorPlugin(meta, handlers)
+  if (kind === 'storage') return buildStoragePlugin(meta, handlers)
   return buildTranslatePlugin(meta, handlers)
 }
 

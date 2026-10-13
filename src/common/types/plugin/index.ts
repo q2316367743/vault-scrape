@@ -62,8 +62,17 @@ export {
   type PluginMethod,
   type PluginRequestOptions,
   type PluginResponse,
+  type StoragePluginContract,
   type TranslatePlugin
 } from './define'
+
+export {
+  isPluginStorageEntryType,
+  type PluginStorageEntry,
+  type PluginStorageListInput,
+  type PluginStorageListResult,
+  type PluginStorageResolveResult
+} from './storage'
 
 export {
   PLUGIN_TRANSLATE_LANGUAGES,
@@ -91,6 +100,10 @@ export {
   normalizeCandidates,
   normalizeDetail,
   normalizeMeta,
+  normalizeStorageEntry,
+  normalizeStorageListResult,
+  normalizeStorageResolveResult,
+  normalizeStorageStatResult,
   PLUGIN_LIST_LIMIT
 } from './normalize'
 

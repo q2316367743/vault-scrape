@@ -19,20 +19,47 @@ import {
   ServerIcon,
   VideoIcon
 } from 'tdesign-icons-vue-next'
-import { filePreviewKindOf, type FileEntry, type FileProtocol } from '@common/types/file'
+import {
+  FILE_PROTOCOL_LABELS,
+  isBuiltinFileProtocol,
+  filePreviewKindOf,
+  type BuiltinFileProtocol,
+  type FileEntry,
+  type FileProtocol
+} from '@common/types/file'
 
-/** 协议图标：数据源列表与浏览器标题共用 */
-export const PROTOCOL_ICONS: Readonly<Record<FileProtocol, Component>> = {
+/** 内置协议图标：数据源列表与浏览器标题共用 */
+const BUILTIN_PROTOCOL_ICONS: Readonly<Record<BuiltinFileProtocol, Component>> = {
   local: HardDriveIcon,
   webdav: CloudIcon,
   smb: ServerIcon
 }
 
-/** 协议的一句话说明，展示在新建 / 编辑连接的弹窗里 */
-export const PROTOCOL_HINTS: Readonly<Record<FileProtocol, string>> = {
+/** 内置协议的一句话说明，展示在新建 / 编辑连接的弹窗里 */
+const BUILTIN_PROTOCOL_HINTS: Readonly<Record<BuiltinFileProtocol, string>> = {
   local: '直接读写本机磁盘目录',
   webdav: '走 HTTP，支持服务端 MOVE / COPY 与流式读写',
   smb: '仅协商 SMB 2.0.2 / 2.1；无服务端复制，大目录复制较慢'
+}
+
+/** 协议图标：内置协议用各自的图标，插件存储统一用云图标 */
+export function protocolIcon(protocol: FileProtocol): Component {
+  if (isBuiltinFileProtocol(protocol)) return BUILTIN_PROTOCOL_ICONS[protocol]
+  return CloudIcon
+}
+
+/** 协议展示名：内置协议用固定文案，插件协议显示插件名（查不到时回落插件 id） */
+export function protocolName(protocol: FileProtocol, pluginName?: string): string {
+  if (isBuiltinFileProtocol(protocol)) return FILE_PROTOCOL_LABELS[protocol]
+  return pluginName ?? protocol
+}
+
+/** 协议说明：插件协议用插件自己的描述，没有描述时给一句通用说明 */
+export function protocolHint(protocol: FileProtocol, pluginDescription?: string): string {
+  if (isBuiltinFileProtocol(protocol)) return BUILTIN_PROTOCOL_HINTS[protocol]
+  return pluginDescription && pluginDescription.length > 0
+    ? pluginDescription
+    : '由存储插件提供的云端存储'
 }
 
 const CODE_EXTENSIONS = ['nfo', 'xml', 'json', 'yaml', 'yml', 'md', 'html', 'css', 'js', 'ts'] as const

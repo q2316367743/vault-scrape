@@ -1,10 +1,11 @@
-# 文件模块（本地 / WebDAV / SMB）
+# 文件模块（本地 / WebDAV / SMB / 存储插件）
 
 ## 1. 模块定位
 
 文件模块是「一个接口 + 多个实现」：`FileClient` 定义统一能力，`LocalFileClient`、`WebdavFileClient`、`SmbFileClient`
-各自适配一种协议。实现全部运行在 **主进程**（渲染层无法直接访问 fs / 网络协议库），渲染层只通过 IPC 使用，命令式地拿到
-`FileResult` 信封。
+各自适配一种内置协议；其余连接协议（protocol = 存储插件 id）一律由 `PluginFileClient` 承接——元数据走存储插件、
+字节流由宿主拿直链自取，契约见[存储插件](../plugin/11-storage-plugins.md)。实现全部运行在 **主进程**
+（渲染层无法直接访问 fs / 网络协议库），渲染层只通过 IPC 使用，命令式地拿到 `FileResult` 信封。
 
 它的下游是刮削模块：刮削流程只需「列目录 → 读 NFO / 图片 → 写回」，因此本模块只暴露文件级能力，不做媒体库解析。
 **连接只描述「怎么访问一份数据」**（协议 + 地址 + 凭据），
@@ -23,7 +24,7 @@ src/common/types/file/          # 三端共享的纯类型与纯函数（不含�
 ├── path.ts                     # 统一 POSIX 路径：归一化 / 拼接 / 父目录 / 扩展名 / 拆段
 ├── entry.ts                    # FileEntry 统一形状 + MIME 兜底表 + 排序
 ├── preview.ts                  # storage:// 路径形式的预览地址：buildFilePreviewUrl / parseFilePreviewUrl / filePreviewKindOf（存储页预览用）
-├── connection.ts               # 三种连接与草稿的形状 + describeConnection（连接上没有任何策略字段）
+├── connection.ts               # 内置三种 + 插件连接与草稿的形状、协议展示名、isPluginConnection（连接上没有任何策略字段）
 ├── request.ts                  # 各 IPC 方法的请求载荷
 ├── transfer.ts                 # 传输进度 / 结束事件
 ├── result.ts                   # FileResult 信封 + fileOk / fileFail / isFileOk
@@ -43,7 +44,10 @@ src/main/src/modules/file/      # 主进程实现
     ├── local/LocalFileClient.ts
     ├── webdav/WebdavFileClient.ts
     ├── smb/smbErrors.ts        # NT 状态码 → FileError
-    └── smb/SmbFileClient.ts
+    ├── smb/SmbFileClient.ts
+    └── plugin/                 # 存储插件实现（第四种协议来源，见 docs/plugin/11-storage-plugins.md）
+        ├── PluginFileClient.ts # 元数据走插件（list / stat / resolve），直链缓存，写操作 unsupported
+        └── directLinkStream.ts # 直链字节流：Range GET / 重定向 / 失效判定（所有存储插件共用）
 
 src/preload/src/modules/file/
 ├── fileChannels.ts             # 通道名常量（main 通过别名 ~ 引用同一份）
@@ -131,8 +135,12 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 - 对外形状只有 `hasPassword: boolean`；`loadConnectionPassword()` 只在主进程内部使用。解密失败抛 `authFailed`
   ，文案提示「已保存的密码无法解密，请重新填写密码」。
 - 草稿（Draft）语义：`id` 缺省 = 新建；`password` 为 `undefined` = 保持已存密码，空串 = 清空。
+- **插件连接**（protocol = 存储插件 id）的配置字段由插件声明（见[存储插件](../plugin/11-storage-plugins.md) §3）：
+  非 secret 字段明文存 `config`，secret 字段经 safeStorage 加密存 `secrets`；对外形状只有 `config`（可回显）+
+  `hasPassword` 掩码。保存时按声明表分拣并校验必填，**落盘不校验插件存在性**（运行时建连才报「存储插件不可用」）；
+  主进程解出完整配置走 `loadConnectionCredential()`（返回 `{ password, config }`，敏感字段已解密，仅限主进程内部）。
 - 落盘前校验：名称不能为空；本地根目录不能为空；WebDAV 地址必须是合法 URL；SMB 主机与共享名不能为空、端口必须是 1–65535
-  的整数。校验失败抛 `invalidArgument`（中文提示）。
+  的整数；插件连接的 required 字段必须已填。校验失败抛 `invalidArgument`（中文提示）。
 - 读取失败（文件损坏 / JSON 非法）一律 `console.error` 后回落空列表，不阻塞启动；逐条归一化时 `id` 或 `name` 为空的记录会被丢弃。
 - 连接上 **没有任何策略字段**：NSFW 标记归资料库的 `nsfwProtection`（渲染层用 `useNsfwProtection(库级标记)` 判定，
   总开关见[设置项清单](../setting/02-setting-items.md)）；旧版本写下的 `nsfw` 键在归一化时被直接忽略，不再回写。 **`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从
@@ -195,6 +203,8 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | 0 字节文件                     | 正常支持（`contentLength: 0`、空流均可）                                                                         |
 | 大文件                         | 一律流式，禁止整文件读入内存；`readText` 只用于 NFO / JSON 小文件；播放由 `readRange` 按区间取字节               |
 | SMB 区间读依赖补丁             | SMB 的 `readRange` 建立在 `patches/@awo00+smb2+1.1.1.patch` 之上，升级 `@awo00/smb2` 后必须重新生成补丁（见 §4） |
+| 存储插件只读                   | 插件连接不支持写类操作（`mkdir` / `writeText` / `move` / `copy` / `remove` / `upload` 一律抛 `unsupported`）；刮削写回失败只记 warn 日志不中断，元数据仍进本地库 |
+| 存储插件直链有效期             | 直链按 `ttlSeconds`（缺省 300 秒）缓存，失效（403 / 404 / 410）自动重新 `resolve` 一次再试；`readText` 上限 10 MB |
 | 名称冲突                       | 默认 `overwrite: false`，渲染层需要覆盖时必须显式传 `true`                                                       |
 
 ## 9. 手工验证清单

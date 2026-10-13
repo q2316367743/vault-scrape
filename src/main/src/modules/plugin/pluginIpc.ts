@@ -27,14 +27,15 @@ import {
 } from '@common/types/plugin'
 import { readBoolean, readString, toSource } from '@common/types/setting/shared'
 import { PLUGIN_LEGACY_CHANNEL, channelsOf } from '~/modules/plugin/pluginChannels'
-import { actorPlugins, moviePlugins, translatePlugins } from './pluginRegistries'
+import { actorPlugins, moviePlugins, storagePlugins, translatePlugins } from './pluginRegistries'
 import { legacyPluginFiles } from './pluginStore'
 import type { PluginRegistry } from './pluginRegistry'
 
 const REGISTRIES: Readonly<Record<PluginKind, PluginRegistry>> = {
   movie: moviePlugins,
   actor: actorPlugins,
-  translate: translatePlugins
+  translate: translatePlugins,
+  storage: storagePlugins
 }
 
 function handle<T>(task: () => Promise<T> | T): Promise<PluginResult<T>> {

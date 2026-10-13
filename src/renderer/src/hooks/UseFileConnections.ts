@@ -10,6 +10,7 @@ import { useLocalStorage } from '@vueuse/core'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { fileApi } from '@/api'
 import {
+  isPluginConnection,
   type ConnectionTestResult,
   type FileConnection,
   type FileConnectionDraft
@@ -17,8 +18,16 @@ import {
 
 const ACTIVE_CONNECTION_KEY = 'vault-scrape:storage-active-connection'
 
-/** 已保存连接 → 草稿：不带 password 即沿用密钥串里已存的密码 */
+/** 已保存连接 → 草稿：不带 password 即沿用密钥串里已存的密码；插件连接的 secret 字段不回传即保持 */
 function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
+  if (isPluginConnection(connection)) {
+    return {
+      id: connection.id,
+      protocol: connection.protocol,
+      name: connection.name,
+      config: { ...connection.config }
+    }
+  }
   if (connection.protocol === 'local') {
     return {
       id: connection.id,

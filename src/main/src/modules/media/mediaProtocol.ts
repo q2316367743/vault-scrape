@@ -28,6 +28,7 @@ import { ACTOR_MEDIA_SEGMENT } from '@common/types/actor'
 import {
   filePreviewKindOf,
   guessMimeType,
+  isPluginConnection,
   parseFilePreviewUrl,
   type FileConnection,
   type FileEntry,
@@ -397,7 +398,7 @@ async function handleFilePreviewRequest(target: FilePreviewTarget, request: Requ
     )
   }
 
-  if (connection.protocol === 'local') {
+  if (!isPluginConnection(connection) && connection.protocol === 'local') {
     return await serveFile(resolveInsideRoot(connection.rootPath, path), info)
   }
   const cached = await ensureCached(connection, previewCacheKey(connectionId, path), {
@@ -453,7 +454,7 @@ export async function handleMediaRequest(request: Request): Promise<Response> {
     const connection = getConnection(connectionId)
     if (!connection) return notFound()
     if (target.kind === 'video') return await handleRangeRequest(connection, target, request)
-    if (connection.protocol === 'local') {
+    if (!isPluginConnection(connection) && connection.protocol === 'local') {
       const osPath = resolveInsideRoot(connection.rootPath, target.path)
       return await net.fetch(pathToFileURL(osPath).toString())
     }

@@ -49,7 +49,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/windows/main/pages/storage/StoragePage.vue')
   },
   {
-    // 插件页：三类插件各占一个 tab 子页；类别之间目录、IPC 通道与启停状态都相互独立
+    // 插件页：四类插件各占一个 tab 子页；类别之间目录、IPC 通道与启停状态都相互独立
     path: '/plugin',
     name: '插件',
     component: () => import('@/windows/main/pages/plugin/PluginHomePage.vue'),
@@ -69,6 +69,11 @@ const routes: RouteRecordRaw[] = [
         path: 'translate',
         name: '翻译插件',
         component: () => import('@/windows/main/pages/plugin/translate/TranslatePluginPage.vue')
+      },
+      {
+        path: 'storage',
+        name: '存储插件',
+        component: () => import('@/windows/main/pages/plugin/storage/StoragePluginPage.vue')
       }
     ]
   },

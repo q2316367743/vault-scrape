@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { AddIcon, DeleteIcon, Edit1Icon, LinkIcon } from 'tdesign-icons-vue-next'
-import { FILE_PROTOCOL_LABELS, describeConnection, type FileConnection } from '@common/types/file'
-import { PROTOCOL_ICONS } from '../storageUtils'
+import { describeConnection, type FileConnection } from '@common/types/file'
+import { protocolIcon, protocolName } from '../storageUtils'
+import { useStoragePlugins } from '../composables/useStoragePlugins'
 
 defineProps<{
   /** 已保存的数据源 */
@@ -9,6 +10,8 @@ defineProps<{
   /** 当前选中的数据源 id */
   activeId: string
 }>()
+
+const { nameOf } = useStoragePlugins()
 
 const emit = defineEmits<{
   select: [id: string]
@@ -47,7 +50,7 @@ const emit = defineEmits<{
           @click="emit('select', connection.id)"
         >
           <div class="connection-main">
-            <component :is="PROTOCOL_ICONS[connection.protocol]" class="connection-icon" />
+            <component :is="protocolIcon(connection.protocol)" class="connection-icon" />
             <div class="connection-name" :title="connection.name">{{ connection.name }}</div>
 
             <div class="connection-actions">
@@ -75,12 +78,12 @@ const emit = defineEmits<{
           </div>
 
           <div class="connection-meta">
-            <div class="connection-desc" :title="describeConnection(connection)">
-              {{ describeConnection(connection) }}
+            <div class="connection-desc" :title="describeConnection(connection, nameOf(connection.protocol))">
+              {{ describeConnection(connection, nameOf(connection.protocol)) }}
             </div>
             <div class="connection-tags">
               <t-tag size="small" theme="primary" variant="light">
-                {{ FILE_PROTOCOL_LABELS[connection.protocol] }}
+                {{ protocolName(connection.protocol, nameOf(connection.protocol)) }}
               </t-tag>
             </div>
           </div>

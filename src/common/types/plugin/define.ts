@@ -6,9 +6,11 @@
  * - 插件按类别分开，`meta.kind` 决定它属于哪一类、宿主用哪张方法表校验（见 `./kind`）：
  *   `movie` = 影片信息（`search` / `detail` / `covers` / `extras` 四个方法全部必填）、
  *   `actor` = 演员信息（`actor` 必填，`actorAssets` 可选）、
- *   `translate` = 翻译（`translate` 必填，入参是 `{ text, from?, to }` 对象）；
+ *   `translate` = 翻译（`translate` 必填，入参是 `{ text, from?, to }` 对象）、
+ *   `storage` = 存储（`list` / `stat` / `resolve` 三个方法全部必填，见 `./storage`）；
  * - 插件用 `env: [...]` 声明自己需要的环境变量（账号、Cookie、站点地址等），
- *   安装时宿主会在沙箱里执行一次脚本、读取这份声明并生成填写表单；
+ *   安装时宿主会在沙箱里执行一次脚本、读取这份声明并生成填写表单
+ *   （存储插件声明的字段模板用在连接上，见 `./storage`）；
  * - 方法签名统一为 `(入参, env, ctx)`，返回 Promise，宿主负责归一化与超时保护；
  * - `definePlugin` 由宿主注入，插件脚本以 `definePlugin({ ... })` 结尾即可。
  */
@@ -17,6 +19,12 @@ import type { PluginActorDetail } from './actor'
 import type { PluginAsset } from './asset'
 import type { PluginEnvField, PluginEnvValue, PluginMeta } from './manifest'
 import type { PluginMovieCandidate, PluginMovieDetail } from './movie'
+import type {
+  PluginStorageEntry,
+  PluginStorageListInput,
+  PluginStorageListResult,
+  PluginStorageResolveResult
+} from './storage'
 import type { PluginTranslateRequest, PluginTranslateResult } from './translate'
 
 export interface PluginRequestOptions {
@@ -91,8 +99,26 @@ export interface TranslatePlugin extends PluginBase {
   ): Promise<PluginTranslateResult>
 }
 
-/** 三类插件的定义联合 */
-export type PluginDefinition = MoviePlugin | ActorPlugin | TranslatePlugin
+/**
+ * 存储插件：三个方法全部必填，类型与口径见 `./storage`。
+ * 与其余三类的区别：`env` 是「连接配置字段模板」，取值挂在每个连接上。
+ */
+export interface StoragePluginContract extends PluginBase {
+  list(
+    input: PluginStorageListInput,
+    env: PluginEnvValue,
+    ctx: PluginContext
+  ): Promise<PluginStorageListResult>
+  stat(input: { path: string }, env: PluginEnvValue, ctx: PluginContext): Promise<PluginStorageEntry>
+  resolve(
+    input: { path: string },
+    env: PluginEnvValue,
+    ctx: PluginContext
+  ): Promise<PluginStorageResolveResult>
+}
+
+/** 四类插件的定义联合 */
+export type PluginDefinition = MoviePlugin | ActorPlugin | TranslatePlugin | StoragePluginContract
 
 /** 宿主注入沙箱的定义函数 */
 export type DefinePlugin = <T extends PluginDefinition>(definition: T) => T
@@ -105,6 +131,9 @@ export type PluginMethod =
   | 'actor'
   | 'actorAssets'
   | 'translate'
+  | 'list'
+  | 'stat'
+  | 'resolve'
 
 /** 全部方法名（不分类别；类别方法表见 `./kind` 的 `PLUGIN_KIND_METHODS`） */
 export const PLUGIN_METHOD_NAMES: readonly PluginMethod[] = [
@@ -114,7 +143,10 @@ export const PLUGIN_METHOD_NAMES: readonly PluginMethod[] = [
   'extras',
   'actor',
   'actorAssets',
-  'translate'
+  'translate',
+  'list',
+  'stat',
+  'resolve'
 ]
 
 export interface PluginInvokePayload {
@@ -130,6 +162,8 @@ export interface PluginInvokePayload {
   from?: string
   /** method 为 translate 时必填：目标语言 */
   to?: string
+  /** method 为 storage 类别（list / stat / resolve）时的对象入参 */
+  input?: Record<string, unknown>
 }
 
 export type PluginInvokeData =
@@ -138,3 +172,6 @@ export type PluginInvokeData =
   | PluginAsset[]
   | PluginActorDetail
   | PluginTranslateResult
+  | PluginStorageListResult
+  | PluginStorageEntry
+  | PluginStorageResolveResult

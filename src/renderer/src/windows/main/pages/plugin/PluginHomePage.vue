@@ -17,7 +17,7 @@
 
 <script setup lang="ts">
 /**
- * 插件页外壳：只负责「一个入口 + 三个类别 tab + 旧版残留提示」。
+ * 插件页外壳：只负责「一个入口 + 四个类别 tab + 旧版残留提示」。
  *
  * 契约：当前 tab 由路由参数决定（`/plugin/<kind>`），切换 tab 就是切换子路由，
  * 每个类别子页自带完整页头与按钮，所以这里不再套 page-layout，避免双层页头。
@@ -32,11 +32,12 @@ import {
 } from '@common/types/plugin'
 import PluginLegacyAlert from './components/PluginLegacyAlert.vue'
 
-/** 类别 → 子路由名（与 router.ts 里 /plugin 的三个子页一一对应） */
+/** 类别 → 子路由名（与 router.ts 里 /plugin 的四个子页一一对应） */
 const ROUTE_NAMES: Readonly<Record<PluginKind, string>> = {
   movie: '影片信息插件',
   actor: '演员信息插件',
-  translate: '翻译插件'
+  translate: '翻译插件',
+  storage: '存储插件'
 }
 
 const route = useRoute()

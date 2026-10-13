@@ -34,7 +34,7 @@
 
     <t-alert v-if="plugin.loadError" theme="error" :message="`插件加载失败：${plugin.loadError}`" />
     <t-alert
-      v-else-if="!plugin.envReady"
+      v-else-if="!plugin.envReady && kind !== 'storage'"
       theme="warning"
       message="必填环境变量尚未填写完整，调用该插件会被拒绝"
     />
@@ -56,9 +56,12 @@
       </div>
     </dl>
 
-    <!-- 只有声明了环境变量的插件才需要配置区块（内置插件、无变量的脚本插件都不显示空区域） -->
+    <!--
+      只有声明了环境变量的插件才需要配置区块（内置插件、无变量的脚本插件都不显示空区域）；
+      存储插件的声明是「连接配置字段模板」，取值在存储页的连接上填，插件页不放配置区块
+    -->
     <plugin-config-panel
-      v-if="plugin.hasEnv"
+      v-if="plugin.hasEnv && kind !== 'storage'"
       :plugin="plugin"
       :kind="kind"
       @saved="emit('changed', $event)"

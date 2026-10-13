@@ -14,13 +14,15 @@
 ```
 src/renderer/src/windows/main/pages/storage/
 ├── StoragePage.vue                  # 页面骨架：PageLayout + 左面板 + 右浏览器
-├── storageUtils.ts                  # 纯展示工具（图标映射、尺寸 / 时间格式化、可预览判定）
+├── storageUtils.ts                  # 纯展示工具（协议图标 / 展示名 / 说明、尺寸 / 时间格式化、可预览判定）
 ├── composables/
 │   ├── useStorageBrowser.ts         # 只读：当前目录、条目、面包屑（没有写操作）
-│   ├── useConnectionForm.ts         # 连接弹窗的表单状态、草稿拼装与保存 / 测试
+│   ├── useStoragePlugins.ts         # 已启用存储插件的全局缓存：协议选项、插件名映射、连接字段声明
+│   ├── useConnectionForm.ts         # 连接弹窗的表单状态、草稿拼装与保存 / 测试（内置协议 + 插件连接）
 │   └── useScraperOptions.ts         # 插件候选项（已启用且编译通过的插件）：连接弹窗已不用，只被资料库表单复用
 ├── modals/                          # 命令式弹窗：外壳 .tsx + 内容 .vue
 │   ├── ConnectionDialog.tsx / ConnectionDialogContent.vue
+│   ├── PluginConnectionFields.vue   # 插件连接的动态配置字段（按插件声明的字段表渲染，secret 字段密码框不回显）
 │   └── StoragePreviewDrawer.tsx / StoragePreviewContent.vue   # 只读预览抽屉
 └── components/
     ├── StorageConnectionPanel.vue   # 左侧数据源列表（固定 300px）
@@ -61,8 +63,8 @@ src/renderer/src/windows/main/pages/storage/
 ## 5. 连接弹窗
 
 - 外壳 `modals/ConnectionDialog.tsx` 导出 `openConnectionDialog({ connection?, onSaved? })`：`DialogPlugin({ width: 560, destroyOnClose: true, body: () => <ConnectionDialogContent … /> })`（`.tsx` 里用 JSX，不用 `h()`）；底部 `footer` 由外壳渲染「测试连接 / 取消 / 保存」三个按钮，动作与加载状态由内容组件 `defineExpose` 暴露（`test` / `testing` / `submit` / `saving`）给外壳的模板 ref 读。内容组件只用 `emit('success', connection)` 回传结果，外壳负责关闭弹窗并回调 `onSaved`。
-- 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码。
-- 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增字段只改这一个文件。
+- 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码；**插件存储**（协议选项里「内置三项 + 已启用的存储插件」）按插件声明的字段表动态渲染（`PluginConnectionFields.vue`：secret 字段密码框不回显、留空表示保持已存值，其余字段普通输入框）。
+- 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增内置字段只改这一个文件；插件连接的动态字段值在 `form.pluginConfig`，提交时按声明表全量（secret 字段留空不提交 = 保持已存）。
 - 协议无关的策略字段已全部下线：`modals/ConnectionPolicyField.vue` 随 NSFW 开关一起删除，连接弹窗只剩「怎么访问这份数据」的字段。刮削器在资料库表单里配置（`useScraperOptions` 仍被资料库表单复用，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)）。
 - 本地磁盘的根目录字段由 `src/renderer/src/components/DirectoryPickerField.vue` 提供：输入框 + 「选择」按钮，按钮走 `dialogApi.open({ title, directory: true })` 选**本机绝对路径**（取消或失败都不改动原值），`ConnectionDialogContent.vue:53` 在 `protocol === 'local'` 分支里渲染它。资料库的媒体目录**不**走它——那里必须是连接内路径，改用资料库自己的 `RemoteDirDialog`（见[影视墙页面 · 表单](./04-media-wall-page.md)）。详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md)。
 - 协议在编辑态不可切换（连接协议是身份的一部分，改协议等于换连接）。
