@@ -67,7 +67,7 @@
 | `type` | text | 库类型，`$type<LibraryType>()`，默认 `'movie'`（在基线迁移 `0000_moaning_black_panther.sql` 里）；**建库后不可改** |
 | `scrapers` | text | **影片信息插件** id 数组（JSON 数组），**空数组表示该库不刮削** |
 | `nsfw_protection` | integer | NSFW 保护，默认 `true`（草稿未显式给 `false` 时按 `true`） |
-| `min_file_size_mb` | integer | 扫描 / 刮削时排除小于该体积（MB）的视频，默认 `0`（不过滤） |
+| `min_file_size_mb` | integer | 扫描 / 刮削时排除小于该体积（MB）的视频，新建库默认 `10`，`0` = 不过滤 |
 | `local_first` | integer | 优先读取本地 NFO 与本地图片、只补缺失信息，默认 `false` |
 | `move_enabled` | integer | 成功后移动，默认 `false` |
 | `move_directory` | text | 移动目标目录（连接内路径，空串 = 连接根） |
@@ -103,7 +103,7 @@
 - `LibraryScanResult`：`{ library, indexedFiles, indexedVideos, removedItems, skippedDirs, pending, message, autoScrape, autoScrapeSkipped }`——注意是 `removedItems`（被清掉的条目数），不是旧的 `removedFiles`。
 - `LibraryProgressEvent`：`{ libraryId, phase: 'scan', scannedDirs, indexedFiles, currentPath, finished, cancelled }`。
 - `LibraryTaskResult`：`{ taskId, total }`。
-- `minFileSizeMb` / `localFirst` 是库上的普通字段：前者是「小于该体积（MB）的视频不参与扫描与刮削」的过滤阈值（`0` = 不过滤，落库前经 `normalizeMinFileSizeMb` 取整），后者是「优先读取本地 NFO 与本地图片」。**没有** `writeNfo` / `renameEnabled` / `imageSaveMode` 这三个开关，也没有 `LibraryImageSaveMode` 这套类型——写 NFO、按命名规则重命名、图片与影片同目录都是固定行为（见 [刮削模块](../scrape/01-scrape-module.md)）。
+- `minFileSizeMb` / `localFirst` 是库上的普通字段：前者是「小于该体积（MB）的视频不参与扫描与刮削」的过滤阈值（`0` = 不过滤，落库前经 `normalizeMinFileSizeMb` 取整；**新建库默认 `10`**，常量 `DEFAULT_MIN_FILE_SIZE_MB` 在 `src/common/types/library/index.ts`，渲染层表单与 `library:save` 缺字段回落都用它），后者是「优先读取本地 NFO 与本地图片」。**没有** `writeNfo` / `renameEnabled` / `imageSaveMode` 这三个开关，也没有 `LibraryImageSaveMode` 这套类型——写 NFO、按命名规则重命名、图片与影片同目录都是固定行为（见 [刮削模块](../scrape/01-scrape-module.md)）。
 
 ## 4. 扫描（`libraryScan.ts` + `mediaIndexer.ts`）
 
@@ -286,7 +286,7 @@
 | --- | --- | --- |
 | `type` | `'movie'` | 库类型（「影视」/「剧集」）；决定扫描用哪份后缀清单与**条目粒度**——影视库一个视频一条影片、剧集库一整部剧一条剧集，**建库后不可修改** |
 | `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：总开关（应用设置 `nsfwProtection`）是前提，开启时命中「存储 `nsfw` 标记」或「库级 `nsfwProtection`」任一即遮罩，**总开关关闭时本标记不生效**（`MediaWallItem.nsfwProtected` 由墙面下发，渲染层与总开关、连接标记合并成 `protect`） |
-| `minFileSizeMb` | `0` | 小于该体积（MB）的视频不参与扫描与刮削；`0` = 不过滤。表单里是数字输入（步进 100） |
+| `minFileSizeMb` | `10`（新建默认） | 小于该体积（MB）的视频不参与扫描与刮削；`0` = 不过滤。表单里是数字输入（步进 100）；已建库沿用库里存的值（不会被默认值覆盖） |
 | `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息 |
 | `moveEnabled` | `false` | 是否把影片移到 `moveDirectory`（开不开都会先落进影片自己的同名文件夹） |
 | `moveDirectory` | `''` | 移动目标目录（连接内路径；空串 = 原地不动，影片留在所在目录下的同名文件夹里） |
@@ -323,6 +323,7 @@
 - 扫描上限是**全局计数**（`listed > 200_000` 即停），触顶时结果可能不完整，只给 `truncated` 提示、不做断点续扫。
 - **多版本只播主版本**：详情页本期固定播放 `primarySourceOf` 选出的主版本（无版本标签优先，其次路径 / 名称序第一），版本切换 UI 留后续；媒体源列表本身已经完整入库。
 - **跨目录搬整个影片目录依赖连接能力**：刮削侧给「目录型但没按规则命名」的影片改名 = 移动整个目录（`client.move`）。本机连接是 `fs.rename`（可用）；WebDAV 的目录移动不保证支持，失败时**回落为保持原目录**（只写 NFO / 图片，不改目录名），日志给一句警告，不至于把整次刮削搞失败。
+- **开着「移动文件」却不填目标目录 ≈ 原地整理**：`scrapeLayout.resolveOutputDir('')` 回落成条目所在目录，此时开关本身不产生移动；只有「文件型条目 + 所在目录已按片名命名」这种组合会因为 `rootDir` 取原目录而多套一层 `<目录>/<片名>/`（已在库级选项里保留为空串语义，没有加校验）。
 
 ## 10. 手工验证清单
 

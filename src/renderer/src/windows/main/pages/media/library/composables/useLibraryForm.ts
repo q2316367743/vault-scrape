@@ -8,7 +8,7 @@
  * - 类型只在新建时可选，编辑已有资料库时锁定（已有条目是按原类型索引的）；
  * - 刮削器**可以一个都不选**：留空表示这个库不刮削，扫描只负责索引；
  * - 写 NFO、按命名规则重命名、图片与影片同目录都是固定行为，表单没有开关；
- *   这里只暴露「体积过滤」（minFileSizeMb，0 = 不过滤）和「优先读取本地 NFO 和图片」（localFirst）；
+ *   这里只暴露「体积过滤」（minFileSizeMb，新建默认 10，0 = 不过滤）和「优先读取本地 NFO 和图片」（localFirst）；
  * - 必填校验在这里提示，存储是否存在、目录是否嵌套等最终判定在 `library:save`。
  */
 import { computed, onMounted, ref } from 'vue'
@@ -22,6 +22,7 @@ import {
   type FileConnection
 } from '@common/types/file'
 import {
+  DEFAULT_MIN_FILE_SIZE_MB,
   LIBRARY_TYPES,
   LIBRARY_TYPE_LABELS,
   type LibraryType,
@@ -60,7 +61,7 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
   const nsfwProtection = ref(options.library?.nsfwProtection ?? false)
   const moveEnabled = ref(options.library?.moveEnabled ?? false)
   const moveDirectory = ref(options.library?.moveDirectory ?? '')
-  const minFileSizeMb = ref(options.library?.minFileSizeMb ?? 0)
+  const minFileSizeMb = ref(options.library?.minFileSizeMb ?? DEFAULT_MIN_FILE_SIZE_MB)
   const localFirst = ref(options.library?.localFirst ?? false)
   const saving = ref(false)
   let rowSeed = 0

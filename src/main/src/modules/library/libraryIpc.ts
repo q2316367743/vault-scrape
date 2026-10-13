@@ -8,6 +8,7 @@
  */
 import { ipcMain } from 'electron'
 import {
+  DEFAULT_MIN_FILE_SIZE_MB,
   LIBRARY_TYPES,
   LibraryError,
   describeLibraryError,
@@ -77,9 +78,9 @@ function readDraft(payload: unknown): MediaLibraryDraft {
     type: readEnum(draft, 'type', LIBRARY_TYPES, 'movie'),
     scrapers: readStringArray(draft, 'scrapers', []),
     paths,
-    // 缺字段时的缺省值与 schema 保持一致：NSFW 保护默认开、体积过滤默认关、移动默认关
+    // 缺字段时的缺省值与 schema 保持一致：NSFW 保护默认开、体积过滤默认 10、移动默认关
     nsfwProtection: readBoolean(draft, 'nsfwProtection', true),
-    minFileSizeMb: readNumber(draft, 'minFileSizeMb', 0),
+    minFileSizeMb: readNumber(draft, 'minFileSizeMb', DEFAULT_MIN_FILE_SIZE_MB),
     localFirst: readBoolean(draft, 'localFirst', false),
     moveEnabled: readBoolean(draft, 'moveEnabled', false),
     moveDirectory: readString(draft, 'moveDirectory', '')

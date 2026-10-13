@@ -59,7 +59,7 @@ CREATE TABLE `library` (
 	`type` text DEFAULT 'movie' NOT NULL,
 	`scrapers` text DEFAULT '[]' NOT NULL,
 	`nsfw_protection` integer DEFAULT true NOT NULL,
-	`min_file_size_mb` integer DEFAULT 0 NOT NULL,
+	`min_file_size_mb` integer DEFAULT 10 NOT NULL,
 	`local_first` integer DEFAULT false NOT NULL,
 	`move_enabled` integer DEFAULT false NOT NULL,
 	`move_directory` text DEFAULT '' NOT NULL,

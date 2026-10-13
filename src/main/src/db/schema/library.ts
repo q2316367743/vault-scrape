@@ -17,8 +17,8 @@ export const libraryTable = sqliteTable('library', {
   /** 刮削器插件 ID 列表（JSON 数组）；**空数组表示该库不刮削** */
   scrapers: text('scrapers').notNull().default('[]'),
   nsfwProtection: integer('nsfw_protection', { mode: 'boolean' }).notNull().default(true),
-  /** 扫描时排除小于该体积（MB）的视频；0 表示不过滤 */
-  minFileSizeMb: integer('min_file_size_mb').notNull().default(0),
+  /** 扫描时排除小于该体积（MB）的视频；0 表示不过滤。默认值与 `@common/types/library` 的 `DEFAULT_MIN_FILE_SIZE_MB` 一致 */
+  minFileSizeMb: integer('min_file_size_mb').notNull().default(10),
   /** 优先读取本地 NFO 与本地图片，只从互联网上补缺失的信息 */
   localFirst: integer('local_first', { mode: 'boolean' }).notNull().default(false),
   moveEnabled: integer('move_enabled', { mode: 'boolean' }).notNull().default(false),

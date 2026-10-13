@@ -12,7 +12,7 @@
  * - `scrapers` **可以为空**：空数组表示这个库不刮削，扫描只负责索引；
  *   非空时全部必须是「插件 ID + 已启用」的刮削器，运行时不可用会单独报错；
  * - 扫描是「递归遍历每个目录 + 按路径 upsert 条目 + 清理磁盘上已消失的条目」，
- *   `minFileSizeMb` 以下的视频直接不入库；
+ *   `minFileSizeMb` 以下的视频直接不入库（新建库默认 `DEFAULT_MIN_FILE_SIZE_MB` = 10 MB，可改回 0）；
  * - 刮削只针对库内**尚未刮削**的条目，产出固定写成 Jellyfin 目录规范
  *   （文件夹 / 视频 / NFO 同名，图片与影片同目录），这两件事没有开关；
  *   `tv` 库的刮削单位是**剧集**（一行 = 一个剧集），产物固定为
@@ -26,6 +26,9 @@ import type { ScrapeTaskSnapshot } from '../scrape'
 export type LibraryType = 'movie' | 'tv'
 
 export const LIBRARY_TYPES: readonly LibraryType[] = ['movie', 'tv']
+
+/** 新建资料库时「文件过滤」的默认阈值（MB）；0 表示不过滤 */
+export const DEFAULT_MIN_FILE_SIZE_MB = 10
 
 export const LIBRARY_TYPE_LABELS: Readonly<Record<LibraryType, string>> = {
   movie: '影视',
@@ -63,7 +66,7 @@ export interface MediaLibrary {
   paths: MediaLibraryPath[]
   /** 该库的影片默认开启 NSFW 保护 */
   nsfwProtection: boolean
-  /** 扫描时排除小于该体积（MB）的视频；0 表示不过滤 */
+  /** 扫描时排除小于该体积（MB）的视频；0 表示不过滤；新建库默认 `DEFAULT_MIN_FILE_SIZE_MB`（10） */
   minFileSizeMb: number
   /** 优先读取本地 NFO 与本地图片，只从互联网上补缺失的信息 */
   localFirst: boolean
