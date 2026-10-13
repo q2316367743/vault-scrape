@@ -20,6 +20,21 @@
     </div>
 
     <div class="form-row form-row-top">
+      <span class="form-label">内容语言</span>
+      <div class="form-control">
+        <t-select
+          class="language-select"
+          :value="languageValue()"
+          :options="languageOptions"
+          @change="onLanguageChange"
+        />
+        <p class="form-note">
+          这个资料库里的内容本身是什么语言。与设置里的目标语言不同时，刮削完成后自动翻译
+        </p>
+      </div>
+    </div>
+
+    <div class="form-row form-row-top">
       <span class="form-label">媒体目录</span>
       <div class="form-control">
         <library-directory-editor
@@ -141,6 +156,9 @@ const {
   moveDirectory,
   minFileSizeMb,
   localFirst,
+  languageValue,
+  languageOptions,
+  onLanguageChange,
   saving,
   scraperOptions,
   scraperLoading,
@@ -221,6 +239,10 @@ defineExpose({ submit: onSubmit, saving })
 }
 
 .type-select {
+  width: 240px;
+}
+
+.language-select {
   width: 240px;
 }
 

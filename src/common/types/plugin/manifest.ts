@@ -124,6 +124,17 @@ export interface PluginSummary {
   loadError: string
 }
 
+/**
+ * 插件现在能不能直接调用：已启用、能加载、必填环境变量都填了。
+ *
+ * 契约：主进程挑插件与渲染层画弹窗共用这一份判定（禁止各写一份）。
+ * 三项分别对应 `enabled`、`loadError`、`envReady`；没声明环境变量的插件 `envReady` 为真，
+ * 因此免鉴权插件同样算可用。
+ */
+export function isPluginUsable(plugin: PluginSummary): boolean {
+  return plugin.enabled && plugin.loadError.length === 0 && plugin.envReady
+}
+
 /** 环境变量读取结果：只回声明表与非敏感信息，已填写的值不回读 */
 export interface PluginEnvSnapshot {
   fields: PluginEnvField[]

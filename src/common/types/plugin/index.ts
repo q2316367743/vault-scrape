@@ -24,6 +24,7 @@ export {
   PLUGIN_ID_LIMIT,
   PLUGIN_ID_PATTERN,
   comparePluginVersion,
+  isPluginUsable,
   normalizePluginIds,
   type PluginEnvDraft,
   type PluginEnvField,

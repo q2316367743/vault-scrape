@@ -120,3 +120,51 @@ export function stillImagesOf(detail: MediaDetailResult): MediaDetailImage[] {
     (image) => image.type !== 'primary' && image.type !== 'thumb' && image.url !== backdrop
   )
 }
+
+/**
+ * 译文视图：切到译文时，把详情里能翻的字段换成译文；**没有译文的位置一律回落原文**。
+ *
+ * 契约：
+ * - 纯函数，返回的是**新对象**，原文（`detail`）不被改动，所以「切回原文」只是把原对象再传一遍；
+ * - 主进程把原文与译文一起下发，本函数只在渲染层做一次字段覆盖，页面、头部、正文、
+ *   两个信息区块与演员条都照常读同一套字段，**不必各自判一次有没有译文**；
+ * - 覆盖的字段与自动翻译的字段范围一致：标题 / 原名 / 简介 / 片商 / 厂牌 / 系列 / 导演 /
+ *   标签 / 演员名，剧集还包括每集的简介（集标题不翻译）；
+ * - `tags` 与 `actors` 按**位置**对应原文（与主进程同一套口径），长度不够的位置保持原文。
+ */
+export function translatedDetail(detail: MediaDetailResult, showing: boolean): MediaDetailResult {
+  const translation = detail.translation
+  if (!showing || !translation) return detail
+  /** 译文有值就用译文，空串 / 空数组留原文 */
+  const pick = (translated: string, original: string): string =>
+    translated.length > 0 ? translated : original
+  const pickList = (translated: readonly string[], original: readonly string[]): string[] =>
+    original.map((text, index) => pick(translated[index] ?? '', text))
+  return {
+    ...detail,
+    item: { ...detail.item, title: pick(translation.title, detail.item.title) },
+    meta: {
+      ...detail.meta,
+      title: pick(translation.title, detail.meta.title),
+      originalTitle: pick(translation.originalTitle, detail.meta.originalTitle),
+      plot: pick(translation.overview, detail.meta.plot),
+      maker: pick(translation.maker, detail.meta.maker),
+      label: pick(translation.label, detail.meta.label),
+      series: pick(translation.series, detail.meta.series),
+      director: pick(translation.director, detail.meta.director),
+      tags: pickList(translation.tags, detail.meta.tags)
+    },
+    actors: detail.actors.map((actor, index) => ({
+      ...actor,
+      name: pick(translation.actors[index] ?? '', actor.name)
+    })),
+    seasons: detail.seasons.map((season) => ({
+      ...season,
+      episodes: season.episodes.map((episode) => {
+        const row = episode.translation
+        return row && row.overview.length > 0 ? { ...episode, overview: row.overview } : episode
+      })
+    }))
+  }
+}
+

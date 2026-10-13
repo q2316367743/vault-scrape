@@ -30,8 +30,16 @@ import {
   type MediaLibraryDraft,
   type MediaLibraryPathDraft
 } from '@common/types/library'
-import { R18_OFFLINE_PLUGIN_ID } from '@common/types/plugin'
+import { R18_OFFLINE_PLUGIN_ID, isTranslateLanguage } from '@common/types/plugin'
+import {
+  TRANSLATE_LANGUAGES,
+  TRANSLATE_LANGUAGE_LABELS,
+  type TranslateLanguage
+} from '@common/types/setting/translateSetting'
 import { openRemoteDirPicker } from '../components/RemoteDirDialog'
+
+/** 下拉里代表「未指定」的哨兵值：tdesign 把空串当未选中，所以不能直接用 '' */
+const LANGUAGE_NONE = 'none'
 
 /** 表单里的一行「存储 + 目录」；`key` 只用于渲染，不参与提交 */
 export interface LibraryPathRow {
@@ -63,6 +71,8 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
   const moveDirectory = ref(options.library?.moveDirectory ?? '')
   const minFileSizeMb = ref(options.library?.minFileSizeMb ?? DEFAULT_MIN_FILE_SIZE_MB)
   const localFirst = ref(options.library?.localFirst ?? false)
+  /** 这个库里内容本身是什么语言；空串 = 未指定，自动翻译时交给插件检测 */
+  const language = ref<TranslateLanguage | ''>(options.library?.language ?? '')
   const saving = ref(false)
   let rowSeed = 0
 
@@ -77,6 +87,12 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
     value,
     label: LIBRARY_TYPE_LABELS[value]
   }))
+
+  /** 内容语言：默认「未指定」，其余按宿主支持的语言列 */
+  const languageOptions = [
+    { value: LANGUAGE_NONE, label: '未指定' },
+    ...TRANSLATE_LANGUAGES.map((value) => ({ value, label: TRANSLATE_LANGUAGE_LABELS[value] }))
+  ]
 
   /** 类型不可改：已有条目按原类型的后缀索引，中途换类型会留下扫不到的孤儿条目 */
   const typeLocked = computed(() => !isCreate)
@@ -109,6 +125,15 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
   /** 换存储时清空目录：路径只对原来那个存储有意义 */
   function onConnectionChange(row: LibraryPathRow): void {
     row.dirValue = ''
+  }
+
+  /** 内容语言下拉的当前值：空串在界面上用哨兵值占位 */
+  function languageValue(): string {
+    return language.value === '' ? LANGUAGE_NONE : language.value
+  }
+
+  function onLanguageChange(value: unknown): void {
+    language.value = isTranslateLanguage(value) ? value : ''
   }
 
   /** 打开远程目录弹窗，把挑好的连接内路径写回这一行 */
@@ -200,7 +225,8 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
       moveEnabled: moveEnabled.value,
       moveDirectory: moveEnabled.value ? moveDirectory.value.trim() : '',
       minFileSizeMb: minFileSizeMb.value,
-      localFirst: localFirst.value
+      localFirst: localFirst.value,
+      language: language.value
     }
     saving.value = true
     const result = await libraryApi.save(
@@ -232,6 +258,9 @@ export function useLibraryForm(options: UseLibraryFormOptions) {
     moveDirectory,
     minFileSizeMb,
     localFirst,
+    languageValue,
+    languageOptions,
+    onLanguageChange,
     saving,
     scraperOptions,
     scraperLoading,

@@ -6,17 +6,29 @@
  * - `skippedDirs`（本次列目录失败被跳过的目录）下的旧媒体源一律视为有效，
  *   避免一次网络抖动就删掉条目与刮削图片；
  * - 删除按主键分块（`DELETE_CHUNK`），避免一次性 `IN` 过多参数；
- * - 条目被删时连带清掉它的参演名单（`media_cast` 是按 itemId 挂的弱关联行）。
+ * - 条目被删时连带清掉它的参演名单（`media_cast`）与译文（`media_translation`）。
  */
 import { and, eq, inArray, sql } from 'drizzle-orm'
 import { isRemotePathInside } from '@common/types/file'
 import { db } from '../client'
 import { mediaItemTable, mediaSourceTable } from '../schema'
 import { deleteCastByItems } from './actorRepo'
+import { deleteTranslationsByItems } from './translationRepo'
 import type { MediaItemType } from './mediaRepo'
 
 /** 按主键批量删除的分块大小 */
 const DELETE_CHUNK = 500
+
+/**
+ * 条目被删时连带清掉挂在它下面的弱关联行。
+ *
+ * 参演名单 `media_cast` 与译文 `media_translation` 都是「按 itemId 挂、丢了也无所谓」的派生物，
+ * 一律跟着条目走；两者都不做外键，所以必须由这里统一收口。
+ */
+function dropItemRows(itemIds: readonly string[]): void {
+  deleteCastByItems(itemIds)
+  deleteTranslationsByItems(itemIds)
+}
 
 /** 路径是否落在本次被跳过的目录之下（跳过 = 目录没列出来，不代表内容已删除） */
 function isUnderSkippedDir(path: string, skippedDirs: readonly string[]): boolean {
@@ -98,7 +110,7 @@ export function deleteItemsWithoutSource(
   const ids = rows.map((row) => row.id)
   if (ids.length > 0) {
     db().delete(mediaItemTable).where(inArray(mediaItemTable.id, ids)).run()
-    deleteCastByItems(ids)
+    dropItemRows(ids)
   }
   return ids
 }
@@ -127,7 +139,7 @@ export function deleteChildlessItems(
   const ids = rows.map((row) => row.id)
   if (ids.length > 0) {
     db().delete(mediaItemTable).where(inArray(mediaItemTable.id, ids)).run()
-    deleteCastByItems(ids)
+    dropItemRows(ids)
   }
   return ids
 }

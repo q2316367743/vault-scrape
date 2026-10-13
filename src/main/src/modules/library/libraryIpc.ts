@@ -21,6 +21,8 @@ import {
   type MediaLibraryDraft,
   type MediaLibraryPathDraft
 } from '@common/types/library'
+import { isTranslateLanguage } from '@common/types/plugin'
+import type { TranslateLanguage } from '@common/types/setting/translateSetting'
 import {
   readBoolean,
   readEnum,
@@ -54,6 +56,12 @@ function readLibraryId(payload: unknown): string {
   return libraryId
 }
 
+/** 内容语言：空串表示「未指定」，非法码一律收敛成空串 */
+function readLanguage(source: Record<string, unknown>): TranslateLanguage | '' {
+  const value = readString(source, 'language', '').trim()
+  return isTranslateLanguage(value) ? value : ''
+}
+
 /** 渲染层提交的资料库草稿：逐字段收窄，真正的校验在 libraryStore 里做 */
 function readDraft(payload: unknown): MediaLibraryDraft {
   const draft = toSource(payloadOf(payload).draft)
@@ -83,7 +91,8 @@ function readDraft(payload: unknown): MediaLibraryDraft {
     minFileSizeMb: readNumber(draft, 'minFileSizeMb', DEFAULT_MIN_FILE_SIZE_MB),
     localFirst: readBoolean(draft, 'localFirst', false),
     moveEnabled: readBoolean(draft, 'moveEnabled', false),
-    moveDirectory: readString(draft, 'moveDirectory', '')
+    moveDirectory: readString(draft, 'moveDirectory', ''),
+    language: readLanguage(draft)
   }
 }
 

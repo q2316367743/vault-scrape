@@ -12,6 +12,7 @@
  * - 目录 / 文件名规则（年份、版本标签、季集号、花絮识别）见 `./mediaRules`。
  */
 import type { MediaLibrarySummary } from '../library'
+import type { MediaItemTranslation } from '../translate'
 import type { MediaImageType } from './source'
 
 export { parseNfoRestore, parseNfoXml } from './nfo'
@@ -204,6 +205,13 @@ export interface MediaDetailResult {
    * 剧集条目自己的 `item.playUrl` 是空串，渲染层要播哪一集由用户选。
    */
   seasons: MediaSeasonRef[]
+  /**
+   * 这个条目的译文；没翻译过是 `null`。
+   *
+   * 契约：译文是派生物、**原文不受影响**，两者一起下发，详情页自己切「原文 / 译文」；
+   * 各字段是空串 / 空数组表示「这个字段没有译文」，渲染层按字段回落原文。
+   */
+  translation: MediaItemTranslation | null
 }
 
 /** 剧集详情里的一集：只够画一个选集条目并直接播放 */
@@ -227,6 +235,8 @@ export interface MediaEpisodeRef {
   path: string
   /** 集文件体积（字节） */
   size: number
+  /** 这一集的译文；没翻译过是 `null`。集只翻简介，标题保持原文 */
+  translation: MediaItemTranslation | null
 }
 
 /** 剧集详情里的一季：海报 + 该季的全部集 */

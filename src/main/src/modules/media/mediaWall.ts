@@ -60,6 +60,7 @@ import {
   type SeriesItemStats
 } from '$/db/repo/mediaSeriesRepo'
 import { actorRefsOfItem } from '$/modules/actor/actorLink'
+import { getTranslation, listTranslations } from '$/db/repo/translationRepo'
 import { getLibrary, listLibraries, listSummaries } from '$/modules/library/libraryStore'
 
 /**
@@ -370,9 +371,18 @@ async function loadSeriesDetail(item: MediaItemRow, library: MediaLibrary | null
     else sourceByItem.set(source.itemId, [source])
   }
   const seasons: MediaSeasonRef[] = []
-  for (const season of listSeasonItems(item.libraryId, item.id)) {
+  // 一次把剧集 + 全部集的译文取回来（译文表是纯派生数据，一张表一次 IN 查询就够）
+  const seasonRows = listSeasonItems(item.libraryId, item.id).map((season) => ({
+    season,
+    episodes: listEpisodeItems(item.libraryId, season.id)
+  }))
+  const translations = listTranslations([
+    item.id,
+    ...seasonRows.flatMap((row) => row.episodes.map((episode) => episode.id))
+  ])
+  for (const { season, episodes: episodeRows } of seasonRows) {
     const episodes: MediaEpisodeRef[] = []
-    for (const episode of listEpisodeItems(item.libraryId, season.id)) {
+    for (const episode of episodeRows) {
       const source = primarySourceOf(episode, sourceByItem.get(episode.id) ?? [])
       if (!source) continue
       episodes.push({
@@ -387,7 +397,8 @@ async function loadSeriesDetail(item: MediaItemRow, library: MediaLibrary | null
         playUrl: buildMediaUrl(source.connectionId, source.id, source.name),
         coverUrl: coverUrlOf(episode, images),
         path: source.path,
-        size: source.size
+        size: source.size,
+        translation: translations.get(episode.id) ?? null
       })
     }
     seasons.push({
@@ -403,7 +414,8 @@ async function loadSeriesDetail(item: MediaItemRow, library: MediaLibrary | null
     meta: detailMetaOf(item),
     actors: actorRefsOfItem(item.id),
     images: detailImagesOf(item, images),
-    seasons
+    seasons,
+    translation: translations.get(item.id) ?? null
   }
 }
 
@@ -428,7 +440,8 @@ export async function loadMediaDetail(request: MediaDetailRequest): Promise<Medi
     meta: detailMetaOf(item),
     actors: actorRefsOfItem(item.id),
     images: detailImagesOf(item, images),
-    seasons: []
+    seasons: [],
+    translation: getTranslation(item.id)
   }
 }
 

@@ -18,9 +18,12 @@
  *   `tv` 库的刮削单位是**剧集**（一行 = 一个剧集），产物固定为
  *   `<剧集名>/Season NN/<剧集名> S01E01.ext` + `tvshow.nfo` / `season.nfo` / 每集 NFO + 图片；
  * - `localFirst` 为真时先读本地 NFO 与本地图片，只从互联网补缺失项；
+ * - `language` 是**该库内容的源语言**（本地 NFO / 文件名本来是什么语言）：空串表示未设置，
+ *   这种库不参与自动翻译；设置成非空时，与全局「目标语言」不同才会自动翻译，详见 docs/plugin/10；
  * - 删除库只删配置与库内条目：磁盘文件不动。
  */
 import type { ScrapeTaskSnapshot } from '../scrape'
+import type { TranslateLanguage } from '../setting/translateSetting'
 
 /** 资料库类型：新类型要同时补 `LIBRARY_TYPE_LABELS` 与 `DEFAULT_LIBRARY_EXTENSIONS` */
 export type LibraryType = 'movie' | 'tv'
@@ -74,6 +77,8 @@ export interface MediaLibrary {
   moveEnabled: boolean
   /** 移动目标目录（连接内路径；用于该库的多个连接时按目标归属的连接解释） */
   moveDirectory: string
+  /** 该库内容的源语言；空串表示未设置（不参与自动翻译） */
+  language: TranslateLanguage | ''
   /** 上次扫描完成时间；0 表示从未扫描 */
   lastScanAt: number
   /** 上次刮削任务启动时间；0 表示从未刮削 */
@@ -94,6 +99,8 @@ export interface MediaLibraryDraft {
   localFirst: boolean
   moveEnabled: boolean
   moveDirectory: string
+  /** 该库内容的源语言；空串表示未设置 */
+  language: TranslateLanguage | ''
 }
 
 /** 墙面筛选与列表展示用的库摘要（计数与封面由影视墙读模型给出） */

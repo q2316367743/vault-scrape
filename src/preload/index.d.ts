@@ -11,6 +11,7 @@ import type { PlayerApi } from './src/modules/player/player'
 import type { PluginApi } from './src/modules/plugin/plugin'
 import type { ScrapeApi } from './src/modules/scrape/scrape'
 import type { SettingApi } from './src/modules/setting/setting'
+import type { TranslateApi } from './src/modules/translate/translate'
 
 declare global {
   interface Window {
@@ -28,6 +29,7 @@ declare global {
       plugin: PluginApi
       scrape: ScrapeApi
       setting: SettingApi
+      translate: TranslateApi
     }
   }
 }

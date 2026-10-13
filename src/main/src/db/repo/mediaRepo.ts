@@ -12,6 +12,7 @@ import { and, asc, eq, sql } from 'drizzle-orm'
 import { db } from '../client'
 import { mediaItemTable, mediaSourceTable } from '../schema'
 import type { MediaItemRow, MediaItemRowInsert, MediaSourceRow } from '../schema'
+import { deleteTranslation } from './translationRepo'
 
 /** 条目类型；影视库用影片与目录，剧集库用剧集 / 季 / 集（只有集挂媒体源） */
 export type MediaItemType = 'movie' | 'folder' | 'series' | 'season' | 'episode'
@@ -348,8 +349,12 @@ export interface MediaItemRestoreInput {
  * `hasNfo` 是唯一的例外：调用方（还原流程）刚把这个条目的 NFO 候选全删了，所以一并归零，
  * 让它立刻回到待刮削候选（否则要等下次扫描才纠正）。同目录兄弟条目可能还留着自己的
  * `<文件名>.nfo`，那些条目的 `hasNfo` 继续等下次扫描。
+ *
+ * 译文（`media_translation`）也在这里一并删掉：它是刮削结果的派生物，
+ * 元数据都归空了就没有能被翻译的原文（见 docs/plugin/10-translate-integration.md）。
  */
 export function clearItemMetadata(itemId: string, restore: MediaItemRestoreInput): void {
+  deleteTranslation(itemId)
   db()
     .update(mediaItemTable)
     .set({

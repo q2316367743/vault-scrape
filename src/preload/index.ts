@@ -12,6 +12,7 @@ import { playerApi } from '~/modules/player/player'
 import { pluginApi } from '~/modules/plugin/plugin'
 import { scrapeApi } from '~/modules/scrape/scrape'
 import { settingApi } from '~/modules/setting/setting'
+import { translateApi } from '~/modules/translate/translate'
 
 // 业务桥：渲染层只通过这些 API 访问主进程能力
 const preload = {
@@ -26,7 +27,8 @@ const preload = {
   player: playerApi,
   plugin: pluginApi,
   scrape: scrapeApi,
-  setting: settingApi
+  setting: settingApi,
+  translate: translateApi
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

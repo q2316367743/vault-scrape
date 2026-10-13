@@ -10,6 +10,7 @@ import { registerPlayerIpc } from './modules/player/playerIpc'
 import { registerPluginIpc } from './modules/plugin/pluginIpc'
 import { registerScrapeIpc } from './modules/scrape/scrapeIpc'
 import { registerSettingIpc } from './modules/setting/settingIpc'
+import { registerTranslateIpc } from './modules/translate/translateIpc'
 
 /** IPC 注册总入口：新增一个域就在这里挂一行 */
 export function registerIpc(): void {
@@ -25,4 +26,5 @@ export function registerIpc(): void {
   registerPluginIpc()
   registerScrapeIpc()
   registerSettingIpc()
+  registerTranslateIpc()
 }

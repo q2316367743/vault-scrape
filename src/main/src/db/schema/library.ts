@@ -23,6 +23,13 @@ export const libraryTable = sqliteTable('library', {
   localFirst: integer('local_first', { mode: 'boolean' }).notNull().default(false),
   moveEnabled: integer('move_enabled', { mode: 'boolean' }).notNull().default(false),
   moveDirectory: text('move_directory').notNull().default(''),
+  /**
+   * 该库内容的**源语言**（本地 NFO / 文件名本来是什么语言）；空串表示未设置。
+   *
+   * 契约：这里只声明「我这里是什么语言」，全局「目标语言」仍在 `setting.translate.targetLanguage`；
+   * 两者不同才会在刮削完成后自动翻译（见 docs/plugin/10-translate-integration.md）。
+   */
+  language: text('language').notNull().default(''),
   lastScanAt: integer('last_scan_at').notNull().default(0),
   lastScrapeAt: integer('last_scrape_at').notNull().default(0),
   createdAt: integer('created_at').notNull(),

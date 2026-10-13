@@ -38,6 +38,8 @@ import {
 import { getConnection } from '$/modules/file/fileConnectionStore'
 import { normalizeRemotePath } from '@common/types/file/path'
 import { LIBRARY_TYPES } from '@common/types/library'
+import { isTranslateLanguage } from '@common/types/plugin'
+import type { TranslateLanguage } from '@common/types/setting/translateSetting'
 import type {
   LibraryType,
   MediaLibrary,
@@ -61,6 +63,16 @@ function normalizeName(value: string): string {
 /** 库类型白名单回落：非法值一律当「影视」 */
 function normalizeType(value: LibraryType): LibraryType {
   return LIBRARY_TYPES.includes(value) ? value : 'movie'
+}
+
+/**
+ * 内容语言白名单回落：空串（未设置）与非法值都当「未设置」。
+ *
+ * 契约：这只声明「库里的内容是什么语言」；是否自动翻译由它与全局目标语言的差异决定，
+ * 所以「未设置」是合法状态，不报错。
+ */
+function normalizeLanguage(value: MediaLibraryDraft['language']): TranslateLanguage | '' {
+  return typeof value === 'string' && isTranslateLanguage(value) ? value : ''
 }
 
 /** 归一化刮削器清单：空数组表示这个库不刮削，不再是错误 */
@@ -262,7 +274,8 @@ export function saveLibrary(draft: MediaLibraryDraft): MediaLibrary {
     minFileSizeMb: normalizeMinFileSizeMb(draft.minFileSizeMb),
     localFirst: draft.localFirst === true,
     moveEnabled: draft.moveEnabled === true,
-    moveDirectory: normalizeMoveDirectory(draft.moveDirectory)
+    moveDirectory: normalizeMoveDirectory(draft.moveDirectory),
+    language: normalizeLanguage(draft.language)
   }
   if (draft.id) {
     if (!readLibrary(draft.id)) throw new LibraryError('notFound', '资料库不存在')

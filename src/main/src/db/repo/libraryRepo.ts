@@ -10,6 +10,8 @@ import { randomUUID } from 'node:crypto'
 import { asc, eq, inArray } from 'drizzle-orm'
 import { LIBRARY_TYPES } from '@common/types/library'
 import type { LibraryType, MediaLibrary, MediaLibraryPath, MediaLibraryPathDraft } from '@common/types/library'
+import { isTranslateLanguage } from '@common/types/plugin'
+import type { TranslateLanguage } from '@common/types/setting/translateSetting'
 import { FILE_ROOT } from '@common/types/file'
 import { normalizeRemotePath } from '@common/types/file/path'
 import { db } from '../client'
@@ -28,11 +30,18 @@ export interface LibraryWriteInput {
   localFirst: boolean
   moveEnabled: boolean
   moveDirectory: string
+  /** 该库内容的源语言；空串表示未设置 */
+  language: TranslateLanguage | ''
 }
 
 /** 库类型白名单回落：脏数据（历史行、手工改库）一律当「影视」 */
 function libraryTypeOf(raw: string): LibraryType {
   return LIBRARY_TYPES.find((type) => type === raw) ?? 'movie'
+}
+
+/** 语言白名单回落：空串与脏数据都当「未设置」 */
+function languageOf(raw: string): TranslateLanguage | '' {
+  return isTranslateLanguage(raw) ? raw : ''
 }
 
 function parseScrapers(text: string): string[] {
@@ -61,6 +70,7 @@ function toLibrary(row: LibraryRow, paths: MediaLibraryPath[]): MediaLibrary {
     localFirst: row.localFirst,
     moveEnabled: row.moveEnabled,
     moveDirectory: row.moveDirectory,
+    language: languageOf(row.language),
     lastScanAt: row.lastScanAt,
     lastScrapeAt: row.lastScrapeAt,
     createdAt: row.createdAt,
@@ -147,6 +157,7 @@ export function insertLibrary(input: LibraryWriteInput): MediaLibrary {
     localFirst: input.localFirst,
     moveEnabled: input.moveEnabled,
     moveDirectory: input.moveDirectory,
+    language: input.language,
     lastScanAt: 0,
     lastScrapeAt: 0,
     createdAt: now,
@@ -172,6 +183,7 @@ export function updateLibrary(id: string, input: LibraryWriteInput): MediaLibrar
       localFirst: input.localFirst,
       moveEnabled: input.moveEnabled,
       moveDirectory: input.moveDirectory,
+      language: input.language,
       updatedAt: Date.now()
     })
     .where(eq(libraryTable.id, id))
