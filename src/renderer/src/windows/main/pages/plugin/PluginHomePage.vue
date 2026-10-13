@@ -65,8 +65,6 @@ function onChange(value: string | number): void {
 
 .plugin-tabs {
   flex-shrink: 0;
-  padding: 8px 20px 0;
-  border-bottom: 1px solid var(--td-component-stroke);
 }
 
 .plugin-tabs :deep(.t-tabs__content) {
