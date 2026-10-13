@@ -34,6 +34,7 @@
 - **清洗规则**（`normalizeExtensionList(input, fallback)`，读盘与保存都走）：去首尾空白 → 去掉前导点（`.mp4` → `mp4`）→ 转小写 → 丢掉非法（不匹配 `/^[a-z0-9]{1,12}$/`）与重复项 → 只保留前 `LIBRARY_EXTENSION_LIMIT = 64` 个 → 清洗后为空则整体回落到 `fallback`。
 - **面板行为**：`t-tag-input`（`:max="LIBRARY_EXTENSION_LIMIT"`、`excess-tips`「最多 64 个后缀」）在**失焦时**清洗并写回；清空后失焦提示「至少要保留一个后缀，已回落默认值」并恢复默认清单；超过 64 个时提示「最多保留 64 个后缀，多余的已丢弃」。保存沿用设置 store 的 300ms 防抖，面板没有独立保存按钮。
 - **归一化注册**在 `src/common/types/setting/index.ts` 的六处：类型导出、`SettingSchema`、`SETTING_GROUP_KEYS`、`settingNormalizers`、`buildSetting()`、`normalizeSetting()`。新增库类型时要同时补 `LIBRARY_TYPE_LABELS`（`src/common/types/library/index.ts`）与 `DEFAULT_LIBRARY_EXTENSIONS`。
+- 各资料库自己的「内容语言」（`MediaLibrary.language`）**不是设置项**，是库的字段，在资料库表单里编辑，见 [../media/01-media-library.md](../media/01-media-library.md)。
 
 ## 3. 刮削设置（`scrape`）
 
@@ -65,10 +66,16 @@
 
 | 字段 | 含义 | 默认值 | 界面 |
 | --- | --- | --- | --- |
-| `enabled` | 是否启用翻译 | `false` | 开关 |
+| `enabled` | 是否启用翻译：**只决定刮削完成后要不要自动翻译** | `false` | 开关 |
 | `targetLanguage` | 目标语言：`zh-CN` / `zh-TW` / `en` / `ja` / `ko` | `'zh-CN'` | 下拉选择 |
+| `pluginId` | 自动翻译使用的翻译插件 ID；空串表示按插件页顺序取第一个可用的 | `''` | 下拉选择（选项 = 「自动选择」+ 可用翻译插件；配置已失效时补一项「<名字>（已失效）」，不静默丢弃） |
+| `writeNfo` | 翻译完成后是否把译文写进磁盘 NFO（外部播放器与媒体服务器据此显示译文） | `true` | 开关 |
 
-翻译服务本身尚未接入，`enabled` 为 false 时目标语言禁用。
+- **手动翻译不受 `enabled` 影响**：详情页「更多 → 翻译」永远在，所以手动路径没有「未启用」这个错误码（见 [../plugin/10-translate-integration.md](../plugin/10-translate-integration.md)）。
+- **自动翻译要三条同时满足**：`enabled` 为真、资料库声明了「内容语言」（`library.language`，见 [../media/01-media-library.md](../media/01-media-library.md)）、且内容语言与 `targetLanguage` 不同。没声明内容语言的库不参与自动翻译。
+- `targetLanguage` / `pluginId` 在 `enabled` 为 false 时禁用。
+- `writeNfo` 打开后 NFO 是**覆盖式**的：正文变译文（并多一行私有标记 `<vaultscrape_translated>`），原文仍在 `media_item` 里，详情页照样能切回原文。
+- 面板是 `pages/setting/components/SettingTranslatePanel.vue`，store 为 `store/setting/SettingTranslateStore.ts`（`createSettingGroupStore('setting:translate', 'translate')`）。
 
 ## 6. 命名规则（`naming`）
 

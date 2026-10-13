@@ -31,6 +31,27 @@ export function escapeXml(value: string): string {
 
 export const NFO_DECLARATION = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
 
+/**
+ * 宿主私有标记：这份 NFO 的正文是译文。
+ *
+ * 翻译回写（`src/main/src/modules/translate/translateNfo.ts`）会在根元素末尾补一行
+ * `<vaultscrape_translated>语言码</vaultscrape_translated>`。本机读到它就明白正文不是原文，
+ * 于是**只把这份 NFO 当作还原记录的来源，不再把正文当成条目元数据读回**
+ * （读侧见 `scrapeLocalMeta` 与 `mediaNfoScan`），避免译文把原文覆盖掉。
+ * Kodi / Jellyfin 忽略未知标签，不影响它们读取其余字段。
+ */
+export const NFO_TRANSLATED_TAG = 'vaultscrape_translated'
+
+/** 这份 NFO 的正文是不是译文（见 `NFO_TRANSLATED_TAG`） */
+export function isTranslatedNfo(xml: string): boolean {
+  return xml.includes(`<${NFO_TRANSLATED_TAG}>`)
+}
+
+/** 译文标记的整行（翻译回写时插到根元素末尾） */
+export function nfoTranslatedLine(language: string): string {
+  return `  <${NFO_TRANSLATED_TAG}>${escapeXml(language)}</${NFO_TRANSLATED_TAG}>`
+}
+
 /** 追加一个非空标签；值为空白时整行省略（绝不写空标签） */
 export function pushNfoTag(rows: string[], name: string, value?: string): void {
   const text = (value ?? '').trim()

@@ -71,7 +71,8 @@ function createMovieBridge() {
 
 /**
  * 翻译插件桥：一个调用快捷方法，入参是 `{ text, from?, to }`。
- * 翻译目前没有业务调用方，方法先备着，等有调用方时不用再改这一层。
+ * 业务侧不直接用它——翻译由主进程的 `modules/translate/` 编排（`translate:item` / `translate:clear`），
+ * 这里留着是给插件页做「试翻一条」这类调试入口用的。
  */
 function createTranslateBridge() {
   const base = createBridge('translate')

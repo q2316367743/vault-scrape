@@ -49,12 +49,13 @@ src/
 │       ├── modules/plugin/  # 插件域：vm 沙箱运行时 + 宿主 HTTP/cheerio 上下文 + 注册表 + 存储 + IPC（安装时执行顶层读取 env 声明）
 │       ├── modules/scrape/  # 刮削域：任务编排 + 单文件流水线（产物规范 scrapeLayout / 本地 NFO 与图片 scrapeLocalMeta）+ 资料库候选入口 + IPC 与进度推送
 │       ├── modules/setting/ # 设置域：落盘实现 + IPC
+│       ├── modules/translate/ # 翻译域：挑可用翻译插件（translatePlugins）+ 逐字段翻译一个条目并入库（itemTranslate）+ 刮削收尾的自动翻译（autoTranslate）+ 译文就地写回 NFO（translateNfo）+ IPC
 │       ├── utils/           # 主进程通用工具：secretCodec（safeStorage 编解码，插件与文件域共用）
 │       └── registerIpc.ts   # 汇总注册各域 IPC
 ├── preload/
 │   ├── index.ts             # contextBridge 暴露 electron 与 preload
 │   ├── index.d.ts           # window 全局类型声明
-│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin / scrape / media / library）
+│   └── src/modules/         # 各域 IPC 契约常量 + 调用薄封装（appWindow / db / dialog / setting / file / plugin / scrape / media / library / translate）
 └── renderer/
     ├── index.html
     └── src/
@@ -91,6 +92,7 @@ src/renderer/src/windows/main/pages/media/
 - **资料库域**（`src/main/src/modules/library/`）拥有「配置 + 编排」：目录合法性与重叠校验、按库类型取后缀、扫描互斥与取消、扫后清理与自动刮削、待刮削候选去重、任务启动。**扫描的调度入口在这里。**
 - **媒体域**（`src/main/src/modules/media/`）拥有「索引 + 读模型 + 取值」：BFS 遍历与条目 / 媒体源 / 图片落库、`storage://` 协议与 Range 流式（含播放期路径自愈 `mediaLocator.ts`）、首页两排 / 整墙 / 详情 / 逐级浏览。
 - **刮削域**（`src/main/src/modules/scrape/`）只负责执行任务：流水线、资源下载、命名、NFO；它不决定「刮哪些、用什么刮削器」，那由资料库域传进来。
+- **翻译域**（`src/main/src/modules/translate/`）只做「把一段段文本翻好并落库」：挑可用插件、逐字段并发调用、写 `media_translation`；它**不改磁盘**——`translateNfo.ts` 只在刮削流水线收尾、且设置里打开「写入 NFO」时，把刚写下的 NFO 就地打补丁。宿主侧的完整接线（设置项、资料库内容语言、详情页手动翻译、刮削后自动翻译、译文读侧防护）见 [翻译能力接入](../plugin/10-translate-integration.md)。
 
 ## 路径别名
 

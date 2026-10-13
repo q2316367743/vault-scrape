@@ -58,7 +58,7 @@
 
 ## 3. 数据结构
 
-`library` 表（13 列，`src/main/src/db/schema/library.ts`）：
+`library` 表（14 列，`src/main/src/db/schema/library.ts`）：
 
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
@@ -71,6 +71,7 @@
 | `local_first` | integer | 优先读取本地 NFO 与本地图片、只补缺失信息，默认 `false` |
 | `move_enabled` | integer | 成功后移动，默认 `false` |
 | `move_directory` | text | 移动目标目录（连接内路径，空串 = 连接根） |
+| `language` | text | **该库内容的源语言**（宿主 5 种语言码之一，增量迁移 `0003_lazy_mach_iv.sql` 追加）；空串 = 未指定，这种库不参与自动翻译 |
 | `last_scan_at` | integer | 上次扫描完成时间；取消的扫描**不更新** |
 | `last_scrape_at` | integer | 上次刮削时间 |
 | `created_at` / `updated_at` | integer | 毫秒时间戳 |
@@ -96,14 +97,14 @@
 契约类型（`src/common/types/library/index.ts`）：
 
 - `LibraryType = 'movie' | 'tv'`；`LIBRARY_TYPES = ['movie', 'tv']`；`LIBRARY_TYPE_LABELS = { movie: '影视', tv: '剧集' }`；`libraryTypeLabel(type)` 对脏数据回落显示 `type` 本身。资料库表单的类型选项直接来自 `LIBRARY_TYPES`（两种类型都可新建，保存后都不可改），剧集库的扫描 / 刮削 / 详情口径见 [剧集支持](./02-series-support.md)。
-- `MediaLibrary`：`{ id, name, type, scrapers, paths: MediaLibraryPath[], nsfwProtection, minFileSizeMb, localFirst, moveEnabled, moveDirectory, lastScanAt, lastScrapeAt, createdAt, updatedAt }`——**顶层没有 `connectionId` / `rootPath`**，目录在 `paths` 里；`path` 一律是**连接内绝对路径**（`/` = 连接根）。
+- `MediaLibrary`：`{ id, name, type, scrapers, paths: MediaLibraryPath[], nsfwProtection, minFileSizeMb, localFirst, moveEnabled, moveDirectory, language, lastScanAt, lastScrapeAt, createdAt, updatedAt }`——**顶层没有 `connectionId` / `rootPath`**，目录在 `paths` 里；`path` 一律是**连接内绝对路径**（`/` = 连接根）；`language` 是 `TranslateLanguage | ''`（该库内容的**源语言**，空串 = 未指定）。
 - `MediaLibraryPath`：`{ id, connectionId, path }`；草稿里是 `MediaLibraryPathDraft`（无 `id`）。
 - `MediaLibraryDraft`：`id` 缺省 = 新建；`type` 也在这里。
 - `MediaLibrarySummary extends MediaLibrary`：多出 `videoCount`（**影视库 `countMovieItems`、剧集库 `countSeriesItems`**——影视库数影片、剧集库数剧集，整部剧集算一条）与 **`coverUrls: string[]`**——封面拼贴用的最多 4 张 `storage://` 地址，按**最近添加**排序；不足 4 张时继续取同一条目的其它图片、剧集库再补各季海报，凑不满就按实际张数返回，空数组时卡片退化成文字封面（`libraryStore.coverUrlsOf()`，常量 `COVER_URL_LIMIT = 4`；条目来源按库类型二选一）。**注意**：这里与 NSFW 无关——NSFW 库的 `coverUrls` 照常返回，是否展示由渲染层按全局 NSFW 开关决定（见 [影视墙页面](../page/04-media-wall-page.md)）。
 - `LibraryScanResult`：`{ library, indexedFiles, indexedVideos, removedItems, skippedDirs, pending, message, autoScrape, autoScrapeSkipped }`——注意是 `removedItems`（被清掉的条目数），不是旧的 `removedFiles`。
 - `LibraryProgressEvent`：`{ libraryId, phase: 'scan', scannedDirs, indexedFiles, currentPath, finished, cancelled }`。
 - `LibraryTaskResult`：`{ taskId, total }`。
-- `minFileSizeMb` / `localFirst` 是库上的普通字段：前者是「小于该体积（MB）的视频不参与扫描与刮削」的过滤阈值（`0` = 不过滤，落库前经 `normalizeMinFileSizeMb` 取整；**新建库默认 `10`**，常量 `DEFAULT_MIN_FILE_SIZE_MB` 在 `src/common/types/library/index.ts`，渲染层表单与 `library:save` 缺字段回落都用它），后者是「优先读取本地 NFO 与本地图片」。**没有** `writeNfo` / `renameEnabled` / `imageSaveMode` 这三个开关，也没有 `LibraryImageSaveMode` 这套类型——写 NFO、按命名规则重命名、图片与影片同目录都是固定行为（见 [刮削模块](../scrape/01-scrape-module.md)）。
+- `minFileSizeMb` / `localFirst` 是库上的普通字段：前者是「小于该体积（MB）的视频不参与扫描与刮削」的过滤阈值（`0` = 不过滤，落库前经 `normalizeMinFileSizeMb` 取整；**新建库默认 `10`**，常量 `DEFAULT_MIN_FILE_SIZE_MB` 在 `src/common/types/library/index.ts`，渲染层表单与 `library:save` 缺字段回落都用它），后者是「优先读取本地 NFO 与本地图片」。**没有** `writeNfo` / `renameEnabled` / `imageSaveMode` 这三个开关，也没有 `LibraryImageSaveMode` 这套类型——写 NFO、按命名规则重命名、图片与影片同目录都是固定行为（见 [刮削模块](../scrape/01-scrape-module.md)）。`language` 也是普通字段：库只声明「我这里的内容本来是什么语言」，**目标语言仍由全局 `setting.translate.targetLanguage` 统一决定**；空串（表单里的「未指定」）表示不参与自动翻译，非空且与目标语言不同才会在刮削完成后自动翻，见 [翻译能力接入](../plugin/10-translate-integration.md)。
 
 ## 4. 扫描（`libraryScan.ts` + `mediaIndexer.ts`）
 
@@ -129,7 +130,7 @@
 - 目录按需生成 `type='folder'` 条目串父子层级（`ensureFolderItem`）：**只有「自己没有影片」或「目录里有多个独立影片」的目录才建目录条目**；**连接根 `/` 不建条目**，其下第一层目录的 `parentId` 为空串。目录条目缓存（`folderCache`，键 `` `${connectionId}\n${dirPath}` ``）会记下「目录本身就是影片条目」的情况，不给它再建同路径目录条目。
 - **哪些文件算视频**：扩展名命中当前库后缀清单（`isVideoExtension(extensions, extname)`，`extname` 去点转小写后 `extensions.includes`，**扫描器里没有硬编码后缀**）+ 体积过门槛（`isBigEnoughVideo`，库级 `minFileSizeMb`）+ **不是花絮文件**（`extraKindOfName(fileBase)` 为空）；`indexImages()` 用同一份清单判定「视频基名」，顺带索引图片（见 4.3）。
 - **花絮一律不入库**：`extras` / `featurettes` / `sample` / `trailer` / `behind the scenes` / `花絮` 等目录（`mediaRules.isExtraVideoDir`）**整棵子树不入队**（里面的子目录也不会被当成新影片）；目录里 `xxx-sample.mkv` / `xxx-trailer.mkv` 这类文件、以及**整个名字就是** `sample` / `trailer` 的文件（`extraKindOfName`，专治 `sample.mkv` 这种没有分隔符的写法）直接过滤。这同时修掉了「电影库把花絮当独立影片」的老问题。
-- **扫描读 NFO 落库**（`mediaNfoScan.ts`，**未刮削的条目才读**）：影片按 `movie.nfo` → `<目录名>.nfo` → `<视频名>.nfo` 顺序找（目录型条目多版本时只有目录名能对上），**校验根元素是 `<movie>`**，命中就把标题 / 年份 / 首播日期 / 时长 / 类型 / 片商 / 厂牌 / 系列 / 导演 / 标签 / 外部 ID 写进条目（`applyScannedMetadata`，只写传进来的列、不动 `scraped_at`），演员写 `media_cast`（`syncItemCast`）并按名字建演员档案。`scrapedAt > 0` 的条目一律不读，重扫不会覆盖刮削结果；读失败静默跳过（条目照常入库，元数据等刮削补齐）。这些列（含 `maker` / `label` / `series` / `director`）就是详情页的唯一元信息来源，页面上不再读磁盘 NFO（见[影视墙页面 §4](../page/04-media-wall-page.md)）。
+- **扫描读 NFO 落库**（`mediaNfoScan.ts`，**未刮削的条目才读**）：影片按 `movie.nfo` → `<目录名>.nfo` → `<视频名>.nfo` 顺序找（目录型条目多版本时只有目录名能对上），**校验根元素是 `<movie>`**，命中就把标题 / 年份 / 首播日期 / 时长 / 类型 / 片商 / 厂牌 / 系列 / 导演 / 标签 / 外部 ID 写进条目（`applyScannedMetadata`，只写传进来的列、不动 `scraped_at`），演员写 `media_cast`（`syncItemCast`）并按名字建演员档案。`scrapedAt > 0` 的条目一律不读，重扫不会覆盖刮削结果；读失败静默跳过（条目照常入库，元数据等刮削补齐）。这些列（含 `maker` / `label` / `series` / `director`）就是详情页的唯一元信息来源，页面上不再读磁盘 NFO（见[影视墙页面 §4](../page/04-media-wall-page.md)）。**译文 NFO 一律不读**：解析出 `<vaultscrape_translated>`（宿主私有标记）的 NFO 正文是译文不是原文，跳过以免把译文写进 `media_item`，见 [翻译能力接入](../plugin/10-translate-integration.md)。
 - 后缀清单的默认值与清洗规则见[设置项清单 · 资料库](../setting/02-setting-items.md)（默认 `mp4 / mkv / avi / mov / wmv / flv / webm / ts / m2ts / mpg / mpeg / rmvb`，上限 64 个，清空回落默认值）。
 
 > **剧集库（`type='tv'`）不走上面这套 `movie` + `folder` 流程**：它由 `mediaSeriesIndexer.indexSeriesLibraryPath` 扫成 `series → season → episode` 三层（目录角色只看「目录名 + 直接内容」，集号只认文件名、认不出就不入库），清理也换成 `cleanupSeriesUnseen`。完整口径见 [剧集支持 §3](./02-series-support.md)。
@@ -211,7 +212,7 @@
 - 季号：目录名写明时以目录为准（`Season 01` / `S1` / `第2季` / `第二季`），没写（剧集目录里直接放视频）时用文件名里的季号；**集号只认文件名**（`parseEpisodeNumbers`，`mediaRules.ts:175`，认可 `S01E02` / `1x02` / `EP02` / `第02集` / 兜底第一个独立数字，多集文件按第一集），认不出就跳过并计入 `skippedVideos`（提示「N 个视频认不出季 / 集号，未入库」）。
 - 季目录里的集挂季条目；剧集目录里直接放的集挂剧集条目（`parent_id = seriesId`，`seasonNumber` 仍是真实季号）——**读取侧要把两种都算进同一季**。
 - 条目 ID 都是 `sha1(...).slice(0,32)`：`seriesItemId(libraryId, connectionId, dirPath)`、`seasonItemId(..., seasonNumber)`（**带季号**，避免隐式季共用剧集目录撞 ID）、`episodeItemId(connectionId, path)`。身份认领走与影片库同一个 `findOwnedItem`（路径 → 组内视频的源 → 视频路径，**只认同类型条目**）；季必须**同时看路径与季号**（多个隐式季共用剧集目录这一条路径）。刮削改名后就地改写路径、**id 不变**，重扫不造重复也不丢元数据。条目层代码在 `src/main/src/modules/media/mediaSeriesItems.ts`（原本与遍历同文件，超出 RL-05 行数上限后拆出）。
-- **扫描读 NFO 落库**（三类根元素各自校验，未刮削的条目才读）：剧集读目录里的 `tvshow.nfo`（根 `<tvshow>`）、季读 `season.nfo` / `seasonNN.nfo`（根 `<season>`）、集读与集文件同名的 `.nfo`（根 `<episodedetails>`，**同一集多个版本逐个试**）。这是修「剧集刮削写了 `tvshow.nfo`、扫描读不到」的根因：`parseNfoXml` 原先只认 `<movie>` 根，现在按根元素分派出 `kind`，读侧再比对 `kind`。
+- **扫描读 NFO 落库**（三类根元素各自校验，未刮削的条目才读）：剧集读目录里的 `tvshow.nfo`（根 `<tvshow>`）、季读 `season.nfo` / `seasonNN.nfo`（根 `<season>`）、集读与集文件同名的 `.nfo`（根 `<episodedetails>`，**同一集多个版本逐个试**）。这是修「剧集刮削写了 `tvshow.nfo`、扫描读不到」的根因：`parseNfoXml` 原先只认 `<movie>` 根，现在按根元素分派出 `kind`，读侧再比对 `kind`。与影片一样，带 `vaultscrape_translated` 标记的译文 NFO 也一律跳过。
 - 图片与 NFO 证据：与集同名的图当集主图、`<集名>-<用途>` 前缀名挂集、目录级固定名挂当前目录的条目（剧集或季）、`extrafanart` / `extrathumbs` 挂上一层条目；`tvshow.nfo` / `season.nfo` / 集 NFO 都算 `hasNfo` 证据。
 - 剧集库同样只把扩展名命中清单的文件当视频（`libraryExtensionsOf(setting.library, 'tv')`），花絮文件（`extraKindOfName`）同样过滤。
 
@@ -244,7 +245,7 @@
 - **任务名**：`资料库 · <库名称>`。
 - **一次只跑一组**：`planLibraryScrape(libraryId, itemIds?)` 按 `(connectionId, 所属根目录)` 把候选分组（任务表只支持一个「连接 + 目录」，同一任务只能有一个 `dirPath` 基准），**只取条目最多的那一组**启动，其余条目保持 `scrapedAt = 0` 留待下次（要再点一次「刮削」才会轮到下一组）。没有可跑的组时返回 `null`：`library:scrape` 报 `notFound`「资料库里没有待刮削的影片」，按 id 刮削报「所选影片已不在待刮削列表中」。
 - **策略在任务启动时从资料库快照**：`moveEnabled` / `moveDirectory` / `localFirst` 全库级（`libraryPolicy()` 还会带上库的 `id` 与当前连接的媒体目录清单），`scraperIds` 取该库的 `scrapers`；**写 NFO、按命名规则重命名、图片落影片同目录是固定行为，不再有对应开关**（`minFileSizeMb` 只作用于候选收集，不进任务策略）。
-- **单文件成功后**：`updateItemMetadata(itemId, …)` 写回条目元数据（标题 / 番号 / 简介 / 评分 / 类型 / 外部 ID 等），`replaceItemImages(itemId, images)` 整体替换条目图片；改名 / 移动则就地 `updateSourcePath(source.id, …)`，**媒体源 id 不变**（磁盘上 `storage://` 地址因此不会失效）。剧集库的产物形态完全不同（`tvshow.nfo` + `season.nfo` + 每集 NFO，整树改名走 `replacePathPrefix` 一次改写三类路径、id 与父子关系不动），见 [剧集支持](../media/02-series-support.md)。
+- **单文件成功后**：`updateItemMetadata(itemId, …)` 写回条目元数据（标题 / 番号 / 简介 / 评分 / 类型 / 外部 ID 等），`replaceItemImages(itemId, images)` 整体替换条目图片；改名 / 移动则就地 `updateSourcePath(source.id, …)`，**媒体源 id 不变**（磁盘上 `storage://` 地址因此不会失效）。收尾还会按设置做一次**自动翻译**（开翻译 + 该库声明了内容语言 + 与全局目标语言不同，三条同时满足才做；译文进 `media_translation`，开了「写入 NFO」时再把译文就地写进刚产出的 NFO；失败只记日志、不影响刮削结果），见 [翻译能力接入](../plugin/10-translate-integration.md)。剧集库的产物形态完全不同（`tvshow.nfo` + `season.nfo` + 每集 NFO，整树改名走 `replacePathPrefix` 一次改写三类路径、id 与父子关系不动），见 [剧集支持](../media/02-series-support.md)。
 - **进度复用刮削模块**：库侧不新增 `scrape:*` 进度通道，任务列表、`scrape:progress`、取消 / 继续全部走[刮削模块](../scrape/01-scrape-module.md)。
 - **重启后的「继续」**：`taskScrapers` / `taskLibraries` 是内存映射，重启即丢；`resumeScrapeTask` 先用 `findLibraryByPath(task.connectionId, task.dirPath)` 按 `(connectionId, dirPath)` 找回所属库，再回落该库的 `scrapers`；找不到库时抛 `pluginMissing`「找不到任务所属的资料库，请重新选择刮削器」。
 - **新建库默认勾选内置离线包**：表单只在新库里 `scrapers` 为空、且候选项包含 `R18_OFFLINE_PLUGIN_ID`（`'r18-offline'`，定义在 `src/common/types/plugin/builtin.ts`）时默认勾上它；该内置插件属**影片信息**类别（`kind: 'movie'`），插件不可用（未启用 / 加载失败）时保持不勾，不替用户写一个不可用的 id。
@@ -287,7 +288,8 @@
 | `type` | `'movie'` | 库类型（「影视」/「剧集」）；决定扫描用哪份后缀清单与**条目粒度**——影视库一个视频一条影片、剧集库一整部剧一条剧集，**建库后不可修改** |
 | `nsfwProtection` | `true`（库列默认）/ 表单新建时关闭 | 落库并在资料库抽屉里显示 NSFW 标签；**已接入判定链路**：总开关（应用设置 `nsfwProtection`）是前提，开启时命中「存储 `nsfw` 标记」或「库级 `nsfwProtection`」任一即遮罩，**总开关关闭时本标记不生效**（`MediaWallItem.nsfwProtected` 由墙面下发，渲染层与总开关、连接标记合并成 `protect`） |
 | `minFileSizeMb` | `10`（新建默认） | 小于该体积（MB）的视频不参与扫描与刮削；`0` = 不过滤。表单里是数字输入（步进 100）；已建库沿用库里存的值（不会被默认值覆盖） |
-| `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息 |
+| `localFirst` | `false` | 优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息（译文 NFO 不当元数据、仍联网取原文，见 [翻译能力接入](../plugin/10-translate-integration.md)） |
+| `language` | `''`（未指定） | **该库内容的源语言**（表单里的「内容语言」，5 种语言码 + 「未指定」）：空串 = 不参与自动翻译；非空且与全局目标语言不同时，刮削完成后自动把译文写进 `media_translation`（并按设置决定要不要写进磁盘 NFO）。库只声明源语言，**目标语言仍由全局设置决定** |
 | `moveEnabled` | `false` | 是否把影片移到 `moveDirectory`（开不开都会先落进影片自己的同名文件夹） |
 | `moveDirectory` | `''` | 移动目标目录（连接内路径；空串 = 原地不动，影片留在所在目录下的同名文件夹里） |
 | `scrapers` | 新建时默认勾 `r18-offline` | **影片信息插件** id 列表；**空数组 = 不刮削**（扫描照常，只是不自动刮削、不能手动刮削） |
@@ -324,6 +326,9 @@
 - **多版本只播主版本**：详情页本期固定播放 `primarySourceOf` 选出的主版本（无版本标签优先，其次路径 / 名称序第一），版本切换 UI 留后续；媒体源列表本身已经完整入库。
 - **跨目录搬整个影片目录依赖连接能力**：刮削侧给「目录型但没按规则命名」的影片改名 = 移动整个目录（`client.move`）。本机连接是 `fs.rename`（可用）；WebDAV 的目录移动不保证支持，失败时**回落为保持原目录**（只写 NFO / 图片，不改目录名），日志给一句警告，不至于把整次刮削搞失败。
 - **开着「移动文件」却不填目标目录 ≈ 原地整理**：`scrapeLayout.resolveOutputDir('')` 回落成条目所在目录，此时开关本身不产生移动；只有「文件型条目 + 所在目录已按片名命名」这种组合会因为 `rootDir` 取原目录而多套一层 `<目录>/<片名>/`（已在库级选项里保留为空串语义，没有加校验）。
+- **库语言没声明就不自动翻译**：`library.language` 为空（表单里的「未指定」）时，即使全局开了翻译、目标语言也设好了，刮削后也不会自动翻——这套机制就是「库语言与目标语言做对比」，没有源语言就无从对比。手动翻译不受此限制。
+- **译文只在详情页与译文字段里生效**：墙面卡片、搜索、排序都读 `media_item`（原文），译文不参与；演员名也只翻展示层（`media_cast` 是**按名字**的弱关联，改名字会断开关联）。**剧集只翻剧集本身 + 每集简介，集标题不翻译**；`studio` / `genre` 不在译文模型里，保持原文。
+- **翻译逐字段调外部站点**：插件契约只有单段文本的 `translate({ text, from?, to })`，没有批量接口、也没有译文缓存，所以一条影片大约要发十来个请求（字段级并发 3）；没有批量翻译入口，只有「详情页手动翻一条」与「刮削后自动翻一条」两条路。
 
 ## 10. 手工验证清单
 
@@ -367,3 +372,8 @@
 29. **花絮目录跳过、特别篇是季 0**：建 `Show/Extras/花絮.mkv` 与 `Show/Specials/SP01.mkv` → 重扫后 `Extras` 里的不入库，`Specials` 里的作为「第 0 季」出现在剧集详情页的季选择器里。
 30. **剧集详情与选集**：进剧集详情页 → 头部播放按钮可用（主进程只把有媒体源的集放进 `seasons`），选集区默认高亮第一集、点别的集播放器地址跟着换；把某一集的视频从磁盘删掉后点「重新读取」→ 该集从选集区消失、选中回落第一集。
 31. **剧集刮削与「还原刮削前」**：给剧集库配好刮削器点「刮削」→ 产物为 `tvshow.nfo` + `Season NN/season.nfo` + 每集 NFO 与 `-thumb` 剧照，剧集目录按模板改名；再走「更多 → 还原刮削前」→ 剧集目录改回原目录名、集文件改回原文件名并搬回旧季目录（确认文案会写明「这部剧集」与「所有季与集」）；**季目录名不回改**，旧季目录由集文件搬回时重建。
+32. **资料库「内容语言」**：新建资料库时该行默认「未指定」，下拉 6 项（未指定 + 5 种语言）；选「日本語」保存后重开编辑抽屉仍是「日本語」，改回「未指定」也能保存（不会被当成非法值丢掉）；库列表 / 首页卡片不受影响。
+33. **详情页翻译入口（四态）**：一个翻译插件都没加 → 详情页「更多 → 翻译」提示「没有翻译插件，请先到插件页添加」；加一个但保持停用 → 「翻译插件都没有启用，请先到插件页启用」；只加两个都要求必填 key 的插件（`xxapi-ai-translate` / `xxapi-sgtranslate`）并启用 → 「翻译插件都需要先补全设置，请到插件页填写」；补全其中一个的 key → 打开弹窗，另一个条目置灰并给出原因。**把设置里的翻译开关关掉再点，入口仍在**（手动翻译不受开关影响）。
+34. **手动翻译与原文 / 译文切换**：弹窗里选一个可用插件点「开始翻译」→ 提示「翻译完成，译文字段 N 项」，详情页出现「原文 / 译文」切换条与「译文语言：…」；切到译文 → 标题 / 原名 / 简介 / 信息格 / 标签 / 演员条一起变，封面与「文件信息」不受影响；切回原文 → 全部还原；点「清除译文」→ 提示「已清除译文」，切换条消失、回到原文（**没有二次确认**）；换一个条目进详情 → 默认又是原文。
+35. **刮削后自动翻译**：库「内容语言」= 日本語、设置里开启翻译且目标语言 = 简体中文、打开「写入 NFO」→ 刮一个条目，结果行出现「已翻译成简体中文」，进详情页能切到译文、剧集库的每一集简介也有译文；把库语言改成「简体中文」（与目标语言相同）或改成「未指定」再刮一个 → 结果行没有翻译字样、详情页没有切换条；把设置里的翻译开关关掉再刮一个 → 同样不翻。
+36. **译文 NFO 与读侧防护**：上一条刮完的目录里，NFO 正文应是译文且含 `<vaultscrape_translated>` 标记；关掉「写入 NFO」再刮另一个条目 → 该 NFO 保持原文、没有标记；对译文 NFO 所在目录**重新扫描** → `media_item` 的标题 / 简介仍是原文（译文不落进条目）；勾上「优先读取本地 NFO 文件中的信息和本地图片」再刮同一条目 → 走的仍是联网插件（译文 NFO 不被当成本地元数据）。

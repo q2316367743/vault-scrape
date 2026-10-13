@@ -2,7 +2,7 @@
 
 翻译是插件体系的**第三类能力**（`kind: 'translate'`）：给一段文本与目标语言，拿回译文。它与影片信息 / 演员信息在目录、IPC 通道、方法表上完全隔离（设计说明见 [03-plugin-categories.md](./03-plugin-categories.md)），唯一共享的是同一份 vm 沙箱运行时与同一套环境变量机制。
 
-本文记录：翻译契约（§1）、三个已经落地的站点插件（§2、§3）、语言码映射与已知限制（§4）。三个插件都在 `script/translate/` 下，而 `script/` 被 gitignore，**本文是仓库内唯一的书面记录**。
+本文记录：翻译契约（§1）、三个已经落地的站点插件（§2、§3）、语言码映射与已知限制（§4）。三个插件都在 `script/translate/` 下，而 `script/` 被 gitignore，**本文是仓库内唯一的书面记录**。宿主侧（设置项、资料库内容语言、详情页手动翻译、刮削后自动翻译、译文入库与回写 NFO）见 [10-translate-integration.md](./10-translate-integration.md)。
 
 ## 1. 契约（`kind: 'translate'`）
 
@@ -118,7 +118,7 @@ XXAPI AI 版实际还支持 `ar` / `az` / `bg` / `cs` / `da` / `de` / `el` / `es
 
 ## 4. 已知限制与未做
 
-- **没有业务调用方**：设置页「翻译」面板（`enabled` + `targetLanguage`）已经存在、契约与插件也已可用，但还没有任何流程去调 `translatePlugins.invokePlugin`（`machine_translation` 标题翻译、字幕翻译等都还没接）；
+- **调用方已经接上**：设置页「翻译」面板（开关 / 目标语言 / 指定插件 / 写入 NFO）与资料库的「内容语言」（`MediaLibrary.language`）决定「刮削完成后要不要自动翻」，详情页「更多 → 翻译」是手动入口——宿主侧的数据流、IPC 与译文存储见 [10-translate-integration.md](./10-translate-integration.md)，**本文只管插件契约与三个站点的差异**；
 - 三家站点都**不返回检测到的源语言**，无法把「实际识别到什么语言」回填给调用方；
 - 插件不做任何二次加工：不修剪译文首尾空白、不拼接、不保留原文里的标记 / 换行结构；
 - 没有译文缓存、没有批量翻译接口（一次 `translate` 只处理一段文本）；

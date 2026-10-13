@@ -8,7 +8,9 @@
  *   （条目 / 媒体源 / 图片，**id 与 parentId 都不变**）；目录动不了就退回逐个集文件移动；
  * - 产物：`<剧集目录>/tvshow.nfo` + poster / backdrop / thumb / banner / logo、
  *   `<季目录>/season.nfo` + `poster.jpg`、`<季目录>/<集基础名>.nfo` + `<集基础名>-thumb.jpg`；
- * - 集 NFO 与剧集 NFO 各自带还原记录：清除 NFO 时把集文件搬回原来的目录与文件名。
+ * - 集 NFO 与剧集 NFO 各自带还原记录：清除 NFO 时把集文件搬回原来的目录与文件名；
+ * - 收尾按设置做一次自动翻译（资料库声明了内容语言、且与目标语言不同才做）：译文只进
+ *   `media_translation`；`setting.translate.writeNfo` 为真时剧集 NFO 与各集 NFO 的正文也换成译文。
  *
  * 已知限制（同步在 docs/media/01-media-library.md）：剧集库暂不支持「本地优先」，一律联网刮削。
  */
@@ -28,10 +30,14 @@ import {
   renderTemplate,
   type ScrapeAssetContext
 } from '@common/types/scrape'
+import { TRANSLATE_LANGUAGE_LABELS } from '@common/types/setting/translateSetting'
 import { enqueueItemActorScrape } from '$/modules/actor/actorScrape'
+import { autoTranslateItem } from '$/modules/translate/autoTranslate'
+import { writeTranslatedNfos, type NfoPatchTarget } from '$/modules/translate/translateNfo'
 import { seasonItemId } from '$/modules/media/mediaSeriesItems'
 import { replaceItemImages } from '$/db/repo/mediaImageRepo'
 import { getItem, insertItem, updateItem, updateItemMetadata } from '$/db/repo/mediaRepo'
+import { getTranslation } from '$/db/repo/translationRepo'
 import {
   listSeasonItems,
   listSeriesEpisodes,
@@ -153,6 +159,9 @@ export async function runSeriesJob(context: ScrapeJobContext): Promise<ScrapeJob
   let nfoWritten = 0
   let episodeCount = 0
   let missingRemoteCount = 0
+  let seriesNfoWritten = false
+  /** 写成功的集 NFO：自动翻译之后按条目回写译文 */
+  const episodeNfos: { itemId: string; path: string }[] = []
 
   // 5. 剧集级产物：固定名图片 + tvshow.nfo（沿用旧 NFO 的还原记录）
   assetFailures += await landAssets(
@@ -177,6 +186,7 @@ export async function runSeriesJob(context: ScrapeJobContext): Promise<ScrapeJob
       { overwrite: true }
     )
     nfoWritten += 1
+    seriesNfoWritten = true
   } catch (error) {
     if (context.signal.aborted) throw new ScrapeError('cancelled')
     const message = error instanceof Error ? error.message : '未知错误'
@@ -344,6 +354,7 @@ export async function runSeriesJob(context: ScrapeJobContext): Promise<ScrapeJob
           { overwrite: true }
         )
         nfoWritten += 1
+        episodeNfos.push({ itemId: file.itemId, path: nfoTarget })
         if (nfoTarget !== oldNfoPath && (await client.exists(oldNfoPath))) {
           await client.remove(oldNfoPath)
           context.log.info(`已移除旧的集 NFO：${oldNfoPath}`)
@@ -397,6 +408,22 @@ export async function runSeriesJob(context: ScrapeJobContext): Promise<ScrapeJob
   if (seasonNumbers.length > 0) parts.push(`${seasonNumbers.length} 季`)
   if (plantedSeries.length > 0) parts.push(`${plantedSeries.length} 个剧集资源`)
   if (nfoWritten > 0) parts.push(`${nfoWritten} 个 NFO`)
+
+  // 9. 自动翻译：资料库声明了内容语言、且与目标语言不同才翻（剧集连带它的每一集）
+  // 译文只进 media_translation；开了「写入 NFO」才把剧集 NFO 与各集 NFO 的正文换成译文
+  const translation = await autoTranslateItem(entry.itemId, policy.libraryId, context.log)
+  if (translation) {
+    parts.push(`已翻译成${TRANSLATE_LANGUAGE_LABELS[translation.language]}`)
+    const targets: NfoPatchTarget[] = seriesNfoWritten
+      ? [{ path: seriesNfoPath, translation }]
+      : []
+    for (const episode of episodeNfos) {
+      const episodeTranslation = getTranslation(episode.itemId)
+      if (episodeTranslation) targets.push({ path: episode.path, translation: episodeTranslation })
+    }
+    const patched = await writeTranslatedNfos(client, targets, context.log)
+    if (patched > 0) parts.push(`${patched} 个 NFO 已写入译文`)
+  }
   if (assetFailures > 0) parts.push(`${assetFailures} 个资源失败`)
   if (moveFailures > 0) parts.push(`${moveFailures} 个集文件未整理`)
   if (missingRemoteCount > 0) parts.push(`${missingRemoteCount} 集没有远端详情`)

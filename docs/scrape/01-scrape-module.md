@@ -63,6 +63,8 @@ src/common/types/scrape/
 ```
 
 > 命名规则（季号 / 集号 / 花絮目录与文件名 / 剧集关键词 / 影片名与版本）已统一到 `src/common/types/media/mediaRules.ts`：剧集与影片**共用同一套纯函数**（`parseEpisodeNumbers` / `seasonNumberOfDir` / `isExtraVideoDir` / `extraKindOfName` / `seriesKeywordOf` / `seriesYearOf` / `parseMediaName` / `isVersionOfFolder`），原来的 `src/common/types/scrape/episode.ts` 已删除。
+>
+> 流水线**收尾的自动翻译**与**译文回写 NFO** 不在本目录：`src/main/src/modules/translate/` 里的 `autoTranslate.ts`（判定该不该翻、调 `translateItem`）与 `translateNfo.ts`（把刚写下的 NFO 读回来按标签名打补丁）由两条流水线各自在收尾调用一次，单条目翻译编排在 `itemTranslate.ts`，完整契约见 [翻译能力接入](../plugin/10-translate-integration.md)。
 
 ## 3. 候选来源：资料库的待刮削条目
 
@@ -137,7 +139,7 @@ src/common/types/scrape/
    - 本地图片先「就位」（`adoptLocalImage`）：目标规范名已存在就直接沿用；否则 `client.move` 到规范名（同一目录内改名），失败只 `log.warn` 并按原路径入库，不中断；`poster` / `thumb` / `fanart` / `banner` / `logo` 这类单张 kind 只取本地第一张，`still` 全收。
    - 缺的 kind 再联网下载：`keepXxx` 为真且目标已存在 → 跳过（消息记「目标已存在，按保留设置跳过」）；否则 `ensureParent(mkdir recursive)` → 下载到临时文件 → `client.upload(localPath, target, { overwrite: true })` → `finally` 清理临时文件；单条资源失败只计数，不影响其它资源与任务其余文件。
    - 每个落盘成功的资源都进 `planted`，最后统一转成 `media_image` 行（`connectionId` 就是真实连接，**图片一定与影片同目录**，没有 `imageSaveMode`）。
-5. **NFO 一律写**：`buildNfoXml(detail, settings.naming, artworkOf(planted), restore)` 写到 `<base>.nfo`（`overwrite: true`），并带上 `<thumb aspect="poster">` / `<banner>` / `<logo>` / `<fanart>` 等图片标签，让 NFO 自带封面信息。写成功后，如果这一步读过一份路径不同的本地 NFO，就删掉它（信息已经并进新 NFO，留着只会两份不一致）。
+5. **NFO 一律写**：`buildNfoXml(detail, settings.naming, artworkOf(planted), restore)` 写到 `<base>.nfo`（`overwrite: true`），并带上 `<thumb aspect="poster">` / `<banner>` / `<logo>` / `<fanart>` 等图片标签，让 NFO 自带封面信息。写成功后，如果这一步读过一份路径不同的本地 NFO，就删掉它（信息已经并进新 NFO，留着只会两份不一致）。**写下去的正文一律是原文**：译文要等流水线收尾的自动翻译再就地打补丁（见本小节第 8 步），所以关掉翻译开关时 NFO 与本次改动之前完全一致。
    NFO 末尾还会写一段**还原记录**，供影视墙的「还原刮削前」用（见[影视墙页面 §4](../page/04-media-wall-page.md)）：`<originalfilename>` 是刮削前的视频文件名、`<originaldirectory>` 是刮削前所在目录，另外本次**真的写下或搬过**的附属文件各一条 `<plantedfile relative="…" original="…" />`——联网下载的图片 / 预告片没有 `original`（还原时直接删），被 `adoptLocalImage` 改名就位的本地图片带 `original`（还原时搬回去）；沿用磁盘上已有文件（保留设置跳过）与没挪过位置的本地图片都不进记录，免得还原时删掉用户自己的文件。取值时机在移动视频之前，此时 `context.dirPath` + `entry.name` 正是刮削前的位置。如果这一步读到的旧本地 NFO 里已经带还原记录，新 NFO **原样沿用最外层那一份**位置（`fileName` / `directory` 保持最初的值），文件记录则是「本次写下 / 搬动的 + 旧的、这次没再出现的搬动记录（原文件还在时）」的合并结果——所以反复刮削后还原仍然回到最初的位置；旧版本刮削的 NFO 没有这段记录时，还原退化成「只清数据 + 删 NFO」。
 6. **移动视频并回写**（按形态走两条路，形态判定见 5.1）：
    - **目录型**：整个影片目录已在第 2 步改好名（`client.move(context.dirPath, movieDir)`），这一步**不动视频文件名**，只用 `<movieDir>/<原视频名>` 作为结果行里的新路径 / `finalPath`；条目路径与**所有**媒体源路径已由 `refreshItemDir` 一次性改完，也不做空目录清理（`context.dirPath` 已是搬走的旧路径）。
@@ -149,7 +151,9 @@ src/common/types/scrape/
 
 7. **参演演员接线**：`enqueueItemActorScrape(entry.itemId, detail.actors ?? [], settings.scrape.actorScrape, context.signal)`——先把详情里的演员名单按「姓名 → 别名 → 新建档案」解析，再整组写进 `media_cast`（只存 `item_id` + 姓名归一化键 + 出演顺序，**不存演员 ID**），然后按设置把资料不全（`scrapedAt = 0` / 没头像 / 没生日）的演员排进演员域的串行抓取队列。**名单为空时不动名单**，避免只想补元数据的重刮把已有演员清掉；这一步的异常只写一条 warn 日志（`演员信息写入失败：…`），不影响本文件的刮削结果。同一份名单在**扫描**时也会由 NFO 的 `<actor>` 补齐（未刮削且有 NFO 的条目，见[资料库](../media/01-media-library.md) 4.2）；演员两侧的策略见[演员模块](../actor/01-actor-module.md)。
 
-结果行消息形如 `插件 r18-offline，6 个资源，NFO {base}.nfo，→ /电影/{base}/{base}.mkv`（没有命中插件时插件列写「本地 NFO」，没有产出资源时也会照实写 `0 个资源`）。
+8. **收尾自动翻译**（`autoTranslate.ts` + `translateNfo.ts`）：写库之后做一次自动翻译，**三个条件同时满足才做**——设置里 `translate.enabled` 为真、该库 `language` 非空（落在宿主 5 种语言码里）、且与全局 `translate.targetLanguage` 不同（库语言为空 = 没声明源语言 = 不翻）。命中时调 `translateItem({ itemId })` 把译文写进 `media_translation`（剧集会连带每一集，**集只翻简介、集标题不翻**），结果行追加「已翻译成简体中文」；翻译失败只写一条 warn 日志，**绝不让刮削结果变成失败**。译文另有一份落盘：`translate.writeNfo` 为真且本次 NFO 写成功时，把刚写下的 NFO 读回来、`patchNfoXml` 按标签名替换正文（`<title>` / `<originaltitle>` / `<plot>` / `<maker>` / `<label>` / `<series>` / `<director>`、逐个 `<tag>`、每个 `<actor>` 块里的 `<name>`；译文里没有的字段保持原文，`<studio>` / `<genre>` 不在译文模型里、不动），最后追加 `<vaultscrape_translated>语言码</vaultscrape_translated>` 私有标记。**用就地打补丁而不是重跑 `buildNfoXml`**：重跑得重新推导 `artwork` 与还原记录两项有状态的东西，按标签名换正文能逐字节保留其余内容与其它工具写进去的未知标签。这个标记也是读侧的防护依据：扫描与「优先本地 NFO」都会跳过译文 NFO，免得把译文当成原文写回 `media_item`（见 [资料库 §4.3](../media/01-media-library.md)）。
+
+结果行消息形如 `插件 r18-offline，6 个资源，NFO {base}.nfo，→ /电影/{base}/{base}.mkv`（没有命中插件时插件列写「本地 NFO」，没有产出资源时也会照实写 `0 个资源`）；命中自动翻译时追加「已翻译成简体中文」，译文写进 NFO 时再追加「NFO 已写入译文」（剧集是「N 个 NFO 已写入译文」）。
 
 ### 5.3 剧集库：一次处理整部剧（`scrapeSeriesJob.ts`）
 
@@ -171,7 +175,7 @@ src/common/types/scrape/
     └── Show S01E01-thumb.jpg
 ```
 
-**流程**：① `pickSeriesCandidate` 取详情（拿不到 → 结果行 `failed`「未找到匹配的刮削结果」，目录不动）；② 算剧集目录名后整树 `client.move` + `replacePathPrefix(libraryId, 旧前缀, 新前缀)`——**一次改写 `media_item` / `media_source` / `media_image` 三类路径，条目 id 与父子关系不动**，移动失败降级为逐集移动并 warn；③ 剧集级资源 + `tvshow.nfo`（`landAssets` + `carryRestore` + `mergeRestoreFiles`）；④ 逐季建季目录 + 季海报 + `season.nfo`；⑤ 逐集改名 / 移动 + 剧照 + 集 NFO + 回写元数据（`updateItemMetadata` + `updateItem` + `replaceItemImages`）；⑥ 剧集条目回写 + `enqueueItemActorScrape` + `pruneEmptyDirs`（只删空目录，跳过 `/`、库根及其祖先）。
+**流程**：① `pickSeriesCandidate` 取详情（拿不到 → 结果行 `failed`「未找到匹配的刮削结果」，目录不动）；② 算剧集目录名后整树 `client.move` + `replacePathPrefix(libraryId, 旧前缀, 新前缀)`——**一次改写 `media_item` / `media_source` / `media_image` 三类路径，条目 id 与父子关系不动**，移动失败降级为逐集移动并 warn；③ 剧集级资源 + `tvshow.nfo`（`landAssets` + `carryRestore` + `mergeRestoreFiles`）；④ 逐季建季目录 + 季海报 + `season.nfo`；⑤ 逐集改名 / 移动 + 剧照 + 集 NFO + 回写元数据（`updateItemMetadata` + `updateItem` + `replaceItemImages`）；⑥ 剧集条目回写 + `enqueueItemActorScrape` + **收尾自动翻译**（与影片同口径：译文进 `media_translation`，剧集本身与每一集各一行；开了「写入 NFO」再把译文补进 `tvshow.nfo` 与各集 NFO，其中 NFO 路径在写入时就被记下来，见 §5.2 第 8 步）+ `pruneEmptyDirs`（只删空目录，跳过 `/`、库根及其祖先）。
 
 **同集多版本**：同一季同集号的多个文件（`S01E01.mkv` + `S01E01 - 1080p.mkv`）在扫描侧合成**一条** `episode`（条目 `path` = 自然序第一个，即主版本）。刮削时**只有主版本**会被改名 / 移动 —— `scrapeSeriesJob.ts:267-270` 的 `isPrimary = episodeItem === null || episodeItem.path === file.path`，非主版本 `finalBase = finalPath === targetPath ? base : baseNameOf(file.name)` 保持原文件名；但**每个版本各自写一份自己的同名集 NFO**（扫描侧逐个版本试读，见[资料库 §4.6](../media/01-media-library.md)），元数据只回写一次。详情页本期只播主版本，版本切换 UI 留后续。
 
@@ -243,3 +247,5 @@ src/common/types/scrape/
 24. **扫描读 NFO（不联网）**：手工放一份 `movie.nfo`（根 `<movie>`，含 `<title>` / `<plot>` / `<actor>`）再扫描 → 墙上标题、简介已来自 NFO、参演演员已挂上，该条目 `scrapedAt` 仍是 0，但 `has_nfo` 已置 1 —— **不再进待刮削候选**（点「刮削」报「没有待刮削的条目」），只能在详情页「更多 → 手动匹配」手动刮；再把 `tvshow.nfo` 放进同一目录 → 不该被当成影片元数据（根元素不符，按种类丢弃）。
 25. **刮目录型条目**：给一个已有多个版本的影片目录配好插件后刮削 → 目录被改成 `<片名 (年份)>/`、**里面所有视频的文件名一个都没动**（`- 1080p` 后缀必须保留）、目录里出现 `<目录名>.nfo`，结果行消息带上新路径；随后重扫仍是同一条目，**不会裂成「两个影片」**（目录型不改文件名正是为了这个）。
 26. **NFO 三类都能读到（剧集）**：给剧集目录放 `tvshow.nfo`、季目录放 `season.nfo`、集放与集文件同名的 NFO → 扫描后剧集 / 季 / 集三层 `hasNfo` 都为真，三层标题与简介都入库（原先「剧集写 `tvshow.nfo` 却扫不到」的 bug 已修）。
+27. **刮削后自动翻译（§5.2 第 8 步）**：把库的「内容语言」设成 日本語、设置里**开启翻译**且目标语言 = 简体中文、勾上「写入 NFO」→ 刮一个影片，结果行应出现「已翻译成简体中文」与「NFO 已写入译文」，详情页能切到译文；把库语言改回「未指定」、或改成与目标语言相同的语言、或关掉设置里的翻译开关，各再刮一个 → 结果行都不带翻译字样（**库语言为空是最容易漏的一种**）。剧集库刮一部 → 剧集本身与每一集都各有译文行（集只填 `overview`），`tvshow.nfo` 与各集 NFO 都被打上译文标记。
+28. **译文 NFO 的读侧防护**：接上一条，译文 NFO 里应有 `<vaultscrape_translated>zh-CN</vaultscrape_translated>`；对该目录**重新扫描** → 条目上的标题 / 简介仍是原文（译文不落进 `media_item`）；开着「优先读取本地 NFO 和图片」再刮同一条目 → 走的仍是联网插件（译文 NFO 不被当成本地元数据）。另测一次失败路径：把一个条目正在用的翻译插件停用后再刮 → 结果行仍是「已完成」，只在日志里留一条「自动翻译失败（条目 …）」的 warn。

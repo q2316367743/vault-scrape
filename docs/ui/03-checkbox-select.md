@@ -28,6 +28,15 @@
 - `disabled` 的选项和整体 `disabled` 都不可勾选（`.checkbox-select-option-disabled` + `t-checkbox` 的 `disabled`）。
 - 空列表文案随搜索态区分：「没有匹配的选项」/「暂无可选项」。
 
+## 全选
+
+搜索框与列表之间有一行「全选」（`.checkbox-select-all`，与下方列表隔一条分隔线），勾选态是三态：全选、部分选中（`t-checkbox` 的 `indeterminate`）、全不选。
+
+- **作用范围是「当前可见且可勾选」的选项**：搜索结果过滤后按过滤结果全选，`disabled` 的选项永远不会被它勾上，所以不会出现「点了一次全选，有些项还是没选上」这种说不清的状态；
+- **只在可勾选项多于 1 个时出现**（`showSelectAll = selectableOptions.length > 1`）：只有一个候选时「全选」和点那一项没区别；整体 `disabled` 时作用域为空，这一行同样不渲染；
+- **只在作用域内增删**：取消全选只移除作用域内的值，作用域外的历史值（例如失效插件 id）照旧保留；勾选全选把缺的值**按 `options` 顺序追加到数组末尾**，已有元素顺序不变；
+- 与单项勾选共用同一条提交路径（`commit(next)` 同时发 `update:modelValue` 与 `change`），点击行与点 checkbox 都用 `@click.stop` 保证只触发一次。
+
 ## 关键实现点
 
 - **点击只 toggle 一次**：整行 `@click="toggle(item)"`，`t-checkbox` 上再挂 `@click.stop="toggle(item)"`——点 checkbox 时事件被吞掉不再冒泡到行，避免一次点击触发两次（勾选又取消）。`t-checkbox` 只绑 `:checked`，不绑 `@change`，保证状态来源唯一。
@@ -41,5 +50,6 @@
 
 ## 注意事项
 
-- 组件不提供「全选 / 清空」，也没有已选数量徽标：当前只有资料库刮削器一个使用方，需要时再加。
+- 组件只提供「全选」，没有「清空」按钮也没有已选数量徽标：需要时再加。
+- 「全选」的三态由 `selectableOptions`（可见 ∩ 可勾选）算出，不要在模板里另写一份判定，否则搜索态与 `disabled` 项很容易算错。
 - 新增使用方时不要给 `options` 里塞重复 `value`：`v-for` 以 `value` 作 `key`。

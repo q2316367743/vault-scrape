@@ -2,7 +2,7 @@ import type { FileEntry } from '@common/types/file'
 import { basenameRemotePath } from '@common/types/file'
 import { mediaSourceKindOf, parseNfoXml } from '@common/types/media'
 import type { MediaNfoMeta, NfoKind } from '@common/types/media'
-import { padNumber, stripExtension } from '@common/types/scrape'
+import { isTranslatedNfo, padNumber, stripExtension } from '@common/types/scrape'
 import { listItemCastNames } from '$/db/repo/actorRepo'
 import { applyScannedMetadata } from '$/db/repo/mediaRepo'
 import type { MediaItemScannedMetadataInput } from '$/db/repo/mediaRepo'
@@ -17,6 +17,8 @@ import type { FileClient } from '$/modules/file/FileClient'
  * - **已经刮削过的条目（`scrapedAt > 0`）一律不读**，重扫不会覆盖刮削结果；
  * - 按根元素校验种类：影片要 `<movie>`、剧集要 `<tvshow>`、季要 `<season>`、集要 `<episodedetails>`，
  *   种类对不上就当没有（`tvshow.nfo` 里的内容不会被当成影片元数据）；
+ * - **正文是译文的 NFO**（带 `vaultscrape_translated` 标记）一律不读：译文只该待在译文表里，
+ *   把它当成原文写进条目会把原文覆盖掉；
  * - 每层看的文件：影片 `movie.nfo` / `<视频名>.nfo`；剧集 `tvshow.nfo`；
  *   季 `season.nfo` / `seasonNN.nfo`；集 `<集文件名>.nfo`；
  * - 读文件失败静默跳过：条目照常入库，元数据与名单等刮削补齐。
@@ -100,7 +102,10 @@ async function readNfoOfKind(
   kind: NfoKind
 ): Promise<MediaNfoMeta | null> {
   try {
-    const meta = parseNfoXml(await client.readText(file.path))
+    const xml = await client.readText(file.path)
+    // 正文是译文的 NFO 先挡掉：宁可不读，也不把译文当成原文写进条目
+    if (isTranslatedNfo(xml)) return null
+    const meta = parseNfoXml(xml)
     return meta && meta.kind === kind ? meta : null
   } catch {
     return null

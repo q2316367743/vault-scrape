@@ -32,7 +32,7 @@
 | `src/preload/src/modules/db/db.ts` | 渲染层可用的 `dbApi` |
 | `src/renderer/src/api/db.ts` | 渲染层统一出口 |
 | `drizzle.config.ts` | drizzle-kit 配置（schema 入口与迁移输出目录） |
-| `resources/drizzle/` | 迁移 SQL 与 meta：**全量基线** `0000_moaning_black_panther.sql`（12 张表）+ 剧集增量 `0001_familiar_lifeguard.sql`（给 `media_item` 加 `season_number` / `episode_number`），配 `meta/0000_snapshot.json` / `meta/0001_snapshot.json` 与 `meta/_journal.json`（idx 0 / 1 两条），详见 §迁移 |
+| `resources/drizzle/` | 迁移 SQL 与 meta：**全量基线** `0000_moaning_black_panther.sql`（12 张表）+ 剧集增量 `0001_familiar_lifeguard.sql`（给 `media_item` 加 `season_number` / `episode_number`）+ 详情页四列增量 `0002_soft_masked_marvel.sql`（给 `media_item` 加 `maker` / `label` / `series` / `director`）+ 翻译增量 `0003_lazy_mach_iv.sql`（新建 `media_translation`、给 `library` 加 `language`），配 `meta/0000_snapshot.json` ~ `meta/0003_snapshot.json` 与 `meta/_journal.json`（idx 0 / 1 / 2 / 3 四条），详见 §迁移 |
 
 ## 数据结构
 
@@ -83,15 +83,16 @@
 
 索引：`idx_scrape_file_task`（taskId）、`idx_scrape_file_status`（taskId, status）、`idx_scrape_file_item`（itemId）。
 
-媒体层的五张表（`library` 13 列 / `library_path` 5 列 / `media_item` 32 列 / `media_source` 12 列 / `media_image` 9 列）不在本文重复，逐列以 `src/main/src/db/schema/*.ts` 与 `resources/drizzle/` 里的迁移 SQL 为准。要点：
+媒体层的五张表（`library` 14 列 / `library_path` 5 列 / `media_item` 32 列 / `media_source` 12 列 / `media_image` 9 列）不在本文重复，逐列以 `src/main/src/db/schema/*.ts` 与 `resources/drizzle/` 里的迁移 SQL 为准。要点：
 
-- `library` 表的 `type` 列（`$type<LibraryType>()`，默认 `'movie'`）现由基线迁移 `0000_moaning_black_panther.sql` 一并建立：类型决定扫描按 `setting.library.extensions` 里的哪份后缀清单识别媒体文件，建库后不可修改。库级选项只留 `min_file_size_mb`（体积过滤，新建默认 10，`0` = 不过滤）与 `local_first`（优先本地 NFO 与图片，默认 false）；写 NFO、重命名、图片落同目录是固定规范，没有对应列。
+- `library` 表的 `type` 列（`$type<LibraryType>()`，默认 `'movie'`）现由基线迁移 `0000_moaning_black_panther.sql` 一并建立：类型决定扫描按 `setting.library.extensions` 里的哪份后缀清单识别媒体文件，建库后不可修改。库级选项只留 `min_file_size_mb`（体积过滤，新建默认 10，`0` = 不过滤）与 `local_first`（优先本地 NFO 与图片，默认 false）；写 NFO、重命名、图片落同目录是固定规范，没有对应列。另有 `language` 列（增量迁移 `0003_lazy_mach_iv.sql` 加上，`TEXT NOT NULL DEFAULT ''`）表示**该库内容的源语言**：空串 = 未指定，这种库不参与自动翻译；非空且与全局「目标语言」不同时，刮削完成后自动翻译，见 [翻译能力接入](../plugin/10-translate-integration.md)。
 - 表之间**没有外键**：`library_id` / `item_id` / `parent_id` 都是普通 text 列，级联清理由仓储函数显式完成（`deleteItemsWithoutSource` → `deleteImagesByIds` → `deleteSourcesNotInScan`；删库走 `purgeLibraryMedia`；删连接走 `deleteLibrariesByConnection`）。
 - `media_item.type` 的取值是 `'movie' | 'folder' | 'series' | 'season' | 'episode'`（列注释与 `$type<…>()` 同步）：影视库写 `movie`（视频）/ `folder`（目录），**剧集库写 `series`（整部剧）/ `season`（季）/ `episode`（集）**，同样用 `parent_id` 串成 剧集 → 季 → 集 三层——**没有新表**，只在增量迁移 `0001_familiar_lifeguard.sql` 里给 `media_item` 加了 `season_number`（季号，`0` 表示特别篇）与 `episode_number`（集号，从 1 开始）两列（`movie` / `folder` / `series` 两列恒 0），`path` 对 `movie` / `episode` 是主媒体源路径（**目录型影片条目的 `path` 是影片目录路径**，条目下每个版本各有一条 `media_source`）、对 `folder` / `series` / `season` 是目录路径。扫描按库类型分派（`libraryScrapeDispatch.ts` 的 `isTvLibrary()`），逐层建条目与季 / 集号解析见[剧集支持](../media/02-series-support.md)。
 - 唯一索引是去重与 upsert 的落点：`library_path (connection_id, path)`（一条目录只能属于一个库，嵌套与重叠由 `libraryStore.normalizePaths()` 在保存时先用 `isRemotePathInside` 拦下）、`media_source (connection_id, path)`（重扫 `upsertSource` 的冲突目标，**id 不变**）、`media_image (connection_id, path)`。
 - 刮削元数据写在 `media_item` 上（`title` / `num` / `overview` / 评分 / JSON 列 `genres` / `studios` / `tags` / `provider_ids` / `scraped_at` / `scraper_id`，以及明文四列 `maker` / `label` / `series` / `director`），所以重扫只更新 `media_source`，元数据与图片不会丢。`maker` / `label` / `series` / `director` 由增量迁移 `0002_soft_masked_marvel.sql`（`ADD … TEXT NOT NULL DEFAULT ''`）加上：以前只有 `studios` 一个 JSON 列、把 studio / maker / label 压成一个数组，`series` 与 `director` 干脆没有落脚点，所以**详情页要显示片商 / 厂牌 / 系列 / 导演就只能实时去读磁盘 NFO**；现在两者都落库，详情页只读这四列。写入侧两处：刮削走 `scrapeJobApply.metadataOf()`，扫描导入 NFO 走 `mediaNfoScan.scannedMetadataOf()`；「还原刮削前」的 `clearItemMetadata()` 与其它刮削列一起归空。
 - `media_item.has_nfo`（基线迁移 `0000_moaning_black_panther.sql` 里的列）反过来是**扫描拥有**的列：扫描时同目录有 `movie.nfo`、**目录型条目按目录名命名的 `.nfo`** 或与视频同名的 `.nfo` 就置 1；剧集库三层分别认 `tvshow.nfo` / `season.nfo`（或 `seasonNN.nfo`）/ 集同名 NFO。它只表示「磁盘上有没有 NFO」这一事实——影视墙不按它分类（旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径已下线），但它**决定批量刮削的候选**：`listPendingMovieItems` / `listPendingSeriesItems` 只取 `scraped_at = 0` 且 `has_nfo = 0`，有 NFO 的条目只能在详情页手动刮；唯一的另一个写入方是「还原刮削前」的 `clearItemMetadata()`（把 `has_nfo` 一并归零，因为该条目的 NFO 已被删掉），见 [资料库](../media/01-media-library.md)。
 - 演员域的三张表与影视参演名单表（`actor` 24 列 / `actor_alias` 4 列 / `actor_image` 12 列 / `media_cast` 4 列，都在基线迁移 `0000_moaning_black_panther.sql` 里）也不在本文重复：列语义、图片落盘与 `storage://actor` 协议、抓取链路见 [演员模块](../actor/01-actor-module.md)。要点：`actor.name_key` 与 `actor_alias.(actor_id, alias_key)` 是唯一索引（姓名与别名去重、匹配的落点）；`media_cast` 是**按名字的弱关联**（复合主键 `(item_id, name_key)`，`idx_media_cast_name` 反查作品），`actor_name` 只用于展示、不存演员 ID，所以演员改名或删除都不会留下悬挂行；`actor.tags` 同样是 JSON 文本列；图片**本体不在库里**，`actor_image.path` 指向应用数据目录下的绝对路径。
+- 翻译域只有 `media_translation` 一张表（`item_id` 主键 / `library_id` / `language` / `source_language` / `title` / `original_title` / `overview` / `maker` / `label` / `series` / `director` / `tags` / `actors` / `plugin_id` / `translated_at`，`idx_media_translation_library`），由增量迁移 `0003_lazy_mach_iv.sql` 新建。一行 = 一个条目的译文，**剧集的每一集各占一行**（只填 `overview`）；`tags` / `actors` 是 JSON 文本数组，**按位置对应原文**。它是**派生物**：原文永远在 `media_item` 里，换语言 / 换插件整体 upsert 覆盖即可；仓储在 `src/main/src/db/repo/translationRepo.ts`（`getTranslation` / `listTranslations` 批量读 / `upsertTranslation` / `deleteTranslation` / `deleteTranslationsByItems`），脏语言码整行当作没有译文。契约与链路见 [翻译能力接入](../plugin/10-translate-integration.md)。
 
 时间一律使用整数毫秒，避免时区与字符串格式歧义。
 
@@ -138,7 +139,7 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
 
 渲染层通过 `dbApi`（`@/api` 再导出）以 `dbApi.log.list(...)` / `dbApi.task.stats()` 形式调用。
 
-媒体条目 / 媒体源 / 图片与逐文件刮削结果在 `db` 域之外**只有影视墙与资料库会读**：`db` 域不为它们开 IPC 通道，影视墙走 `media` 域通道 `media:wall` / `media:detail`，资料库目录浏览走 `scrape:browse`（渲染层暂无入口，通道保留）（见 [影视墙页面](../page/04-media-wall-page.md)、[刮削进度与详情页](../page/03-scrape-detail-page.md)）；条目封面与播放地址都是 `storage://` URL。**`media_item` / `media_image` / `media_cast` 的唯一外部写通道是 `media:clear-nfo`**（详情页「还原刮削前」：按 NFO 里的还原记录把视频改回原名 / 搬回原目录（**目录型条目则整个影片目录搬回**）并刷新条目路径与 `media_source.path`、删掉刮削写下的图片与 NFO（候选 `movie.nfo` / `<目录名>.nfo` / `<文件名>.nfo`）、刮削列归零 + `name` / `num` 还原成还原后的磁盘文件名，再删掉该条目的图片与参演名单），其余写入都由扫描 / 刮削主进程内部完成。其余场景（`storage://` 协议处理、扫描后的清理、删除存储时的级联）都由主进程自己使用这些仓储。
+媒体条目 / 媒体源 / 图片与逐文件刮削结果在 `db` 域之外**只有影视墙与资料库会读**：`db` 域不为它们开 IPC 通道，影视墙走 `media` 域通道 `media:wall` / `media:detail`，资料库目录浏览走 `scrape:browse`（渲染层暂无入口，通道保留）（见 [影视墙页面](../page/04-media-wall-page.md)、[刮削进度与详情页](../page/03-scrape-detail-page.md)）；条目封面与播放地址都是 `storage://` URL。**`media_item` / `media_image` / `media_cast` 的唯一外部写通道是 `media:clear-nfo`**（详情页「还原刮削前」：按 NFO 里的还原记录把视频改回原名 / 搬回原目录（**目录型条目则整个影片目录搬回**）并刷新条目路径与 `media_source.path`、删掉刮削写下的图片与 NFO（候选 `movie.nfo` / `<目录名>.nfo` / `<文件名>.nfo`）、刮削列归零 + `name` / `num` 还原成还原后的磁盘文件名，再删掉该条目的图片与参演名单），其余写入都由扫描 / 刮削主进程内部完成。其余场景（`storage://` 协议处理、扫描后的清理、删除存储时的级联）都由主进程自己使用这些仓储。译文（`media_translation`）的唯一外部写通道是 `translate:item`（翻译一个条目，剧集连带每集简介）与 `translate:clear`（丢掉译文），见 [翻译能力接入](../plugin/10-translate-integration.md)。
 
 ## 迁移
 
@@ -149,8 +150,9 @@ IPC 通道（`DbChannels`，全部为 `ipcMain.handle` / `ipcRenderer.invoke`）
   - `resources/drizzle/0000_moaning_black_panther.sql`——基线 schema 的完整建库脚本（**12 张表、0 外键**，全文 `CREATE TABLE` + `CREATE INDEX`），列数：`log` 6 / `task` 11 / `scrape_file` 12 / `library_path` 5 / `library` 13 / `media_item` 26 / `media_source` 12 / `media_image` 9 / `actor_alias` 4 / `actor_image` 12 / `actor` 24 / `media_cast` 4；索引 2 / 2 / 3 / 2 / 0 / 3 / 3 / 3 / 2 / 1 / 2 / 1；
   - `resources/drizzle/0001_familiar_lifeguard.sql`——剧集支持的**增量**（`ALTER TABLE media_item ADD season_number` + `ADD episode_number`）；基线 + 这份增量后 `media_item` 是 **28 列**（其余表不变）；
   - `resources/drizzle/0002_soft_masked_marvel.sql`——详情页元信息落库的**增量**（`ALTER TABLE media_item ADD maker` / `label` / `series` / `director`，四列都是 `TEXT NOT NULL DEFAULT ''`）；再叠加这份后 `media_item` 是 **32 列**（其余表不变）；
-  - `meta/_journal.json` 有 idx 0（tag `0000_moaning_black_panther`）、idx 1（tag `0001_familiar_lifeguard`）与 idx 2（tag `0002_soft_masked_marvel`）三条，快照为 `meta/0000_snapshot.json` / `meta/0001_snapshot.json` / `meta/0002_snapshot.json`。
-  之后改表结构照旧 `yarn db:generate` 追加 `0003_*.sql` 这类增量即可。
+  - `resources/drizzle/0003_lazy_mach_iv.sql`——翻译能力的**增量**（`CREATE TABLE media_translation`（15 列）+ `CREATE INDEX idx_media_translation_library` + `ALTER TABLE library ADD language text DEFAULT '' NOT NULL`）；再叠加这份后是 **13 张表**（新增 `media_translation`）、`library` 是 **14 列**（其余表不变）；
+  - `meta/_journal.json` 有 idx 0（tag `0000_moaning_black_panther`）、idx 1（tag `0001_familiar_lifeguard`）、idx 2（tag `0002_soft_masked_marvel`）与 idx 3（tag `0003_lazy_mach_iv`）四条，快照为 `meta/0000_snapshot.json` / `meta/0001_snapshot.json` / `meta/0002_snapshot.json` / `meta/0003_snapshot.json`。
+  之后改表结构照旧 `yarn db:generate` 追加 `0004_*.sql` 这类增量即可。
 - **旧库不做兼容、不迁移数据**：drizzle 的记账表里记着旧 tag / hash，与新迁移对不上时启动会报 `table ... already exists`；因此本机旧库一直是「删掉 + 重建」（历史归档 `vault-scrape.db.old-20261010`，最近一次直接删了当前库文件），新库首次启动时按基线迁移从零建表。旧库里的刮削记录 / 任务历史一律不带过来。
 - **资料库配置这一轮进了 sqlite**（`library` / `library_path`）：`~/.vault-scrape/media/libraries.json` 已废弃、不再读写，删除存储时的库级联也变成数据库操作（`deleteLibrariesByConnection`）。
 - 例外不变：离线插件自管的 `r18.db` 不参与 `migrate()`，不受这次重建影响。

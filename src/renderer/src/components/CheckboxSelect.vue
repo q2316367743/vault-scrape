@@ -8,6 +8,19 @@
 
     <div class="checkbox-select-list">
       <div
+        v-if="showSelectAll"
+        class="checkbox-select-option checkbox-select-all"
+        @click="toggleAll"
+      >
+        <t-checkbox
+          :checked="allSelected"
+          :indeterminate="someSelected"
+          :disabled="disabled"
+          @click.stop="toggleAll"
+        />
+        <span class="checkbox-select-label">全选</span>
+      </div>
+      <div
         v-for="item in visibleOptions"
         :key="item.value"
         class="checkbox-select-option"
@@ -35,7 +48,9 @@
  * - **不在 `options` 里的值会被保留**：调用方可能把当前不可用的历史值传进来展示（例如已失效的插件 id），
  *   这里不能因为搜索过滤或点击就把它们静默丢掉；
  * - `disabled` 的选项点击无效，只有 `disabled` 的选项或整体 `disabled` 才不可勾选；
- * - 点击整行、点 checkbox 都是同一个 `toggle`，checkbox 自己 `@click.stop` 防止触发两次。
+ * - 点击整行、点 checkbox 都是同一个 `toggle`，checkbox 自己 `@click.stop` 防止触发两次；
+ * - 搜索框下面有「全选」行：作用范围是**当前可见（搜索过滤后）且可勾选**的选项，
+ *   可勾选项不足 2 个或整体禁用时不出现，避免出现「全选 = 只有一个」这种没有意义的行。
  */
 import { computed, ref } from 'vue'
 import { SearchIcon } from 'tdesign-icons-vue-next'
@@ -84,6 +99,28 @@ function isDisabled(item: CheckboxSelectOption): boolean {
   return props.disabled || item.disabled === true
 }
 
+/** 「全选」的作用域：可见且可勾选的选项（整体禁用时为空，全选行随之隐藏） */
+const selectableOptions = computed(() =>
+  props.disabled ? [] : visibleOptions.value.filter((item) => !isDisabled(item))
+)
+
+const showSelectAll = computed(() => selectableOptions.value.length > 1)
+
+const selectedCount = computed(
+  () => selectableOptions.value.filter((item) => selectedValues.value.has(item.value)).length
+)
+
+const allSelected = computed(
+  () => selectableOptions.value.length > 0 && selectedCount.value === selectableOptions.value.length
+)
+
+const someSelected = computed(() => selectedCount.value > 0 && !allSelected.value)
+
+function commit(next: string[]): void {
+  emit('update:modelValue', next)
+  emit('change', next)
+}
+
 /** 单选态切换：已选则移除，未选则追加；非字符串值由类型挡在外面 */
 function toggle(item: CheckboxSelectOption): void {
   if (isDisabled(item)) return
@@ -91,8 +128,23 @@ function toggle(item: CheckboxSelectOption): void {
   const index = next.indexOf(item.value)
   if (index >= 0) next.splice(index, 1)
   else next.push(item.value)
-  emit('update:modelValue', next)
-  emit('change', next)
+  commit(next)
+}
+
+/** 全选 / 取消全选：只在作用域内增删，作用域外的历史值原样保留 */
+function toggleAll(): void {
+  const values = selectableOptions.value.map((item) => item.value)
+  if (values.length === 0) return
+  if (allSelected.value) {
+    const removing = new Set(values)
+    commit(props.modelValue.filter((value) => !removing.has(value)))
+    return
+  }
+  const next = [...props.modelValue]
+  for (const value of values) {
+    if (!next.includes(value)) next.push(value)
+  }
+  commit(next)
 }
 </script>
 
@@ -140,6 +192,16 @@ function toggle(item: CheckboxSelectOption): void {
 
   &:hover {
     background-color: var(--td-bg-color-container-hover);
+  }
+}
+
+// 全选行：与列表之间加一条分隔线，和普通选项区分开
+.checkbox-select-all {
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--td-component-stroke);
+
+  .checkbox-select-label {
+    font-weight: 500;
   }
 }
 

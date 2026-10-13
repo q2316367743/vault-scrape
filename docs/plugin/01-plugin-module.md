@@ -310,7 +310,7 @@ interface PluginResponse {
 | `plugin:<类别>:invoke` | `{ id, method, keyword?, movieId?, actorName?, text?, from?, to? }` | `PluginMovieCandidate[]` / `PluginMovieDetail` / `PluginAsset[]` / `PluginActorDetail` / `PluginTranslateResult`（`translate` 方法用 `text` / `from?` / `to`，`to` 必须是宿主 5 种语言码之一，否则 `invalidArgument`） |
 | `plugin:legacy` | — | `{ dir, files }`（旧版平铺目录的残留 `.js`，只读探测） |
 
-`<类别>` 是 `movie` / `actor` / `translate`；`invoke` 的 `method` 必须属于该类别的方法表，否则 `invalidArgument`——`translate` 类别的方法表目前为空，任何调用都会被拒。
+`<类别>` 是 `movie` / `actor` / `translate`；`invoke` 的 `method` 必须属于该类别的方法表，否则 `invalidArgument`——`translate` 类别只认 `translate` 一个方法（`PLUGIN_KIND_METHODS`），入参 `{ text, from?, to }`、返回 `{ text }`。
 
 preload 桥也按类别暴露：`pluginApi.movie` / `pluginApi.actor` / `pluginApi.translate` 各是同一套九项通用操作，`movie` 桥额外提供 `search` / `detail` / `covers` / `extras` 四个 `invoke` 快捷方法，另有只读的 `pluginApi.legacy()`。渲染层只通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`。
 
@@ -517,4 +517,4 @@ definePlugin({
 - 插件多文件打包、TypeScript 插件、代码编辑器语法高亮；
 - 子进程级隔离（`utilityProcess`）；
 - 旧版平铺插件的自动迁移（补上 `meta.kind` 重新导入即可，旧文件只会被提示、不会加载）；
-- 翻译结果的业务调用方（翻译插件本身已可用：契约、沙箱调用与 3 个站点实现见 [09-translate-plugins.md](./09-translate-plugins.md)，但目前没有谁去调它）。
+- 翻译结果的其它消费方（宿主侧已接上详情页手动翻译与「刮削后自动翻译」，见 [10-translate-integration.md](./10-translate-integration.md)；字幕翻译、机翻标题模板等仍未做）。

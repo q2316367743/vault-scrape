@@ -47,7 +47,7 @@ pluginApi.translate  // PluginBridge + translate 一个 invoke 快捷方法
 pluginApi.legacy()   // 只读：旧版平铺插件目录里的残留 .js
 ```
 
-`PluginBridge` 是九项通用操作的集合（`list` / `readCode` / `saveCode` / `import` / `remove` / `setEnabled` / `reorder` / `getEnv` / `saveEnv`）。渲染层统一通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`；`movie` 桥的四个快捷方法只有工具箱搜索页在用，`translate` 桥的 `translate(id, { text, from?, to })` 目前没有调用方，`actor` 桥不暴露无调用方的方法（演员调用由主进程的刮削链路直接完成）。
+`PluginBridge` 是九项通用操作的集合（`list` / `readCode` / `saveCode` / `import` / `remove` / `setEnabled` / `reorder` / `getEnv` / `saveEnv`）。渲染层统一通过 `@/api` 的 `pluginApi` 与 `pluginBridge(kind)` 访问，不直接触碰 `window.preload`；`movie` 桥的四个快捷方法只有工具箱搜索页在用，`translate` 桥的 `translate(id, { text, from?, to })` 目前渲染层没有调用方（翻译由主进程的 `modules/translate/` 编排、经 `translate:item` / `translate:clear` 下发，见 [翻译能力接入](./10-translate-integration.md)），`actor` 桥不暴露无调用方的方法（演员调用由主进程的刮削链路直接完成）。
 
 ## 5. 演员抓取的四个触发场景
 

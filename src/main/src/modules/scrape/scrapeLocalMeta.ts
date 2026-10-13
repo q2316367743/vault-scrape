@@ -4,6 +4,8 @@
  * 契约：
  * - 只读，不改任何文件；失败一律当作「本地没有」，绝不影响后续联网刮削；
  * - NFO 候选顺序：`<原名>.nfo` → `movie.nfo`；解析失败（无 `<movie>` 根或全空）视为没有；
+ * - **正文是译文的 NFO**（带 `vaultscrape_translated` 标记）只当作「还原记录」的来源，
+ *   它的正文不当本地元数据：本地优先重新刮削时照旧联网取原文，避免译文被写回媒体库；
  * - 图片按 Jellyfin 常见名识别：主图（poster / cover / folder / 与影片同名）、
  *   背景图（backdrop / background / fanartN）、缩略图（thumbN）、横幅（banner）、
  *   徽标（logo / clearlogo）；剧照取剧照子目录（`fanartDirName`）下的全部图片；
@@ -14,6 +16,7 @@ import { extnameOf, joinRemotePath } from '@common/types/file'
 import type { MediaNfoMeta } from '@common/types/media'
 import { parseNfoXml } from '@common/types/media'
 import type { PluginAssetKind, PluginMovieDetail } from '@common/types/plugin'
+import { isTranslatedNfo } from '@common/types/scrape'
 import type { FileClient } from '$/modules/file/FileClient'
 
 const IMAGE_EXTENSIONS: ReadonlySet<string> = new Set([
@@ -58,6 +61,12 @@ export interface LocalNfo {
   meta: MediaNfoMeta
   /** 原文，用来读回「刮削前位置」还原记录（`parseNfoRestore`） */
   xml: string
+  /**
+   * 正文是译文（带宿主私有标记，见 `isTranslatedNfo`）。
+   *
+   * 这种 NFO 只用来找还原记录，**不能当成原文元数据**：否则译文会被当成原文写回媒体库。
+   */
+  translated: boolean
 }
 
 export interface LocalMeta {
@@ -123,7 +132,9 @@ export async function readLocalNfo(
       const xml = await client.readText(path)
       const meta = parseNfoXml(xml)
       // 只认影片级 NFO：目录里出现剧集 / 季 / 集 NFO 时不能当成影片元数据
-      if (meta && meta.kind === 'movie') return { name, path, meta, xml }
+      if (meta && meta.kind === 'movie') {
+        return { name, path, meta, xml, translated: isTranslatedNfo(xml) }
+      }
     } catch {
       // 单个候选读失败就继续；本地 NFO 只是加速手段
     }
@@ -178,7 +189,7 @@ export async function readLocalMeta(
     options.originalBase,
     options.fanartDirName
   )
-  return { nfo, detail: nfo ? detailOfNfo(nfo.meta) : null, assets }
+  return { nfo, detail: nfo && !nfo.translated ? detailOfNfo(nfo.meta) : null, assets }
 }
 
 /** 本地 NFO → 插件详情形状（`id` 为空，NFO 里没有插件条目 ID） */

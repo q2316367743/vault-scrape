@@ -22,7 +22,10 @@
  *    `file.removeEmptyFolder` 为真且源目录空了就删掉它（绝不删资料库目录）；
  * 7. 参演演员名单按名字写进 `media_cast`（弱关联，不记演员 ID）；`actorScrape` 为真时把资料不全的演员排进后台抓取队列，
  *    演员抓取失败只记日志，不影响本文件的刮削结果；
- * 8. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断。
+ * 8. 单文件失败只产出结果行，不抛给任务；取消通过 `signal` 打断；
+ * 9. 收尾按设置做一次自动翻译（资料库声明了内容语言、且与目标语言不同才做）：译文只进
+ *    `media_translation`；`setting.translate.writeNfo` 为真时把磁盘 NFO 的正文换成译文，
+ *    原文仍在媒体库里，NFO 里会留一行宿主私有标记说明正文是译文。
  */
 import { basenameRemotePath, dirnameRemotePath, joinRemotePath } from '@common/types/file'
 import { parseNfoRestore } from '@common/types/media'
@@ -38,7 +41,10 @@ import {
   type ScrapeAssetContext,
   type ScrapeFileStatus
 } from '@common/types/scrape'
+import { TRANSLATE_LANGUAGE_LABELS } from '@common/types/setting/translateSetting'
 import { enqueueItemActorScrape } from '$/modules/actor/actorScrape'
+import { autoTranslateItem } from '$/modules/translate/autoTranslate'
+import { writeTranslatedNfo } from '$/modules/translate/translateNfo'
 import { replaceItemImages, type MediaImageDraft } from '$/db/repo/mediaImageRepo'
 import { getItem, updateItemMetadata } from '$/db/repo/mediaRepo'
 import {
@@ -292,6 +298,17 @@ export async function runFileJob(context: ScrapeJobContext): Promise<ScrapeJobOu
   if (nfoWritten) parts.push(`NFO ${nfoFileName(base)}`)
   if (assetFailures > 0) parts.push(`${assetFailures} 个资源失败`)
   if (targetPath !== entry.path) parts.push(`→ ${targetPath}`)
+
+  // 9. 自动翻译：资料库声明了内容语言、且与目标语言不同才翻
+  // 译文是派生物，只进 media_translation；开了「写入 NFO」才顺便把磁盘 NFO 的正文也换成译文
+  const translation = await autoTranslateItem(entry.itemId, policy.libraryId, context.log)
+  if (translation) {
+    parts.push(`已翻译成${TRANSLATE_LANGUAGE_LABELS[translation.language]}`)
+    const patched = nfoWritten
+      ? await writeTranslatedNfo(client, { path: nfoTarget, translation }, context.log)
+      : false
+    if (patched) parts.push('NFO 已写入译文')
+  }
 
   return {
     status: 'success',
