@@ -46,6 +46,14 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
       authType: connection.authType
     }
   }
+  if (connection.protocol === 'openlist') {
+    return {
+      id: connection.id,
+      protocol: 'openlist',
+      name: connection.name,
+      url: connection.url
+    }
+  }
   return {
     id: connection.id,
     protocol: 'smb',

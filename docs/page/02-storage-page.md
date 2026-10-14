@@ -63,7 +63,7 @@ src/renderer/src/windows/main/pages/storage/
 ## 5. 连接弹窗
 
 - 外壳 `modals/ConnectionDialog.tsx` 导出 `openConnectionDialog({ connection?, onSaved? })`：`DialogPlugin({ width: 560, destroyOnClose: true, body: () => <ConnectionDialogContent … /> })`（`.tsx` 里用 JSX，不用 `h()`）；底部 `footer` 由外壳渲染「测试连接 / 取消 / 保存」三个按钮，动作与加载状态由内容组件 `defineExpose` 暴露（`test` / `testing` / `submit` / `saving`）给外壳的模板 ref 读。内容组件只用 `emit('success', connection)` 回传结果，外壳负责关闭弹窗并回调 `onSaved`。
-- 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码；**插件存储**（协议选项里「内置三项 + 已启用的存储插件」）按插件声明的字段表动态渲染（`PluginConnectionFields.vue`：secret 字段密码框不回显、留空表示保持已存值，其余字段普通输入框）。
+- 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；OpenList 填 API 地址与令牌（令牌走密码位，占位文案提示在 OpenList 后台「设置 → 其他」页面获取，凭证行标签按协议显示「令牌」/「密码」）；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码；**插件存储**（协议选项里「内置四项 + 已启用的存储插件」）按插件声明的字段表动态渲染（`PluginConnectionFields.vue`：secret 字段密码框不回显、留空表示保持已存值，其余字段普通输入框）。
 - 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增内置字段只改这一个文件；插件连接的动态字段值在 `form.pluginConfig`，提交时按声明表全量（secret 字段留空不提交 = 保持已存）。
 - 协议无关的策略字段已全部下线：`modals/ConnectionPolicyField.vue` 随 NSFW 开关一起删除，连接弹窗只剩「怎么访问这份数据」的字段。刮削器在资料库表单里配置（`useScraperOptions` 仍被资料库表单复用，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)）。
 - 本地磁盘的根目录字段由 `src/renderer/src/components/DirectoryPickerField.vue` 提供：输入框 + 「选择」按钮，按钮走 `dialogApi.open({ title, directory: true })` 选**本机绝对路径**（取消或失败都不改动原值），`ConnectionDialogContent.vue:53` 在 `protocol === 'local'` 分支里渲染它。资料库的媒体目录**不**走它——那里必须是连接内路径，改用资料库自己的 `RemoteDirDialog`（见[影视墙页面 · 表单](./04-media-wall-page.md)）。详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md)。
@@ -131,8 +131,8 @@ storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
 
 按项目约定只跑 `yarn typecheck`，运行时行为手工验证：
 
-1. 首次进入「存储」：左侧空态 + 右侧占位；点「新建数据源」，分别建本地目录、WebDAV、SMB 三种连接，确认列表出现且协议标签正确。
-2. 点某个已保存 WebDAV / SMB 连接的「测试连通」，成功时提示里应含协议与地址；再断开网络重测，应得到中文失败提示且不弹异常。编辑连接时把密码留空保存，重测应仍成功（证明沿用钥匙串密码）。
+1. 首次进入「存储」：左侧空态 + 右侧占位；点「新建数据源」，分别建本地目录、WebDAV、SMB、OpenList 连接，确认列表出现且协议标签正确。
+2. 点某个已保存 WebDAV / SMB / OpenList 连接的「测试连通」，成功时提示里应含协议与地址；再断开网络重测，应得到中文失败提示且不弹异常。编辑连接时把密码 / 令牌留空保存，重测应仍成功（证明沿用钥匙串密码）。OpenList 把令牌改坏后重测，应提示重新填写令牌。
 3. 只读浏览：进入子目录、面包屑回跳、上级目录到根后置灰；确认工具条只剩「上级目录 / 刷新」，页面上**找不到**任何新建 / 上传 / 下载 / 重命名 / 复制 / 移动 / 删除 / 编辑文本入口，也没有传输进度面板。
 4. 视频预览：点一个 `.mp4` 的名称或「预览」，抽屉标题是文件名、顶部有大小 / 修改时间 / 完整路径；起播后拖动进度条应能立刻跳转（区间请求）；把文件在文件管理器里改名或移走后刷新目录再预览，应落到「视频读不出来……」兜底层而不是黑屏。
 5. 图片 / 音频预览：点 `.jpg` / `.mp3`，图片在抽屉里等比完整显示、音频能起播；对不支持的类型（例如 `.zip`），行上应显示 `—`、点名称无反应。

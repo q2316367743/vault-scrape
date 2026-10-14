@@ -5,7 +5,7 @@
  * 1. 缓存的是 **Promise**，并发取同一个连接不会重复建连；
  * 2. 初始化失败不留坏缓存；
  * 3. 连接配置变更 / 删除后必须 `invalidateFileClient`，退出前 `disposeFileClients`；
- * 4. 实现类的分派：内置协议（local / webdav / smb）各走一个构造，其余 protocol
+ * 4. 实现类的分派：内置协议（local / webdav / smb / openlist）各走一个构造，其余 protocol
  *    一律按存储插件 id 走 `PluginFileClient`——新增内置协议才需要改这里的工厂。
  */
 import {
@@ -25,6 +25,7 @@ import {
   type ConnectionCredential
 } from './fileConnectionStore'
 import { LocalFileClient } from './impl/local/LocalFileClient'
+import { OpenlistFileClient } from './impl/openlist/OpenlistFileClient'
 import { PluginFileClient } from './impl/plugin/PluginFileClient'
 import { SmbFileClient } from './impl/smb/SmbFileClient'
 import { WebdavFileClient } from './impl/webdav/WebdavFileClient'
@@ -53,6 +54,10 @@ function createClient(connection: FileConnection, credential: ConnectionCredenti
   if (connection.protocol === 'local') return new LocalFileClient(connection, options)
   if (connection.protocol === 'webdav') {
     return new WebdavFileClient(connection, credential.password, options)
+  }
+  if (connection.protocol === 'openlist') {
+    // credential.password 即解密后的 OpenList 令牌（与密码同一条加密链路）
+    return new OpenlistFileClient(connection, credential.password, options)
   }
   return new SmbFileClient(connection, credential.password, options)
 }

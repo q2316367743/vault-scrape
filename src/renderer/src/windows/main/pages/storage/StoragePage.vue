@@ -43,7 +43,7 @@ onMounted(refresh)
 </script>
 
 <template>
-  <page-layout title="存储" description="统一管理本地磁盘、WebDAV 与 SMB 数据源" :padded="false">
+  <page-layout title="存储" description="统一管理本地磁盘、WebDAV、SMB 与 OpenList 数据源" :padded="false">
     <template #extra>
       <t-button size="small" variant="outline" :loading="loading" @click="refresh">
         <template #icon><refresh-icon /></template>

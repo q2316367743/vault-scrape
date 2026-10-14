@@ -60,6 +60,14 @@ interface StoredSmbConnection {
   secret: string
 }
 
+interface StoredOpenlistConnection {
+  id: string
+  name: string
+  protocol: 'openlist'
+  url: string
+  secret: string
+}
+
 interface StoredPluginConnection {
   id: string
   name: string
@@ -75,6 +83,7 @@ type StoredConnection =
   | StoredLocalConnection
   | StoredWebdavConnection
   | StoredSmbConnection
+  | StoredOpenlistConnection
   | StoredPluginConnection
 
 /** 连接凭据：构造文件客户端所需的机密材料，只在主进程内部流转 */
@@ -158,6 +167,11 @@ function normalizeStored(raw: unknown): StoredConnection | null {
       authType: readEnum(source, 'authType', WEBDAV_AUTH_TYPES, 'auto'),
       secret
     }
+  }
+  if (protocol === 'openlist') {
+    const url = readString(source, 'url', '')
+    if (url.length === 0) return null
+    return { id, name, protocol, url, secret }
   }
   const host = readString(source, 'host', '')
   const share = readString(source, 'share', '')
@@ -258,6 +272,15 @@ function toPublicConnection(stored: StoredConnection): FileConnection {
       authType: stored.authType
     }
   }
+  if (stored.protocol === 'openlist') {
+    return {
+      id: stored.id,
+      name: stored.name,
+      protocol: 'openlist',
+      hasPassword: stored.secret.length > 0,
+      url: stored.url
+    }
+  }
   return {
     id: stored.id,
     name: stored.name,
@@ -355,8 +378,13 @@ function buildStored(
     if (rootPath.length === 0) throw new FileError('invalidArgument', '本机根目录不能为空')
     return { id, name, protocol: 'local', rootPath }
   }
-  const username = draft.username.trim()
   const secret = draft.password === undefined ? previousSecret(previous) : encodeSecret(draft.password, 'file')
+  if (draft.protocol === 'openlist') {
+    const url = draft.url.trim()
+    if (!isValidUrl(url)) throw new FileError('invalidArgument', '服务地址不是合法的 URL')
+    return { id, name, protocol: 'openlist', url, secret }
+  }
+  const username = draft.username.trim()
   if (draft.protocol === 'webdav') {
     const url = draft.url.trim()
     if (!isValidUrl(url)) throw new FileError('invalidArgument', '服务地址不是合法的 URL')

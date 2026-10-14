@@ -91,9 +91,12 @@ export function useConnectionForm(options: {
     if (!current || current.protocol === 'local') return false
     return current.hasPassword
   })
-  const passwordPlaceholder = computed(() =>
-    hasStoredPassword.value ? '已保存密码，留空表示不修改' : '密码只写入本机密钥串，不落明文'
-  )
+  const passwordPlaceholder = computed(() => {
+    if (protocol.value === 'openlist') {
+      return hasStoredPassword.value ? '已保存令牌，留空表示不修改' : '在 OpenList 后台「设置 → 其他」页面获取'
+    }
+    return hasStoredPassword.value ? '已保存密码，留空表示不修改' : '密码只写入本机密钥串，不落明文'
+  })
 
   /** 协议指向插件时拉取该插件的字段声明（编辑回显与切换协议都走这里） */
   async function loadPluginFields(pluginId: string): Promise<void> {
@@ -127,6 +130,10 @@ export function useConnectionForm(options: {
       form.username = connection.username
       form.url = connection.url
       form.authType = connection.authType
+      return
+    }
+    if (connection.protocol === 'openlist') {
+      form.url = connection.url
       return
     }
     form.username = connection.username
@@ -168,6 +175,14 @@ export function useConnectionForm(options: {
         url: form.url.trim(),
         username: form.username.trim(),
         authType: form.authType,
+        password: form.password.length > 0 ? form.password : hasStoredPassword.value ? undefined : ''
+      }
+    }
+    if (protocol.value === 'openlist') {
+      return {
+        ...identity,
+        protocol: 'openlist',
+        url: form.url.trim(),
         password: form.password.length > 0 ? form.password : hasStoredPassword.value ? undefined : ''
       }
     }

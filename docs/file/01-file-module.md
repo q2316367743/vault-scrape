@@ -1,9 +1,9 @@
-# 文件模块（本地 / WebDAV / SMB / 存储插件）
+# 文件模块（本地 / WebDAV / SMB / OpenList / 存储插件）
 
 ## 1. 模块定位
 
-文件模块是「一个接口 + 多个实现」：`FileClient` 定义统一能力，`LocalFileClient`、`WebdavFileClient`、`SmbFileClient`
-各自适配一种内置协议；其余连接协议（protocol = 存储插件 id）一律由 `PluginFileClient` 承接——元数据走存储插件、
+文件模块是「一个接口 + 多个实现」：`FileClient` 定义统一能力，`LocalFileClient`、`WebdavFileClient`、`SmbFileClient`、
+`OpenlistFileClient` 各自适配一种内置协议；其余连接协议（protocol = 存储插件 id）一律由 `PluginFileClient` 承接——元数据走存储插件、
 字节流由宿主拿直链自取，契约见[存储插件](../plugin/11-storage-plugins.md)。实现全部运行在 **主进程**
 （渲染层无法直接访问 fs / 网络协议库），渲染层只通过 IPC 使用，命令式地拿到 `FileResult` 信封。
 
@@ -45,6 +45,9 @@ src/main/src/modules/file/      # 主进程实现
     ├── webdav/WebdavFileClient.ts
     ├── smb/smbErrors.ts        # NT 状态码 → FileError
     ├── smb/SmbFileClient.ts
+    ├── openlist/               # OpenList 实现（API 地址 + 令牌）
+    │   ├── openlistApi.ts      # /api/fs/* 请求封装：信封解析、错误映射、/d 直链拼装
+    │   └── OpenlistFileClient.ts
     └── plugin/                 # 存储插件实现（第四种协议来源，见 docs/plugin/11-storage-plugins.md）
         ├── PluginFileClient.ts # 元数据走插件（list / stat / resolve），直链缓存，写操作 unsupported
         └── directLinkStream.ts # 直链字节流：Range GET / 重定向 / 失效判定（所有存储插件共用）
@@ -79,7 +82,7 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 `upload` / `download` 的 `localPath` 是 **本机绝对路径**，不受连接根限制（上传的源、下载的落点都在本机任意位置）；`localPath`
 越界防护只对「连接内路径 → 本机路径」方向生效。
 
-## 4. 三种实现的方法映射
+## 4. 内置实现的方法映射
 
 | 能力               | 本地磁盘（Local）                                    | WebDAV                                                                                                                                                | SMB（SMB2/2.1）                                                                                                   |
 |--------------------|------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
@@ -126,6 +129,33 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
   `npx patch-package @awo00/smb2 --use-yarn`。 **`--use-yarn` 必须带**：本仓库同时存在 `yarn.lock` 与 `package-lock.json`
   ，patch-package 8 的包管理器探测会误判成 npm 并以 status 255 失败（`postinstall` 里的应用阶段不需要该参数）。
 
+### OpenList（OpenlistFileClient）
+
+连接只需 **API 地址 + 令牌**（令牌在 OpenList 后台「设置 → 其他」页面获取），全部能力基于 OpenList 的 REST API
+（文档：<https://fox.oplist.org/llms.txt>）。要点：
+
+- 所有业务接口 `POST {base}/api/fs/*`，信封 `{ code, message, data }`，code 200 成功；认证头 `Authorization: <token>`
+  **不带 Bearer 前缀**；
+- 找不到对象时服务端常回 code 500 + `object not found`（而非 404），`openlistApi.envelopeError` 统一归一成 `notFound`，
+  否则 `exists` / `stat` 的 NotFound 语义会失效；
+- 方法映射：
+
+| 能力                         | OpenList API                                                                                     |
+|------------------------------|--------------------------------------------------------------------------------------------------|
+| `init`                       | `fs/list '/'` 首页（一次调用同时验证地址可达 + 令牌有效）                                        |
+| `stat` / `exists`            | `fs/get`；返回的 `data.path` 是**物理路径**，`FileEntry.path` 一律用连接内虚拟路径               |
+| `list`                       | `fs/list` 分页循环（per_page=100，页数 / 条目上限与插件实现同口径）                              |
+| `mkdir`                      | `fs/mkdir`（只建最后一级）；`recursive: true` 时逐级补齐，已存在层级跳过                         |
+| `createFile` / `writeText`   | `PUT fs/put`（Buffer 请求体；`overwrite: false` 先查目标）                                       |
+| `readText` / `readRange` / `download` | `fs/get` 取 `raw_url`（为空或为站内相对路径时拼 `{origin}/d{path}?sign=`）→ `openDirectLinkStream` 发 Range GET，复用 `impl/plugin/directLinkStream.ts` |
+| `move`                       | 同目录 `fs/rename`；跨目录 `fs/move {src_dir, dst_dir, names}`（带 `As-Task: false` 请求同步执行，旧服务端忽略时回退后台任务） |
+| `copy`                       | `fs/copy`（同上，`As-Task: false`）                                                              |
+| `remove`                     | `fs/remove {dir, names}`；`recursive: false` 先查目录非空抛 `notEmpty`                           |
+| `upload`                     | `PUT fs/put`，`File-Path` 头携带 URL 编码后的完整路径 + `Content-Length`，失败清理远端半截文件   |
+
+- 直链按 path 缓存（TTL 5 分钟），403 / 404 / 410 视为失效绕过缓存重取一次——与 `PluginFileClient` 同一条字节通路；
+- 受密码保护的目录 OpenList 返回 403，收敛为 `permissionDenied`（首版不提供目录密码字段）。
+
 ## 5. 连接配置与密码存储
 
 - 落盘位置：`~/.vault-scrape/file/connections.json`（与 `setting/settings.json` 相互独立，同样是主进程唯一写入口），形状为
@@ -140,7 +170,8 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
   `hasPassword` 掩码。保存时按声明表分拣并校验必填，**落盘不校验插件存在性**（运行时建连才报「存储插件不可用」）；
   主进程解出完整配置走 `loadConnectionCredential()`（返回 `{ password, config }`，敏感字段已解密，仅限主进程内部）。
 - 落盘前校验：名称不能为空；本地根目录不能为空；WebDAV 地址必须是合法 URL；SMB 主机与共享名不能为空、端口必须是 1–65535
-  的整数；插件连接的 required 字段必须已填。校验失败抛 `invalidArgument`（中文提示）。
+  的整数；OpenList 地址必须是合法 URL（令牌走 `secret` 加密链路，可留空但建连必失败）；插件连接的 required 字段必须已填。
+  校验失败抛 `invalidArgument`（中文提示）。
 - 读取失败（文件损坏 / JSON 非法）一律 `console.error` 后回落空列表，不阻塞启动；逐条归一化时 `id` 或 `name` 为空的记录会被丢弃。
 - 连接上 **没有任何策略字段**：NSFW 标记归资料库的 `nsfwProtection`（渲染层用 `useNsfwProtection(库级标记)` 判定，
   总开关见[设置项清单](../setting/02-setting-items.md)）；旧版本写下的 `nsfw` 键在归一化时被直接忽略，不再回写。 **`scrapers`（及配套的 `scraperIds` / `usesAllScrapers` / `describeScrapers`）已从
@@ -205,6 +236,9 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
 | SMB 区间读依赖补丁             | SMB 的 `readRange` 建立在 `patches/@awo00+smb2+1.1.1.patch` 之上，升级 `@awo00/smb2` 后必须重新生成补丁（见 §4） |
 | 存储插件只读                   | 插件连接不支持写类操作（`mkdir` / `writeText` / `move` / `copy` / `remove` / `upload` 一律抛 `unsupported`）；刮削写回失败只记 warn 日志不中断，元数据仍进本地库 |
 | 存储插件直链有效期             | 直链按 `ttlSeconds`（缺省 300 秒）缓存，失效（403 / 404 / 410）自动重新 `resolve` 一次再试；`readText` 上限 10 MB |
+| OpenList 令牌即权限            | 连接只有「API 地址 + 令牌」，令牌过期 / 换密码后所有操作报 `authFailed`，需重新填写；受密码保护的目录返回 403 收敛为 `permissionDenied`（无目录密码字段） |
+| OpenList 直链有效期            | 直链按 path 缓存 5 分钟，失效自动重取一次；OpenList 找不到对象回 code 500 + `object not found`，已归一为 `notFound` |
+| OpenList copy / move 可能异步  | 已带 `As-Task: false` 请求同步执行，旧版服务端忽略该头时回退为后台任务，复制 / 移动返回后目标可能延迟可见     |
 | 名称冲突                       | 默认 `overwrite: false`，渲染层需要覆盖时必须显式传 `true`                                                       |
 
 ## 9. 手工验证清单
@@ -225,7 +259,9 @@ src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi =
    （库内为 Password）/ `digest`。
 4. SMB：填 Windows 或 Samba 的 `host` / `share` / 账号（域可空），确认写入、目录递归删除、跨目录移动；若报 `authFailed`
    而密码正确，先确认服务端未禁用 SMB2。
-5. 密码安全性：检查 `~/.vault-scrape/file/connections.json` 中 WebDAV / SMB 的 `secret` 是否为 `safe:` 前缀（钥匙串可用时）；手工把
+5. OpenList：填站点地址与令牌（令牌在 OpenList 后台「设置 → 其他」页面复制），`testConnection` 成功后再重复第 2 步；把令牌
+   改坏应报 `authFailed` 并提示重新填写；播放大视频时拖动进度条确认 `readRange` 走直链区间读无卡顿。
+6. 密码安全性：检查 `~/.vault-scrape/file/connections.json` 中 WebDAV / SMB / OpenList 的 `secret` 是否为 `safe:` 前缀（钥匙串可用时）；手工把
    `secret` 改坏后再 `list` 该连接，应得到 `authFailed` 并提示重新填写密码。
-6. 连接上没有策略字段：新建 / 编辑任一连接（本地 / WebDAV / SMB）时，弹窗里 **不应**再出现刮削器选择与 NSFW 开关；`listConnections()`
+7. 连接上没有策略字段：新建 / 编辑任一连接（本地 / WebDAV / SMB / OpenList）时，弹窗里 **不应**再出现刮削器选择与 NSFW 开关；`listConnections()`
    返回的每个连接对象上也不应再有 `scrapers` / `nsfw` 字段（类型已删，草稿里多余的同名字段不进入落盘形状）。

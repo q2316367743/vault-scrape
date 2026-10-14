@@ -16,6 +16,7 @@ import {
   FileZipIcon,
   FolderIcon,
   HardDriveIcon,
+  RootListIcon,
   ServerIcon,
   VideoIcon
 } from 'tdesign-icons-vue-next'
@@ -32,14 +33,16 @@ import {
 const BUILTIN_PROTOCOL_ICONS: Readonly<Record<BuiltinFileProtocol, Component>> = {
   local: HardDriveIcon,
   webdav: CloudIcon,
-  smb: ServerIcon
+  smb: ServerIcon,
+  openlist: RootListIcon
 }
 
 /** 内置协议的一句话说明，展示在新建 / 编辑连接的弹窗里 */
 const BUILTIN_PROTOCOL_HINTS: Readonly<Record<BuiltinFileProtocol, string>> = {
   local: '直接读写本机磁盘目录',
   webdav: '走 HTTP，支持服务端 MOVE / COPY 与流式读写',
-  smb: '仅协商 SMB 2.0.2 / 2.1；无服务端复制，大目录复制较慢'
+  smb: '仅协商 SMB 2.0.2 / 2.1；无服务端复制，大目录复制较慢',
+  openlist: '通过 API 地址与令牌连接，令牌在 OpenList 后台「设置 → 其他」页面获取'
 }
 
 /** 协议图标：内置协议用各自的图标，插件存储统一用云图标 */

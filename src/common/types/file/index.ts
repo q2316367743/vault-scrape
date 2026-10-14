@@ -48,6 +48,8 @@ export {
   type FileProtocol,
   type LocalConnection,
   type LocalConnectionDraft,
+  type OpenlistConnection,
+  type OpenlistConnectionDraft,
   type PluginConnection,
   type PluginConnectionDraft,
   type SmbConnection,

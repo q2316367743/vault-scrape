@@ -94,11 +94,18 @@ defineExpose({ submit: onSubmit, saving, test: onTest, testing })
       </div>
     </template>
 
+    <template v-else-if="protocol === 'openlist'">
+      <div class="form-row">
+        <span class="form-label">API 地址</span>
+        <t-input v-model="form.url" class="form-control" placeholder="https://pan.example.com" />
+      </div>
+    </template>
+
     <template v-else-if="isPluginProtocol">
       <plugin-connection-fields v-model="form.pluginConfig" :fields="pluginFields" />
     </template>
 
-    <template v-else>
+    <template v-else-if="protocol === 'smb'">
       <div class="form-row">
         <span class="form-label">主机</span>
         <t-input v-model="form.host" class="form-control" placeholder="192.168.1.10 或 nas.local" />
@@ -122,7 +129,7 @@ defineExpose({ submit: onSubmit, saving, test: onTest, testing })
     </template>
 
     <div v-if="showPassword" class="form-row">
-      <span class="form-label">密码</span>
+      <span class="form-label">{{ protocol === 'openlist' ? '令牌' : '密码' }}</span>
       <t-input
         v-model="form.password"
         class="form-control"
