@@ -30,7 +30,7 @@ src/common/types/file/          # 三端共享的纯类型与纯函数（不含�
 ├── result.ts                   # FileResult 信封 + fileOk / fileFail / isFileOk
 └── index.ts                    # 再导出
 
-src/main/src/modules/file/      # 主进程实现
+src-dashou/core/modules/file/      # 主进程实现
 ├── FileClient.ts               # FileClient 接口 + AbstractFileClient 基类
 ├── withTimeout.ts              # 单次操作超时
 ├── fileErrorUtils.ts           # 底层异常 → FileError 收敛
@@ -56,12 +56,12 @@ src/preload/src/modules/file/
 ├── fileChannels.ts             # 通道名常量（main 通过别名 ~ 引用同一份）
 └── file.ts                     # fileApi：invoke 封装 + 事件订阅（返回取消订阅函数）
 
-src/renderer/src/api/file.ts    # 渲染层唯一出口：export const fileApi = window.preload.file
+src/api/file.ts    # 渲染层唯一出口：export const fileApi = window.preload.file
 ```
 
 ## 3. FileClient 接口与统一语义
 
-`FileClient`（`src/main/src/modules/file/FileClient.ts`）共 15 个方法：`init`、`dispose`、`stat`、`exists`、`list`、`mkdir`、
+`FileClient`（`src-dashou/core/modules/file/FileClient.ts`）共 15 个方法：`init`、`dispose`、`stat`、`exists`、`list`、`mkdir`、
 `createFile`、`readText`、`readRange`、`writeText`、`move`、`copy`、`remove`、`upload`、`download`，外加只读属性 `protocol`。
 
 统一语义（三实现必须一致，`AbstractFileClient` 负责公共部分）：

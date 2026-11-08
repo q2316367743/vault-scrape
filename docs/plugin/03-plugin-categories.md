@@ -99,10 +99,10 @@ pages/plugin/
 | --- | --- |
 | `src/common/types/plugin/kind.ts` | 类别常量、标签 / 描述文案、方法表、`isPluginKind` |
 | `src/common/types/plugin/define.ts` | `MoviePlugin` / `ActorPlugin` / `TranslatePlugin` 与 `PluginDefinition` 联合 |
-| `src/main/src/modules/plugin/pluginStore.ts` | 按类别读写 `<kind>/plugins.json` 与 `<kind>/<id>.js`，另含旧版残留探测 |
-| `src/main/src/modules/plugin/pluginRegistry.ts` | `createPluginRegistry(kind)` 工厂：每类一份缓存与加载错误 |
-| `src/main/src/modules/plugin/pluginRegistries.ts` | `moviePlugins` / `actorPlugins` / `translatePlugins` 三个单例 |
-| `src/main/src/modules/plugin/pluginImport.ts` | 导入预处理（编译、同批择优），按 `kind` 校验 |
-| `src/main/src/modules/plugin/pluginIpc.ts` | 按类别注册三套通道 + `plugin:legacy` |
+| `src-dashou/core/modules/plugin/pluginStore.ts` | 按类别读写 `<kind>/plugins.json` 与 `<kind>/<id>.js`，另含旧版残留探测 |
+| `src-dashou/core/modules/plugin/pluginRegistry.ts` | `createPluginRegistry(kind)` 工厂：每类一份缓存与加载错误 |
+| `src-dashou/core/modules/plugin/pluginRegistries.ts` | `moviePlugins` / `actorPlugins` / `translatePlugins` 三个单例 |
+| `src-dashou/core/modules/plugin/pluginImport.ts` | 导入预处理（编译、同批择优），按 `kind` 校验 |
+| `src-dashou/core/modules/plugin/pluginIpc.ts` | 按类别注册三套通道 + `plugin:legacy` |
 | `src/preload/src/modules/plugin/` | `channelsOf(kind)` 与 `pluginApi.{movie,actor,translate,legacy}` |
-| `src/renderer/src/windows/main/pages/plugin/` | 插件页外壳与三个类别子页，见第 6 节 |
+| `src/windows/main/pages/plugin/` | 插件页外壳与三个类别子页，见第 6 节 |

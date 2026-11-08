@@ -1,5 +1,9 @@
 # AGENTS.md —— 前端工程约束规范
 
+> 工程已重构为搭手插件：`src/` 是窗口前端，`src-dashou/` 是插件根与 core。
+> 运行期契约（API / 事件 / 长任务 / 媒体服务 / 窗口创建）见
+> [docs/architecture/02-plugin-runtime.md](docs/architecture/02-plugin-runtime.md)。
+
 ## 🚫 硬性红线（违反即错）
 
 | 编号  | 规则                                                                                       |
@@ -10,7 +14,7 @@
 | RL‑04 | UI 强制：所有 UI 元素必须使用 `tdesign`；禁用原生 `alert` / `select`                       |
 | RL‑05 | 文件长度：vue 文件 ≤ 300 行，ts 文件 ≤ 500 行，超出必须拆分                                |
 | RL‑06 | 文档同步：功能实现后，必须将技术文档写入或更新 `docs/` 目录，供后续 AI 参考                |
-| RL-07 | 不需要 build，只需要 `yarn typecheck`，禁止做任何验证/测试，如需验证/测试，请让我来做      |
+| RL-07 | 不需要 build，只需要 `pnpm typecheck`（窗口 `vue-tsc` + core `tsc`），禁止做任何验证/测试，如需验证/测试，请让我来做 |
 | RL-08 | 未经我的允许，禁止读取 node_modules 目录下文件                                             |
 | RL-09 | 页面目录分层：禁止在页面目录下平铺多个页面文件，每个页面独占子目录（详见「页面目录组织」） |
 | RL-10 | 界面文案：只说结论，禁止把实现细节 / 技术术语 / 排障信息 / 故障现象写进 UI（详见「界面文案」） |
@@ -76,7 +80,7 @@
     `body: () => <XxxContent … />` 只负责渲染 `.vue` 内容组件， **操作按钮由外壳的 `footer` 提供**（用 JSX 渲染 `tdesign`
     的 `Button`）
   - `.vue` **内容**：命名 `XxxContent.vue`，承载表单 / 列表等主体 UI 与提交状态， **不含操作按钮**；用
-    `defineExpose` 暴露 `src/renderer/src/utils/modal/ModalContent.ts` 里的 `ModalContentExpose`（`submit()` 给外壳主按钮调用，
+    `defineExpose` 暴露 `src/utils/modal/ModalContent.ts` 里的 `ModalContentExpose`（`submit()` 给外壳主按钮调用，
     `saving` / `canSubmit` 给按钮绑 `loading` / `disabled`），并用 `emit('success', 载荷)` 回传结果、`emit('close')` 表达
     「内容自己要求关闭」（保存成功、加载失败等）
 - `.tsx` 外壳一律写 **JSX**，不要用 `h()` 拼 VNode：`tsconfig.web.json` 已配 `jsx: preserve` + `jsxImportSource: vue`，

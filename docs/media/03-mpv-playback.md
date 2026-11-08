@@ -1,5 +1,10 @@
 # 播放窗口与 mpv 播放（play / host 两个渲染入口）
 
+> **已过时（2026-11）**：插件无法把 mpv 的原生窗口嵌进宿主窗口，mpv 相关模块（`mpvLocator` / `mpvRuntime` /
+> `mpvProcess` / `mpvIpc`）与 `host.html` 已删除，播放统一走 built-in artplayer。当前播放链路以
+> [architecture/02-plugin-runtime.md](../architecture/02-plugin-runtime.md) 与
+> `src-dashou/core/modules/player/` 为准；本文保留作历史实现参考。
+
 影视详情页从「详情即播放」改成「详情只管详情」，点「播放」开一个**独立播放窗口**：左侧画面、右侧影片详情侧栏（腾讯视频 / 爱奇艺式的播放入口）。
 画面有两种后端：**本机自备的 mpv**（设置项给路径，**只在 Windows 上启用**）与**内置 artplayer**（兜底）。
 **macOS 已停用 mpv**：mpv 的 `--wid`（嵌进已有窗口）在 macOS 没有官方支持，只剩「mpv 独立窗口 + 播放窗口透明挖洞」一条路，而透明窗口会让播放周期性卡顿、窗口跟随还有可见延迟 —— 详见 §11 第 19 条。
@@ -25,7 +30,7 @@
 
 ## 2. 后端选择与降级
 
-决策链收口在 `src/main/src/modules/player/playerSession.ts` 的 `loadTarget(payload): Promise<PlayerLoadResult>`：
+决策链收口在 `src-dashou/core/modules/player/playerSession.ts` 的 `loadTarget(payload): Promise<PlayerLoadResult>`：
 
 | 步骤 | 判断 | 结果 |
 | --- | --- | --- |
@@ -54,7 +59,7 @@ media_source → buildMediaUrl() → storage://<连接>/<媒体ID>/<文件名>
              → startMediaPlayServer() → http://127.0.0.1:<port>/p/<32位hex token>/<连接>/<媒体ID>/<文件名>
 ```
 
-- `src/main/src/modules/media/mediaPlayServer.ts`（已有，播放域直接复用）：懒启动单例，`listen(0, '127.0.0.1')`，路径必须带 `/<token>/` 前缀，否则 404；请求原样转给 `handleMediaRequest()`，**Range / 206 / 416、远端缓存、播放期路径自愈全部沿用 `storage://` 那一套**（见 [资料库文档](./01-media-library.md)）。响应体是手工抽流（`pipeBody`：`reader.read()` + `write` 返回 false 就等 `drain`），**断开信号听 `ServerResponse` 的 `close` 而不是 `IncomingMessage`**：后者在「请求收完」时就 close（GET 没有请求体，基本等于立即），等我们 `await handleMediaRequest()` 之后再挂就已经错过，而 Chromium 媒体栈缓冲够了会主动掐断 range 请求 —— 掐断后 `drain` 永远不来，底层读取流会被一直吊着（文件句柄泄漏）。
+- `src-dashou/core/modules/media/mediaPlayServer.ts`（已有，播放域直接复用）：懒启动单例，`listen(0, '127.0.0.1')`，路径必须带 `/<token>/` 前缀，否则 404；请求原样转给 `handleMediaRequest()`，**Range / 206 / 416、远端缓存、播放期路径自愈全部沿用 `storage://` 那一套**（见 [资料库文档](./01-media-library.md)）。响应体是手工抽流（`pipeBody`：`reader.read()` + `write` 返回 false 就等 `drain`），**断开信号听 `ServerResponse` 的 `close` 而不是 `IncomingMessage`**：后者在「请求收完」时就 close（GET 没有请求体，基本等于立即），等我们 `await handleMediaRequest()` 之后再挂就已经错过，而 Chromium 媒体栈缓冲够了会主动掐断 range 请求 —— 掐断后 `drain` 永远不来，底层读取流会被一直吊着（文件句柄泄漏）。
 - 两个后端吃的是同一个地址，所以「切后端」= 重新 load，不需要重新解析源。
 - 进程退出：`src/main/index.ts` 的 `before-quit` 里 `void disposeMediaPlayServer()`。
 
@@ -156,8 +161,8 @@ media_source → buildMediaUrl() → storage://<连接>/<媒体ID>/<文件名>
 | `player:layout` | 主 → 渲染 | `PlayerLayoutState` |
 | `player:status` | 主 → 所有窗口 | `PlayerStatus`（广播；只有主窗口的标题栏订阅，播放 / 宿主窗口收到即丢） |
 
-preload 侧 `src/preload/src/modules/player/player.ts` 暴露 `playerApi`（`open` / `load` / `command` / `close` / `detect` / `getStatus` / `focus` / `onSwitch` / `onState` / `onLayout` / `onStatus`，后四者返回退订函数），渲染层经 `src/renderer/src/api/player.ts` 的 `playerApi` 使用（`@/api` 统一再导出）。
-主进程注册在 `src/main/src/modules/player/playerIpc.ts`，由 `registerIpc.ts` 挂 `registerPlayerIpc()`。
+preload 侧 `src/preload/src/modules/player/player.ts` 暴露 `playerApi`（`open` / `load` / `command` / `close` / `detect` / `getStatus` / `focus` / `onSwitch` / `onState` / `onLayout` / `onStatus`，后四者返回退订函数），渲染层经 `src/api/player.ts` 的 `playerApi` 使用（`@/api` 统一再导出）。
+主进程注册在 `src-dashou/core/modules/player/playerIpc.ts`，由 `registerIpc.ts` 挂 `registerPlayerIpc()`。
 
 ### 7.1 主窗口标题栏的「正在播放」标签
 
@@ -166,7 +171,7 @@ preload 侧 `src/preload/src/modules/player/player.ts` 暴露 `playerApi`（`ope
 - **快照由主进程组装**：`playerWindow.playerStatus()` = 窗口是否存在（`alive(playWin)`）+ 会话层的 `currentTarget()`（条目 / 集 + 片名）+ `currentState()`（整份 `PlayerState`）。渲染层不查库、不猜窗口在不在。
 - **为什么要广播**：主窗口句柄只在 `src/main/index.ts` 的 `createWindow()` 里，没对外暴露；为了不动入口文件，沿用 file / offline / scrape 域的写法把 `player:status` 广播给所有窗口（播放窗口与宿主窗口的页面不订阅，收到即丢）。
 - **四处发送**：开窗（`createPlayWindow()`，此时目标还没装载 → 标签显示「正在打开」）、关窗（`closed` 里，`stopSession()` 已清空目标 → `open:false`，标签消失）、换片（窗口复用时 `openPlayerWindow()` 推完 `player:switch` 再兜一次）、状态推送（`setStateSink` 里跟着 200ms 节流走，播放中位置 / 暂停状态实时更新）。
-- **片名口径**：剧集给剧集名（不含集名）+ `第 N 季 N 集`，影片给片名；刮削过用条目名，没刮削去掉扩展名 —— 与影视墙 / 详情页一致（`src/main/src/modules/media/mediaWall.ts:151`）。
+- **片名口径**：剧集给剧集名（不含集名）+ `第 N 季 N 集`，影片给片名；刮削过用条目名，没刮削去掉扩展名 —— 与影视墙 / 详情页一致（`src-dashou/core/modules/media/mediaWall.ts:151`）。
 - **点击只聚焦**：`player:focus` → `focusPlayerWindow()`（`isMinimized()` 先 `restore()`，再 `show()` + `focus()`），不重建窗口、不改播放状态。
 - **标签自身**（`components/app/AppPlayerBadge.vue`）：位置在产品名右侧（`afterTitle` 插槽）、样式是一枚胶囊（`--td-bg-color-container-hover` 底色，悬停转 `--td-brand-color-light`，`--td-radius-extraLarge` 圆角，最宽 280px、片名超长省略）；`open === false` 整块不渲染；状态文案优先级 = 出错 → 已播完 → 缓冲中 → 正在打开 → 已暂停 → 正在播放；tooltip 里补进度 / 后端 / 错误原因；图标只在「缓冲 / 未就绪」与「暂停 / 播放」之间切。
 - 播放窗口自己不显示这枚标签（它本来就在播），标签只挂在主窗口的 `AppTitleBar` `afterTitle` 插槽（紧挨产品名；`trailing` 在弹性空档之后，会被推到窗口最右，放状态标签会离标题太远）。
@@ -207,9 +212,9 @@ preload 侧 `src/preload/src/modules/player/player.ts` 暴露 `playerApi`（`ope
 | 层 | 文件 |
 | --- | --- |
 | 公共类型 | `src/common/types/player/index.ts`、`src/common/types/player/layout.ts` |
-| 主进程 | `src/main/src/modules/player/{mpvLocator,mpvIpc,mpvProcess,mpvRuntime,playerSession,playerWindow,playerIpc,playerEvents}.ts`；`src/main/src/registerIpc.ts`（挂载）；`src/main/index.ts`（`before-quit` 清理）；`src/main/src/modules/media/mediaPlayServer.ts`（回环服务，复用） |
+| 主进程 | `src-dashou/core/modules/player/{mpvLocator,mpvIpc,mpvProcess,mpvRuntime,playerSession,playerWindow,playerIpc,playerEvents}.ts`；`src-dashou/core/registerIpc.ts`（挂载）；`src/main/index.ts`（`before-quit` 清理）；`src-dashou/core/modules/media/mediaPlayServer.ts`（回环服务，复用） |
 | preload | `src/preload/src/modules/player/{playerChannels,player}.ts`、`src/preload/index.ts`、`src/preload/index.d.ts` |
-| 渲染层 | `src/renderer/{play.html,host.html}`、`src/renderer/src/windows/{play,host}/`、`src/renderer/src/api/player.ts`、`src/renderer/src/components/app/{AppTitleBar,AppPlayerBadge}.vue`、`src/renderer/src/windows/main/App.vue`（标题栏挂标签）、`src/renderer/src/components/media/MediaEpisodeList.vue`、`src/renderer/src/hooks/UseEpisodeSelection.ts` |
+| 渲染层 | `src/renderer/{play.html,host.html}`、`src/windows/{play,host}/`、`src/api/player.ts`、`src/components/app/{AppTitleBar,AppPlayerBadge}.vue`、`src/windows/main/App.vue`（标题栏挂标签）、`src/components/media/MediaEpisodeList.vue`、`src/hooks/UseEpisodeSelection.ts` |
 | 构建 | `electron.vite.config.ts`（`renderer.build.rollupOptions.input` 三入口） |
 
 ## 11. 注意事项与已知限制

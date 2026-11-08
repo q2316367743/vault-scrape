@@ -5,14 +5,14 @@
 刮削的「进度 + 历史」集中在**概览页**（`/overview`）：顶部 7 张任务统计卡，下面是「当前刮削进度」卡片（可取消 / 继续）、「演员资料补全」卡片（只读进度）与「刮削记录」分页表。点记录表任意一行进**刮削进度详情**（`/overview/scrape?taskId=…`），只读展示该任务的任务信息与逐文件结果。
 
 - 原「工作台」（`/workspace`：选资料库 → 逐级浏览目录 → 勾选影片排队）**已整体下线**，手动挑片入口一并删除。刮削入口只剩影视墙资料库抽屉里的整库「刮削」（候选 = 全库 `scrapedAt = 0` 的影片），见[影视墙页面](./04-media-wall-page.md)与[资料库](../media/01-media-library.md)。
-- 主进程 / preload 的 `scrape:browse`（资料库目录浏览）与 `scrape:start`（按 `media_item.id` 排队）通道**保留**，但渲染层当前没有调用方；渲染层原来包装 `browseMedia` 的 `src/renderer/src/api/scrape.ts` 现在只导出 `scrapeApi = window.preload.scrape`。
+- 主进程 / preload 的 `scrape:browse`（资料库目录浏览）与 `scrape:start`（按 `media_item.id` 排队）通道**保留**，但渲染层当前没有调用方；渲染层原来包装 `browseMedia` 的 `src/api/scrape.ts` 现在只导出 `scrapeApi = window.preload.scrape`。
 - 数据来源：sqlite 侧 `dbApi.task.stats()` / `dbApi.task.list` / `dbApi.task.count`（`db` 域无信封）；主进程侧 `scrapeApi.listTasks(1)` / `getTask` / `running` / `cancel` / `resume` / `onProgress`（`ScrapeResult` 信封）。两条链路都不新增 IPC。
 - 页面约定：概览用 `PageLayout`（title「概览」，description「刮削与演员补全进度、历史记录，点记录行查看逐文件结果」）；详情用 `SubPageLayout`（title「刮削进度详情」，description 是任务名，`fallback="/overview"`，返回图标按钮在标题左侧，**不要在 `#extra` 里再放返回按钮**）。
 
 ## 2. 目录结构
 
 ```
-src/renderer/src/windows/main/pages/overview/
+src/windows/main/pages/overview/
 ├── OverviewPage.vue                    # 组装：7 张统计卡 + 进度卡片 + 演员补全卡片 + 记录表；行点击跳详情
 ├── components/
 │   ├── StatCard.vue                    # 统计卡（原有）
@@ -34,8 +34,8 @@ src/renderer/src/windows/main/pages/overview/
 
 ## 3. 路由与侧栏
 
-- 路由 `/overview/scrape`，name `刮削进度详情`，懒加载 `scrape/ScrapeDetailPage.vue`（`src/renderer/src/windows/main/router.ts`）。参数走 **query**（`taskId`），与 `/media/detail?itemId=…`、`/actor/detail?actorId=…` 同一惯例，可直接刷新与复用地址。
-- 侧栏「概览」带 `match: 'prefix'`，进详情页后仍保持高亮：`src/renderer/src/components/menu/SideMenuNode.vue` 的 `isSelfActive` 在 `match === 'prefix'` 时用 `path.startsWith(to)`，否则要求路径精确相等。
+- 路由 `/overview/scrape`，name `刮削进度详情`，懒加载 `scrape/ScrapeDetailPage.vue`（`src/windows/main/router.ts`）。参数走 **query**（`taskId`），与 `/media/detail?itemId=…`、`/actor/detail?actorId=…` 同一惯例，可直接刷新与复用地址。
+- 侧栏「概览」带 `match: 'prefix'`，进详情页后仍保持高亮：`src/components/menu/SideMenuNode.vue` 的 `isSelfActive` 在 `match === 'prefix'` 时用 `path.startsWith(to)`，否则要求路径精确相等。
 - 参数缺失（手改地址栏、旧书签）时不发请求，只显示中文空态「地址里缺少刮削任务参数，请从概览的刮削记录里点进来」。
 - 一级页面由 10 个减为 9 个（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）。
 

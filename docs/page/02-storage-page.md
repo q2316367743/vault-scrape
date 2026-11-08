@@ -4,15 +4,15 @@
 
 存储管理页是[文件模块](../file/01-file-module.md)的前端外壳，但**渲染层只读**：左边管数据源（连接），右边浏览目录与预览文件。它把连接 CRUD、列目录、`stat` 与读文本接出来，渲染层只经 `@/api` 的 `fileApi` 调用，不触碰 `window.preload`。
 
-- 侧栏一级菜单「存储」，图标 `HardDiskStorageIcon`（`src/renderer/src/windows/main/pages/app/AppSide.vue`）。
-- 路由 `/storage`，位于 `/actor/detail` 与 `/plugin` 之间，懒加载 `StoragePage.vue`（`src/renderer/src/windows/main/router.ts`）。
+- 侧栏一级菜单「存储」，图标 `HardDiskStorageIcon`（`src/windows/main/pages/app/AppSide.vue`）。
+- 路由 `/storage`，位于 `/actor/detail` 与 `/plugin` 之间，懒加载 `StoragePage.vue`（`src/windows/main/router.ts`）。
 - 覆盖能力：连接的新建 / 编辑 / 删除 / 测试连通，目录浏览（进入目录、面包屑回跳、刷新），以及**媒体文件与 nfo 的预览**。
 - **写操作整体下线**：新建文件夹 / 新建文件 / 上传 / 下载 / 重命名 / 复制 / 移动 / 删除 / 编辑文本，以及传输进度面板（`file:transferProgress` / `file:transferDone` 两个推送不再被订阅）。主进程 [file 模块](../file/01-file-module.md)的 18 个 invoke + 2 个推送**接口本身没有删除**——它是三协议通用能力且有独立文档，只是渲染层不再有任何入口。
 
 ## 2. 目录结构
 
 ```
-src/renderer/src/windows/main/pages/storage/
+src/windows/main/pages/storage/
 ├── StoragePage.vue                  # 页面骨架：PageLayout + 左面板 + 右浏览器
 ├── storageUtils.ts                  # 纯展示工具（协议图标 / 展示名 / 说明、尺寸 / 时间格式化、可预览判定）
 ├── composables/
@@ -66,7 +66,7 @@ src/renderer/src/windows/main/pages/storage/
 - 内容组件按协议渲染不同字段：本地磁盘填根目录；WebDAV 填地址、用户名、认证方式（`auto` 自动协商 / `basic` / `digest` / `none` 无需认证）与密码；OpenList 填 API 地址与令牌（令牌走密码位，占位文案提示在 OpenList 后台「设置 → 其他」页面获取，凭证行标签按协议显示「令牌」/「密码」）；SMB 填主机、端口（默认 445）、共享名、域、用户名与密码；**插件存储**（协议选项里「内置四项 + 已启用的存储插件」）按插件声明的字段表动态渲染（`PluginConnectionFields.vue`：secret 字段密码框不回显、留空表示保持已存值，其余字段普通输入框）。
 - 表单状态与提交逻辑抽在 `composables/useConnectionForm.ts`（`ConnectionDialogContent.vue` 只留模板与样式，避免 SFC 超过 300 行的上限）：`protocol` / `form` / `saving` / `testing` / 校验 / `buildDraft()` / 测试连接 / 保存都在里面，新增内置字段只改这一个文件；插件连接的动态字段值在 `form.pluginConfig`，提交时按声明表全量（secret 字段留空不提交 = 保持已存）。
 - 协议无关的策略字段已全部下线：`modals/ConnectionPolicyField.vue` 随 NSFW 开关一起删除，连接弹窗只剩「怎么访问这份数据」的字段。刮削器在资料库表单里配置（`useScraperOptions` 仍被资料库表单复用，见[影视墙页面 · 资料库表单](./04-media-wall-page.md)）。
-- 本地磁盘的根目录字段由 `src/renderer/src/components/DirectoryPickerField.vue` 提供：输入框 + 「选择」按钮，按钮走 `dialogApi.open({ title, directory: true })` 选**本机绝对路径**（取消或失败都不改动原值），`ConnectionDialogContent.vue:53` 在 `protocol === 'local'` 分支里渲染它。资料库的媒体目录**不**走它——那里必须是连接内路径，改用资料库自己的 `RemoteDirDialog`（见[影视墙页面 · 表单](./04-media-wall-page.md)）。详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md)。
+- 本地磁盘的根目录字段由 `src/components/DirectoryPickerField.vue` 提供：输入框 + 「选择」按钮，按钮走 `dialogApi.open({ title, directory: true })` 选**本机绝对路径**（取消或失败都不改动原值），`ConnectionDialogContent.vue:53` 在 `protocol === 'local'` 分支里渲染它。资料库的媒体目录**不**走它——那里必须是连接内路径，改用资料库自己的 `RemoteDirDialog`（见[影视墙页面 · 表单](./04-media-wall-page.md)）。详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md)。
 - 协议在编辑态不可切换（连接协议是身份的一部分，改协议等于换连接）。
 - 密码草稿语义与主进程一致：**留空 = 沿用已存密码（`undefined`）**，填了就是新密码，显式清空才写空串；编辑时占位文案提示这一点，新建时提示「密码只写入本机钥匙串，不落明文」。
 - footer 左侧是「测试连接」，保存成功后由外壳关闭并触发列表刷新。
@@ -100,7 +100,7 @@ src/renderer/src/windows/main/pages/storage/
 
 ### 7.1 预览地址：`storage://` 的路径形式
 
-媒体 ID 形式的 `storage://{连接ID}/{媒体ID}/{文件名}` 只覆盖**已入库**的影片，存储页要预览的是任意磁盘文件，因此 `storage://` 增加了路径形式（公共纯函数在 `src/common/types/file/preview.ts`，主进程复核在 `src/main/src/modules/media/mediaProtocol.ts`）：
+媒体 ID 形式的 `storage://{连接ID}/{媒体ID}/{文件名}` 只覆盖**已入库**的影片，存储页要预览的是任意磁盘文件，因此 `storage://` 增加了路径形式（公共纯函数在 `src/common/types/file/preview.ts`，主进程复核在 `src-dashou/core/modules/media/mediaProtocol.ts`）：
 
 ```
 storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
@@ -119,13 +119,13 @@ storage://{连接ID}/path/{encodeURIComponent(连接内路径)}[?v=modifiedAt]
 
 - **NSFW**：`StorageBrowser.vue` 调 `useNsfwProtection()` 拿 `protection`（存储页没有资料库上下文，**只看应用设置里的总开关**），打开抽屉时把 `protection.value` 定格成 `protect` 并透传。视频由 `MediaPlayer` 的遮罩挡住，点击后才起播；图片走 `SensitiveImage` 的遮罩，点击后本实例放行。nfo 与其它文本不受影响。
 - **nfo**：`StorageNfoPreview.vue` 用 `t-tabs` 提供「解析字段 / 原始 XML」两个视图。解析视图用原生 `<dl>/<dt>/<dd>` 事实格，**按 NFO 自身的字段口径**列出（标题 / 番号 / 原名 / 发行日期 / 时长 / 片商 / 厂牌 / 系列 / 导演 / 演员 / 标签），**空字段直接不渲染**（不占位 `—`），`studio` 只在与片商不同的时候单列「制作」；剧情用只读 `t-textarea` 展示。这里是全应用唯一按 NFO 原文展示字段的地方——影视墙详情页只展示落库后的元信息，不再有按 NFO 口径排列的信息块（见[影视墙页面](./04-media-wall-page.md) §4）。`parseNfoXml` 只认带 `<movie>` 的 nfo，解析不出时提示「不是标准的 movie nfo」并引导切到原始 XML；原文读取失败用 `t-alert` 展示文件域的中文原因。
-- **播放器搬家**：`MediaPlayer.vue` 与 `mediaPlayerI18n.ts` 已从 `pages/media/detail/`（原来在 `detail/components/` 下）移到共用目录 `src/renderer/src/components/media/`，影视墙详情页与存储页预览共用同一个组件；搬家时新增 `fallbackText` prop（默认值仍是影视墙那套「……也可以在影视墙里对资料库重新扫描一次」的文案），封面 `alt` 从「影片封面」改成通用的「封面」。
+- **播放器搬家**：`MediaPlayer.vue` 与 `mediaPlayerI18n.ts` 已从 `pages/media/detail/`（原来在 `detail/components/` 下）移到共用目录 `src/components/media/`，影视墙详情页与存储页预览共用同一个组件；搬家时新增 `fallbackText` prop（默认值仍是影视墙那套「……也可以在影视墙里对资料库重新扫描一次」的文案），封面 `alt` 从「影片封面」改成通用的「封面」。
 
 ## 8. 弹窗与页面约定对齐
 
 - 本页两组命令式弹窗都按项目约定拆成 `.tsx` 外壳 + `.vue` 内容，外壳只做 `DialogPlugin` / `DrawerPlugin`、选项声明与 `footer`：`ConnectionDialog` 的 footer 用 JSX 渲染「测试连接 / 取消 / 保存」三个 `Button`；`StoragePreviewDrawer` 是只读预览，用 `footer: false`。
-- `ConnectionDialogContent.vue` 用 `emit('success', 载荷)` 回传结果、`emit('close')` 表达「内容自己要求关闭」，并用 `defineExpose` 把 `submit` / `saving` / `canSubmit` 交给外壳的模板 ref 读（契约见 `src/renderer/src/utils/modal/ModalContent.ts`）。
-- 组件声明由 `unplugin-vue-components` 在 `dev` / `build` 时重写进 **`src/renderer/components.d.ts`**（被 git 跟踪、也被 `tsconfig.web.json` 的 `include` 覆盖），本页用到的 `TBreadcrumb` / `TBreadcrumbItem` / `TTextarea` / `TEmpty` / `TAlert` / `TTabs` / `TTabPanel` / `TTooltip` 等都在里面。注意：`src/renderer/src/renderer/components.d.ts` 是一份带 `@ts-nocheck` 的**过期副本**，不要再往它里面手工补声明。
+- `ConnectionDialogContent.vue` 用 `emit('success', 载荷)` 回传结果、`emit('close')` 表达「内容自己要求关闭」，并用 `defineExpose` 把 `submit` / `saving` / `canSubmit` 交给外壳的模板 ref 读（契约见 `src/utils/modal/ModalContent.ts`）。
+- 组件声明由 `unplugin-vue-components` 在 `dev` / `build` 时重写进 **`src/renderer/components.d.ts`**（被 git 跟踪、也被 `tsconfig.web.json` 的 `include` 覆盖），本页用到的 `TBreadcrumb` / `TBreadcrumbItem` / `TTextarea` / `TEmpty` / `TAlert` / `TTabs` / `TTabPanel` / `TTooltip` 等都在里面。注意：`src/renderer/components.d.ts` 是一份带 `@ts-nocheck` 的**过期副本**，不要再往它里面手工补声明。
 
 ## 9. 手工验证清单
 

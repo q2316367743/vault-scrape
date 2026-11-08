@@ -6,7 +6,7 @@
  *   同一 `meta.id` 允许在不同类别里各存一份；
  * - `meta.id` 同时是插件源码的文件名（`<id>.js`），一个类别一个目录；
  * - 环境变量（账号、Cookie、站点地址等）由插件声明，取值落在
- *   `~/.vault-scrape/plugin/<类别>/plugins.json`，不并入 settings.json；
+ *   `<插件数据目录>/plugin/<类别>/plugins.json`，不并入 settings.json；
  * - 环境变量一律按敏感文本处理：safeStorage 加密落盘、取值只在设置页填写
  *   且不回显、界面只回「已填写 / 未填写」、明文永不跨 IPC。
  */
@@ -103,7 +103,7 @@ export type PluginEnvValue = Record<string, string>
 
 /**
  * 插件来源：
- * - `file`：用户导入 / 编辑的 `.js` 脚本，落盘在 `~/.vault-scrape/plugin/<类别>/<id>.js`；
+ * - `file`：用户导入 / 编辑的 `.js` 脚本，落盘在 `<插件数据目录>/plugin/<类别>/<id>.js`；
  * - `builtin`：随应用内置的原生实现（如 R18 离线数据包），索引里有记录（`builtin: true`）但没有源码文件，不可编辑、不可删除、不可被同名覆盖。
  */
 export type PluginSource = 'file' | 'builtin'
@@ -192,7 +192,7 @@ export interface PluginImportResult {
  * `plugins.json` 不再被加载；这里只做**只读**上报，由插件页提示用户重新导入。
  */
 export interface PluginLegacyNotice {
-  /** 插件根目录，如 `~/.vault-scrape/plugin` */
+  /** 插件根目录，如 `<插件数据目录>/plugin` */
   dir: string
   /** 残留的旧版脚本与索引文件（已按名排序；为空表示没有残留） */
   files: string[]

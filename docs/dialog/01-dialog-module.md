@@ -1,5 +1,10 @@
 # 系统对话框模块（dialog 域）
 
+> **插件化后的变化（2026-11)**：系统对话框改由 core 调 `ctx.dialog.open/save`，窗口通过 `src/api/dialog.ts` 的
+> 长任务通道调用；`dialog:open` / `dialog:save` 两个 IPC 通道已删除。用户在选择框内停留超过 30 秒会触发宿主超时，
+> 界面提示「选择超时，请重新选择。」。
+
+
 ## 1. 职责与边界
 
 渲染层需要「让用户从本机挑一个文件 / 目录 / 保存位置」时，统一走这个模块，主进程只做一件事：把 Electron `dialog` 的打开框与保存框收窄后暴露成一个域。
@@ -16,10 +21,10 @@
 | `src/common/types/dialog.ts` | 契约类型：入参选项与结果 |
 | `src/preload/src/modules/dialog/dialogChannels.ts` | 通道常量（main 与 preload 共用） |
 | `src/preload/src/modules/dialog/dialog.ts` | preload 桥 `dialogApi` 与 `DialogApi` 类型 |
-| `src/main/src/modules/dialog/dialogIpc.ts` | 入参收窄 + 调用 Electron `dialog` |
-| `src/main/src/registerIpc.ts` | 汇总注册（`registerDialogIpc()`） |
-| `src/renderer/src/api/dialog.ts` | 渲染层出口 `dialogApi` |
-| `src/renderer/src/components/DirectoryPickerField.vue` | 渲染层通用控件（消费方）：本机目录字段「输入框 + 选择按钮」，见 §6.1 |
+| `src-dashou/core/modules/dialog/dialogIpc.ts` | 入参收窄 + 调用 Electron `dialog` |
+| `src-dashou/core/registerIpc.ts` | 汇总注册（`registerDialogIpc()`） |
+| `src/api/dialog.ts` | 渲染层出口 `dialogApi` |
+| `src/components/DirectoryPickerField.vue` | 渲染层通用控件（消费方）：本机目录字段「输入框 + 选择按钮」，见 §6.1 |
 
 ## 3. IPC 通道
 
@@ -58,7 +63,7 @@ interface DialogResult { canceled: boolean; filePaths: string[] }
 
 ### 4.2 为什么不套 `PluginResult` / `FileResult` 信封
 
-信封是为「主进程业务可预期失败」设计的（见 `src/common/types/plugin/result.ts`、`src/common/types/file/result.ts`）。dialog 域只有「成功 / 取消」两态，没有任何业务失败需要编码成错误码，套信封只会让每次调用多一次解包。这与 `appWindow` 域的处理一致（`src/main/src/modules/appWindow/appWindowIpc.ts` 直接返回原始值）。
+信封是为「主进程业务可预期失败」设计的（见 `src/common/types/plugin/result.ts`、`src/common/types/file/result.ts`）。dialog 域只有「成功 / 取消」两态，没有任何业务失败需要编码成错误码，套信封只会让每次调用多一次解包。这与 `appWindow` 域的处理一致（`src-dashou/core/modules/appWindow/appWindowIpc.ts` 直接返回原始值）。
 
 ### 4.3 入参不可信：逐字段收窄、非法即回落
 
@@ -88,16 +93,16 @@ if (result.canceled || result.filePaths.length === 0) return
 form.rootPath = result.filePaths[0]
 ```
 
-渲染层只能从 `@/api` 取（`src/renderer/src/api/dialog.ts`），页面不直接读 `window.preload`。
+渲染层只能从 `@/api` 取（`src/api/dialog.ts`），页面不直接读 `window.preload`。
 
 ### 6.1 通用目录控件 `DirectoryPickerField.vue`
 
-`src/renderer/src/components/DirectoryPickerField.vue` 是本机目录的通用控件：**输入框 + 「选择」按钮**。
+`src/components/DirectoryPickerField.vue` 是本机目录的通用控件：**输入框 + 「选择」按钮**。
 
 | 文件 | 说明 |
 | --- | --- |
-| `src/renderer/src/components/DirectoryPickerField.vue` | 控件本体（props `modelValue` / `title` / `placeholder`，emit `update:modelValue`） |
-| `src/renderer/src/renderer/components.d.ts` | 手写的全局组件声明，两行（`GlobalComponents` 与 `declare global` 各一行） |
+| `src/components/DirectoryPickerField.vue` | 控件本体（props `modelValue` / `title` / `placeholder`，emit `update:modelValue`） |
+| `src/renderer/components.d.ts` | 手写的全局组件声明，两行（`GlobalComponents` 与 `declare global` 各一行） |
 
 | props | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
@@ -109,9 +114,9 @@ form.rootPath = result.filePaths[0]
 
 - 点「选择」调 `dialogApi.open({ title, directory: true })` 唤起**系统目录框**，把选中的**本机绝对路径**写回 `modelValue`；`result.canceled || !filePaths[0]` 时什么都不做，**取消或失败都不改动原值**；唤起失败时提示「打开系统选择框失败，请手动输入绝对路径」。
 - 打开选择框期间 `picking` 为真（按钮 loading），避免重复点击。
-- 它解决的是**本机路径**这一类字段。消费方有两处：存储页「本地磁盘」数据源的根目录字段（`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53` 的 `<directory-picker-field v-model="form.rootPath" class="form-control" title="选择根目录" placeholder="本机绝对路径，例如 /Users/you/Media" />`，只在 `protocol === 'local'` 分支里渲染，见[存储管理页面 §5](../page/02-storage-page.md)）与设置页的「演员图片目录」（`SettingAppPanel.vue` 的 `<directory-picker-field v-model="setting.actorImageDir" class="setting-field" title="选择演员图片目录" placeholder="留空使用默认位置" />`，见[设置项清单](../setting/02-setting-items.md)与[演员模块](../actor/01-actor-module.md)）。
-- 父级传入的 `class`（如 `.form-control` 的 `flex: 1`）会落到根元素上，无需额外样式；控件不感知任何业务字段，所以放在通用组件目录 `src/renderer/src/components/`。
-- 它的两行声明已在 `src/renderer/src/renderer/components.d.ts` 里（`declare module 'vue'` 的 `GlobalComponents` 与 `declare global` 各一行）；该文件只在 `dev` / `build` 时被 unplugin-vue-components 重写，而本仓库只跑 `typecheck`、不跑 `dev` / `build`，所以**提交物需手改**，详见 [../architecture/01-project-structure.md](../architecture/01-project-structure.md)。
+- 它解决的是**本机路径**这一类字段。消费方有两处：存储页「本地磁盘」数据源的根目录字段（`src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53` 的 `<directory-picker-field v-model="form.rootPath" class="form-control" title="选择根目录" placeholder="本机绝对路径，例如 /Users/you/Media" />`，只在 `protocol === 'local'` 分支里渲染，见[存储管理页面 §5](../page/02-storage-page.md)）与设置页的「演员图片目录」（`SettingAppPanel.vue` 的 `<directory-picker-field v-model="setting.actorImageDir" class="setting-field" title="选择演员图片目录" placeholder="留空使用默认位置" />`，见[设置项清单](../setting/02-setting-items.md)与[演员模块](../actor/01-actor-module.md)）。
+- 父级传入的 `class`（如 `.form-control` 的 `flex: 1`）会落到根元素上，无需额外样式；控件不感知任何业务字段，所以放在通用组件目录 `src/components/`。
+- 它的两行声明已在 `src/renderer/components.d.ts` 里（`declare module 'vue'` 的 `GlobalComponents` 与 `declare global` 各一行）；该文件只在 `dev` / `build` 时被 unplugin-vue-components 重写，而本仓库只跑 `typecheck`、不跑 `dev` / `build`，所以**提交物需手改**，详见 [../architecture/01-project-structure.md](../architecture/01-project-structure.md)。
 
 **资料库的媒体目录不用它**：媒体目录必须是**存储连接内的路径**（`/` 表示连接根，不能做本机换算），复用本机控件会选出一个库里根本不存在的本地路径。资料库表单因此用自己页面目录下的 `pages/media/library/components/RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`：对话框标题「选择媒体目录」，内容用 `fileApi.list({ connectionId, path })` **只列目录**，带面包屑与「上级目录」，点「选择当前目录」把当前路径回调出去。两者针对不同语义的路径，**并存是正确设计**（见 §8 的另注）。
 
@@ -119,7 +124,7 @@ form.rootPath = result.filePaths[0]
 
 | 位置 | 用法 |
 | --- | --- |
-| 存储 → 新建 / 编辑数据源 → 本地磁盘 → 根目录 | `<directory-picker-field v-model="form.rootPath" class="form-control" title="选择根目录" placeholder="本机绝对路径，例如 /Users/you/Media" />`（`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53`，仅 `protocol === 'local'` 分支），点「选择」选本机目录后写回 `rootPath`；取消不改原值 |
+| 存储 → 新建 / 编辑数据源 → 本地磁盘 → 根目录 | `<directory-picker-field v-model="form.rootPath" class="form-control" title="选择根目录" placeholder="本机绝对路径，例如 /Users/you/Media" />`（`src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53`，仅 `protocol === 'local'` 分支），点「选择」选本机目录后写回 `rootPath`；取消不改原值 |
 | 设置 → 应用设置 → 演员图片目录 | 同一个 `DirectoryPickerField.vue`（`SettingAppPanel.vue`），title「选择演员图片目录」、placeholder「留空使用默认位置」，写回 `app.actorImageDir` |
 | 演员详情页 → 导入图片 / 导入头像 | `dialogApi.open({ multiple: true, filters: [{ name: '图片', extensions: [...] }] })`（`ActorGalleryBlock.vue`）：导入图片可一次选多个，导入头像是单选（不传 `multiple`）；失败项由主进程逐条回报，不整体失败 |
 | （本机路径类字段的通用做法） | `dialogApi.open({ directory: true })`：`result.canceled || result.filePaths.length === 0` 时按「什么都不做」处理，否则写回 `result.filePaths[0]` |

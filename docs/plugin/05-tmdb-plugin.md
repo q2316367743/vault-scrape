@@ -295,12 +295,12 @@ actorAssets(name)  ─┘   否则 /search/person → /person/{id}?append_to_res
 | --- | --- |
 | `script/movie/tv/tmdb.js` | 影片信息插件本体（`kind: movie`；`script/` 被 gitignore，本机参考脚本） |
 | `script/actor/tmdb.js` | 演员信息插件本体（`kind: actor`，与影片插件互相独立） |
-| [src/main/src/modules/scrape/scrapeMatcher.ts](../../src/main/src/modules/scrape/scrapeMatcher.ts) | 候选匹配：影片番号 → 标题判定回落、剧集年份池 + 标题判定 |
-| [src/main/src/modules/scrape/scrapeJobPlan.ts](../../src/main/src/modules/scrape/scrapeJobPlan.ts) | 影片流水线的插件调用顺序（`search` → `detail` → `covers` / `extras`） |
-| [src/main/src/modules/scrape/scrapeSeriesJob.ts](../../src/main/src/modules/scrape/scrapeSeriesJob.ts) | 剧集流水线：分集对齐、逐集剧照落盘 |
+| [src-dashou/core/modules/scrape/scrapeMatcher.ts](../../src-dashou/core/modules/scrape/scrapeMatcher.ts) | 候选匹配：影片番号 → 标题判定回落、剧集年份池 + 标题判定 |
+| [src-dashou/core/modules/scrape/scrapeJobPlan.ts](../../src-dashou/core/modules/scrape/scrapeJobPlan.ts) | 影片流水线的插件调用顺序（`search` → `detail` → `covers` / `extras`） |
+| [src-dashou/core/modules/scrape/scrapeSeriesJob.ts](../../src-dashou/core/modules/scrape/scrapeSeriesJob.ts) | 剧集流水线：分集对齐、逐集剧照落盘 |
 | [src/common/types/plugin/movie.ts](../../src/common/types/plugin/movie.ts) | `PluginMovieCandidate` / `PluginMovieDetail` / `PluginEpisode` 契约 |
 | [src/common/types/plugin/normalize.ts](../../src/common/types/plugin/normalize.ts) | vm 返回值归一化与 `PLUGIN_LIST_LIMIT` 截断；演员资料 / 图片 kind 的白名单 |
-| [src/main/src/modules/actor/actorScrape.ts](../../src/main/src/modules/actor/actorScrape.ts) | 演员抓取流水线：调用插件、逐字段合并、头像 / 图集落盘 |
+| [src-dashou/core/modules/actor/actorScrape.ts](../../src-dashou/core/modules/actor/actorScrape.ts) | 演员抓取流水线：调用插件、逐字段合并、头像 / 图集落盘 |
 | [src/common/types/plugin/actor.ts](../../src/common/types/plugin/actor.ts) | `PluginActorDetail` 契约与 `PLUGIN_ACTOR_ASSET_KINDS` |
 | [docs/plugin/01-plugin-module.md](./01-plugin-module.md) | 插件协议本体（先读它） |
 | [docs/scrape/01-scrape-module.md](../scrape/01-scrape-module.md) | 刮削流水线与候选匹配口径 |

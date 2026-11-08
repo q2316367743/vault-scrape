@@ -1,10 +1,10 @@
 /**
  * 存储页媒体预览的地址契约。
  *
- * 背景：`storage://` 媒体地址只认媒体 ID（影视墙入库的内容），而存储页要预览的是
+ * 背景：本机媒体地址只认媒体 ID（影视墙入库的内容），而存储页要预览的是
  * 「连接内任意路径」的文件，因此这里额外定义一条只读的路径形式：
  *
- * `storage://{连接ID}/path/{encodeURIComponent(连接内路径)}`（可选 `?v=修改时间`）
+ * 媒体基地址 + `{连接ID}/path/{encodeURIComponent(连接内路径)}`（可选 `?v=修改时间`）
  *
  * 契约：
  * - 地址由本文件的纯函数构造，三端共用；渲染层不拼字符串；
@@ -12,7 +12,7 @@
  *   越界、不存在、不是文件一律 404 —— 渲染层拿不到任何越权内容；
  * - `?v=` 只用于换文件后绕过缓存，内容以主进程实读为准。
  */
-import { MEDIA_URL_PREFIX, mediaSourceKindOf, type MediaSourceKind } from '../media/source'
+import { mediaBaseUrl, mediaSourceKindOf, type MediaSourceKind } from '../media/source'
 import { FILE_ROOT, normalizeRemotePath } from './path'
 
 /** 预览种类：在媒体源种类之外补一个音频（音频不属于影视墙的媒体源分类） */
@@ -40,16 +40,17 @@ export function filePreviewKindOf(mime: string, extname: string): FilePreviewKin
 
 /** 构造只读预览地址；`modifiedAt` 大于 0 时带上缓存击穿参数 */
 export function buildFilePreviewUrl(connectionId: string, path: string, modifiedAt = 0): string {
-  const url = `${MEDIA_URL_PREFIX}${connectionId}/${FILE_PREVIEW_SEGMENT}/${encodeURIComponent(path)}`
+  const url = `${mediaBaseUrl()}${connectionId}/${FILE_PREVIEW_SEGMENT}/${encodeURIComponent(path)}`
   return modifiedAt > 0 ? `${url}?v=${modifiedAt}` : url
 }
 
 /** 解析只读预览地址；不是路径预览（含越界路径）一律返回 null */
 export function parseFilePreviewUrl(url: string): FilePreviewTarget | null {
-  if (!url.startsWith(MEDIA_URL_PREFIX)) return null
+  const base = mediaBaseUrl()
+  if (!url.startsWith(base)) return null
 
   const parts = url
-    .slice(MEDIA_URL_PREFIX.length)
+    .slice(base.length)
     .split('?')[0]
     .split('#')[0]
     .split('/')

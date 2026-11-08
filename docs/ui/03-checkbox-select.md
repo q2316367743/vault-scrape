@@ -4,7 +4,7 @@
 
 资料库表单的「刮削器」原来是 `t-transfer` 穿梭框：左右两栏 + 中间按钮，占地方、层级重，和 Fluent 风格的表单行也不协调。改成一个**单栏多选控件**——外框里上面是搜索框、下面是可滚动的 checkbox 列表，点行即勾选 / 取消。
 
-控件是通用表单控件（不依赖任何业务类型），所以按组件存放规则放在 `src/renderer/src/components/CheckboxSelect.vue`，调用方用文件路径显式 import。
+控件是通用表单控件（不依赖任何业务类型），所以按组件存放规则放在 `src/components/CheckboxSelect.vue`，调用方用文件路径显式 import。
 
 ```vue
 <checkbox-select v-model="scrapers" :options="scraperSelectOptions" placeholder="搜索刮削器" />
@@ -45,8 +45,8 @@
 
 ## 使用方
 
-- `src/renderer/src/windows/main/pages/media/library/components/LibraryFormContent.vue` 的「刮削器」字段：`v-model` 直接绑 `useLibraryForm` 的 `scrapers`（`Ref<string[]>`）。候选项 `scraperSelectOptions` = `useScraperOptions` 的可用插件 + `staleScrapers` 计算的失效 id（失效项 label 追加「（已失效）」，取消勾选即从配置里丢弃），逻辑与原来一致，只换了控件。
-- 随 `t-transfer` 下线，`src/renderer/components.d.ts` 与 `src/renderer/src/renderer/components.d.ts` 里手工补的 `TTransfer` 声明一并删除。
+- `src/windows/main/pages/media/library/components/LibraryFormContent.vue` 的「刮削器」字段：`v-model` 直接绑 `useLibraryForm` 的 `scrapers`（`Ref<string[]>`）。候选项 `scraperSelectOptions` = `useScraperOptions` 的可用插件 + `staleScrapers` 计算的失效 id（失效项 label 追加「（已失效）」，取消勾选即从配置里丢弃），逻辑与原来一致，只换了控件。
+- 随 `t-transfer` 下线，`src/renderer/components.d.ts` 与 `src/renderer/components.d.ts` 里手工补的 `TTransfer` 声明一并删除。
 
 ## 注意事项
 

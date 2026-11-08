@@ -98,12 +98,12 @@ env: [
 | --- | --- |
 | `src/common/types/plugin/storage.ts` | 契约类型（入参 / 返回形状） |
 | `src/common/types/plugin/normalize.ts` | 三个方法返回值的跨 realm 归一化 |
-| `src/main/src/modules/plugin/pluginRuntime.ts` | `buildStoragePlugin`：方法表校验、宿主 realm 重建、返回值归一化 |
-| `src/main/src/modules/plugin/pluginRegistry.ts` | `invokeStorageMethod(id, method, input, env)`：主进程内部调用入口（对象入参、env 来自连接、按 method 收窄返回类型） |
-| `src/main/src/modules/file/impl/plugin/PluginFileClient.ts` | `FileClient` 实现：元数据走插件、直链缓存、readRange/readText/download 宿主实现、写操作 unsupported |
-| `src/main/src/modules/file/impl/plugin/directLinkStream.ts` | 直链字节流（Range / 重定向 / 失效判定） |
-| `src/main/src/modules/file/fileClientManager.ts` | 工厂：内置三协议之外一律按插件 id 构造 `PluginFileClient` |
-| `src/main/src/modules/file/fileConnectionStore.ts` | 插件连接落盘：`config`（明文）+ `secrets`（密文），声明表来自 `storagePlugins.readPluginEnv` |
+| `src-dashou/core/modules/plugin/pluginRuntime.ts` | `buildStoragePlugin`：方法表校验、宿主 realm 重建、返回值归一化 |
+| `src-dashou/core/modules/plugin/pluginRegistry.ts` | `invokeStorageMethod(id, method, input, env)`：主进程内部调用入口（对象入参、env 来自连接、按 method 收窄返回类型） |
+| `src-dashou/core/modules/file/impl/plugin/PluginFileClient.ts` | `FileClient` 实现：元数据走插件、直链缓存、readRange/readText/download 宿主实现、写操作 unsupported |
+| `src-dashou/core/modules/file/impl/plugin/directLinkStream.ts` | 直链字节流（Range / 重定向 / 失效判定） |
+| `src-dashou/core/modules/file/fileClientManager.ts` | 工厂：内置三协议之外一律按插件 id 构造 `PluginFileClient` |
+| `src-dashou/core/modules/file/fileConnectionStore.ts` | 插件连接落盘：`config`（明文）+ `secrets`（密文），声明表来自 `storagePlugins.readPluginEnv` |
 | `src/renderer/.../storage/composables/useStoragePlugins.ts` | 渲染层：已启用插件列表、字段声明拉取、插件名映射 |
 
 ## 7. 本期不做（后续项）

@@ -13,7 +13,7 @@
 
 | 文件 | 说明 |
 | --- | --- |
-| `src/main/src/modules/http/httpClient.ts` | axios 单例、请求拦截器、代理地址解析与告警去重 |
+| `src-dashou/core/modules/http/httpClient.ts` | axios 单例、请求拦截器、代理地址解析与告警去重 |
 
 无 IPC、无 preload、无渲染层改动。
 
@@ -67,7 +67,7 @@ import { httpClient } from '$/modules/http/httpClient'
 const response = await httpClient.request<string>({ url, method: 'GET', timeout: 20_000 })
 ```
 
-- 目前唯一接入方是插件域的宿主 HTTP：`src/main/src/modules/plugin/pluginHost.ts`（`ctx.request`）；
+- 目前唯一接入方是插件域的宿主 HTTP：`src-dashou/core/modules/plugin/pluginHost.ts`（`ctx.request`）；
 - WebDAV / SMB 文件域走各自 SDK 的连接逻辑，暂未经过本模块。
 
 ## 7. 注意事项

@@ -26,7 +26,7 @@
 
 - 契约类型：`src/common/types/library/index.ts` 的 `LibraryType = 'movie' | 'tv'`；`LIBRARY_TYPES` 是资料库表单类型选项的来源，`LIBRARY_TYPE_LABELS`（`tv: '剧集'`）与 `libraryTypeLabel` 负责展示文案。
 - 库级选项 `type` 建库后不可修改（同 `data/01`）；`MediaLibrarySummary.videoCount` 的口径随库类型走 —— **影视库数影片、剧集库数剧集（整部剧集算一条）**。
-- **分派收口在 `src/main/src/modules/library/libraryScrapeDispatch.ts`**（文件头明写「库类型判断收口在这里」）：`isTvLibrary(libraryId) = requireLibrary(libraryId).type === 'tv'`，三个入口按库类型二选一：
+- **分派收口在 `src-dashou/core/modules/library/libraryScrapeDispatch.ts`**（文件头明写「库类型判断收口在这里」）：`isTvLibrary(libraryId) = requireLibrary(libraryId).type === 'tv'`，三个入口按库类型二选一：
 
   | 入口 | 剧集版（`libraryScrape.ts`） | 影片版 |
   | --- | --- | --- |
@@ -39,7 +39,7 @@
 
 ## 3. 扫描：三层条目怎么建
 
-引擎是 `src/main/src/modules/media/mediaSeriesIndexer.ts`（`indexSeriesLibraryPath`），入口在 `libraryScan.ts:73` 的 `scanLibrary`：
+引擎是 `src-dashou/core/modules/media/mediaSeriesIndexer.ts`（`indexSeriesLibraryPath`），入口在 `libraryScan.ts:73` 的 `scanLibrary`：
 
 ```ts
 const isTv = library.type === 'tv'
@@ -77,12 +77,12 @@ const isTv = library.type === 'tv'
   6. 全都不中就返回 `null` → 文件不入库，计入 `skippedVideos`。
 
 - **多集文件**（`S01E01E02`、`S01E01-E02`）按**第一集**处理（第 1 条规则先命中）。
-- **两列落在 `media_item` 上**：季号写 `media_item.season_number`、集号写 `media_item.episode_number`（`src/main/src/db/schema/mediaItem.ts`）。这两列由增量迁移 `resources/drizzle/0001_familiar_lifeguard.sql`（`ALTER TABLE media_item ADD season_number` / `ADD episode_number`，都 `DEFAULT 0 NOT NULL`）引入；`movie` / `folder` / `series` 两列恒 0，`season` 只用 `season_number`（特别篇 0），`episode` 两列都有值（`episode_number` 从 1 开始，`season_number = 0` 表示特别篇）。基线 `0000_moaning_black_panther.sql` 里 `media_item` 是 26 列，加完这两列是 28 列；另有与剧集无关的 `0002_soft_masked_marvel.sql`（`maker` / `label` / `series` / `director` 四列，详情页元信息落库，见[数据存储](../data/01-sqlite-storage.md)），加完是 32 列。
+- **两列落在 `media_item` 上**：季号写 `media_item.season_number`、集号写 `media_item.episode_number`（`src-dashou/core/db/schema/mediaItem.ts`）。这两列由增量迁移 `resources/drizzle/0001_familiar_lifeguard.sql`（`ALTER TABLE media_item ADD season_number` / `ADD episode_number`，都 `DEFAULT 0 NOT NULL`）引入；`movie` / `folder` / `series` 两列恒 0，`season` 只用 `season_number`（特别篇 0），`episode` 两列都有值（`episode_number` 从 1 开始，`season_number = 0` 表示特别篇）。基线 `0000_moaning_black_panther.sql` 里 `media_item` 是 26 列，加完这两列是 28 列；另有与剧集无关的 `0002_soft_masked_marvel.sql`（`maker` / `label` / `series` / `director` 四列，详情页元信息落库，见[数据存储](../data/01-sqlite-storage.md)），加完是 32 列。
 - **集条目的归属**：季目录里的集 `parent_id = 季条目`；剧集目录里直接放的集 `parent_id = 剧集条目`，但 `seasonNumber` 仍是真实季号 —— **读取侧（`mediaSeriesRepo.seriesStatsOf` / `loadSeriesDetail`）必须把这两种都算进同一季**。
 
 ### 3.3 确定性 ID 与「同类型」认领
 
-条目层（ID / 认领 / 写入）都在 `src/main/src/modules/media/mediaSeriesItems.ts`，`mediaSeriesIndexer.ts` 只管目录遍历、图片归属与清理。
+条目层（ID / 认领 / 写入）都在 `src-dashou/core/modules/media/mediaSeriesItems.ts`，`mediaSeriesIndexer.ts` 只管目录遍历、图片归属与清理。
 
 ```ts
 seriesItemId(libraryId, connectionId, dirPath)                  // sha1('series\n' + libraryId + '\n' + connectionId + '\n' + dirPath)
@@ -107,7 +107,7 @@ episodeItemId(connectionId, path)                               // sha1('episode
 
 ### 4.1 候选与入口
 
-`src/main/src/modules/library/libraryScrape.ts` 的文件头写明两条候选口径：
+`src-dashou/core/modules/library/libraryScrape.ts` 的文件头写明两条候选口径：
 
 - **影片库**：候选是视频文件（`scrapedAt === 0` **且 `has_nfo = 0`** 的 `movie` 条目，有 NFO 的视为已刮过、只能详情页手动刮），关键词按文件名解析番号、做体积过滤（`minFileSizeMb`）、按「同目录 + 同番号」去重；
 - **剧集库**：候选是**剧集目录**（`scrapedAt === 0` **且 `has_nfo = 0`** 的 `series` 条目，`listPendingSeriesItems`；剧集目录下已有 `tvshow.nfo` 的整部剧只在详情页手动刮），`collectSeriesCandidates` 组装：
@@ -122,7 +122,7 @@ episodeItemId(connectionId, path)                               // sha1('episode
 
 - 计划与调度沿用影片那套：`planSeriesLibraryScrape` 用 `pickBestGroup` 按 `(connectionId, owningPath)` 分组、取条目最多的一组，一次只跑一组；空计划报 `LibraryError('notFound', '资料库里没有待刮削的剧集')`，`startSeriesLibraryScrapeByIds([])` 报 `invalidArgument('请至少选择一个待刮削的剧集')`。
 - `scrapeRunner.ts:213-263` 的 `runFiles(..., isSeries)`：任务行 `dirPath = isSeries ? item.path : dirnameRemotePath(item.path)`（**剧集的任务行 path 就是剧集目录**），随后 `isSeries ? runSeriesJob(...) : runFileJob(...)`。
-- 剧集入口是 `src/main/src/modules/scrape/scrapeSeriesJob.ts` 的 `runSeriesJob(context)`（412 行），纯 IO 辅助拆到 `src/main/src/modules/scrape/scrapeSeriesAssets.ts`（120 行）。
+- 剧集入口是 `src-dashou/core/modules/scrape/scrapeSeriesJob.ts` 的 `runSeriesJob(context)`（412 行），纯 IO 辅助拆到 `src-dashou/core/modules/scrape/scrapeSeriesAssets.ts`（120 行）。
 
 ### 4.2 流水线八步（`runSeriesJob`）
 
@@ -177,7 +177,7 @@ episodeItemId(connectionId, path)                               // sha1('episode
 | `PluginMovieDetail.genres?` | 同上 | 剧集 NFO 的 `<genre>` 用它（影片只写 tags）；`metadataOf` 改用 `detail.genres ?? []` |
 | `PluginEpisode{ id?, season?, index, title?, plot?, duration?, releaseDate? }` | 同上 | `season` 从 1 开始、0 表示特别篇、缺省按第 1 季；`index` 是季内序号；`plot` 是分集简介（剧集 NFO 的 `<plot>` 与详情页简介用它） |
 | `normalizeEpisode` 的 `plot` | `src/common/types/plugin/normalize.ts` | 归一化时保留 `plot` |
-| `readDetail` 读 `<plot>` | `src/main/src/modules/scrape/scrapePluginData.ts` | 把 `<plot>` 读进 `episode.plot` |
+| `readDetail` 读 `<plot>` | `src-dashou/core/modules/scrape/scrapePluginData.ts` | 把 `<plot>` 读进 `episode.plot` |
 
 ## 5. 命名与产物形态
 
@@ -236,7 +236,7 @@ NFO 与还原记录：
 - `MediaDetailResult.seasons: MediaSeasonRef[]`：**只放有媒体源、能播的集**（`loadSeriesDetail` 里 `if (!source) continue`）；影片恒为 `[]`。
 - `MediaClearNfoResult.removedDirs: string[]`（剧集会有多个季 / 集目录，见 §8）。
 
-主进程读取（`src/main/src/modules/media/mediaWall.ts`）：
+主进程读取（`src-dashou/core/modules/media/mediaWall.ts`）：
 
 - `loadMediaWall` 按 `library.type === 'tv'` 走 `listSeriesItems(library.id)` + `seriesStatsOf(library.id)` + `toSeriesWallItem`；影片库走「条目 + 主源」。空 `libraryId` 遍历所有库。
 - `loadWallItems(itemIds)` 影片与剧集都认（`item.type === 'series'` 时用 `seriesStatsOfOne`）。
@@ -247,7 +247,7 @@ NFO 与还原记录：
   - 集标题：`episode.scrapedAt > 0 && episode.name.length > 0 ? name : '第 N 集'`；
   - 播放地址：`buildMediaUrl(source.connectionId, source.id, source.name)`（即 `storage://` 形式，与影片一致）。
 - `loadMediaDetail` 先判 `item.type === 'series'` → `loadSeriesDetail`；`type` 既不是 `movie` 也不是 `series`（季 / 集直接来查）一律 `notFound`；影片返回值补 `seasons: []`。
-- 目录浏览块（`owningPath` / `movieSubtree` / `toBrowseEntry` / `compareBrowse` / `browseLibrary`）已拆到**新文件** `src/main/src/modules/media/mediaBrowse.ts`，**只认影片库** —— 渲染层目前没有剧集库的目录浏览入口。
+- 目录浏览块（`owningPath` / `movieSubtree` / `toBrowseEntry` / `compareBrowse` / `browseLibrary`）已拆到**新文件** `src-dashou/core/modules/media/mediaBrowse.ts`，**只认影片库** —— 渲染层目前没有剧集库的目录浏览入口。
 - `libraryStore.ts`：`coverUrlsOf(library)` 与 `listSummaries().videoCount` 按库类型分派 `listSeriesItems` / `countSeriesItems` 或影片版。
 
 ## 7. UI
@@ -256,12 +256,12 @@ NFO 与还原记录：
 
 | 位置 | 剧集口径 |
 | --- | --- |
-| `src/renderer/src/components/media/MediaWallCard.vue` | 剧集卡多一枚「N 季 M 集」标签（`episodeSummary`），**不显示番号**；`alt` 按类型分说（`剧集封面` / `影片封面`） |
+| `src/components/media/MediaWallCard.vue` | 剧集卡多一枚「N 季 M 集」标签（`episodeSummary`），**不显示番号**；`alt` 按类型分说（`剧集封面` / `影片封面`） |
 | `home/components/LibraryCard.vue` | 摘要「剧集 N 部」/「影片 N 部」 |
 | `library/components/LibraryListItem.vue` | 「还没有剧集」/「剧集 N 部」 |
 | `wall/MediaWallPage.vue` | 标题空库时「影视墙」、描述与空态用「影片」/「剧集」（`noun = libraryType === 'tv' ? '剧集' : '影片'`）；路由 query 变化时重查库名与类型 |
 
-### 7.2 详情页（`src/renderer/src/windows/main/pages/media/detail/`）
+### 7.2 详情页（`src/windows/main/pages/media/detail/`）
 
 - `composables/useEpisodeSelection.ts`（新文件，43 行）：`{ seasons, activeId, activeEpisode, playUrl, poster, select }`。
   - `seasons` 直接取 `detail.seasons`（影片是空数组）；`episodes` 是各季拉平；
@@ -275,13 +275,13 @@ NFO 与还原记录：
 
 ## 8. 还原刮削前（清除 NFO）
 
-入口 `src/main/src/modules/media/mediaClearNfo.ts`（分派器）：
+入口 `src-dashou/core/modules/media/mediaClearNfo.ts`（分派器）：
 
 - 空 id → `MediaError('invalidArgument', '缺少条目 ID')`；条目不存在 → `notFound('索引里没有这个条目')`；
 - `type === 'series'` → `clearSeriesNfo`（`mediaClearSeriesNfo.ts`）；`type !== 'movie'`（季 / 集）→ `notFound('索引里没有这部影片')`；其余 → `clearMovieNfo`；
 - `MediaClearNfoResult.removedDir: string` 已改成 **`removedDirs: string[]`**（剧集会有多个季 / 集目录）。
 
-公共工具抽到**新文件** `src/main/src/modules/media/mediaClearShared.ts`：`SERIES_NFO_NAME` / `SEASON_NFO_NAME` / `PlantedRestore` / `openClient` / `readRestore` / `removeNfoFiles` / `existsOrTrue` / `moveFile` / `restorePlantedFiles` / `libraryRoots` / `removeEmptyDir(client, dirPath, keep)`。
+公共工具抽到**新文件** `src-dashou/core/modules/media/mediaClearShared.ts`：`SERIES_NFO_NAME` / `SEASON_NFO_NAME` / `PlantedRestore` / `openClient` / `readRestore` / `removeNfoFiles` / `existsOrTrue` / `moveFile` / `restorePlantedFiles` / `libraryRoots` / `removeEmptyDir(client, dirPath, keep)`。
 
 `clearSeriesNfo(item)` 的顺序固定为「**剧集根 → 逐季 → 逐集**」，每层都是「读记录 → 删 NFO → 还原资源 → 搬回文件」：
 
@@ -305,29 +305,29 @@ NFO 与还原记录：
 | `src/common/types/scrape/naming.ts` | `renderSeasonFolderName` / `renderEpisodeTemplate` / `padNumber` |
 | `src/common/types/scrape/tvNfo.ts` | `buildTvShowNfoXml` / `buildSeasonNfoXml` / `buildEpisodeNfoXml` |
 | `src/common/types/scrape/nfo.ts` | 还原记录写入 `appendRestore` / 读回 `parseNfoRestore` |
-| `src/main/src/db/schema/mediaItem.ts` | `media_item` 的 drizzle schema：`type` 收 `series` / `season` / `episode`，新增 `season_number` / `episode_number` 两列 |
+| `src-dashou/core/db/schema/mediaItem.ts` | `media_item` 的 drizzle schema：`type` 收 `series` / `season` / `episode`，新增 `season_number` / `episode_number` 两列 |
 | `resources/drizzle/0001_familiar_lifeguard.sql` | 剧集增量迁移：给 `media_item` 加 `season_number` / `episode_number`（基线是 `0000_moaning_black_panther.sql`） |
-| `src/main/src/modules/library/libraryScrapeDispatch.ts` | 按库类型分派三个入口（唯一判断点 `isTvLibrary`） |
-| `src/main/src/modules/library/libraryScan.ts` | 扫描编排：`isTv` 二选一走剧集索引 / 清理，`skippedVideos` 提示 |
-| `src/main/src/modules/library/libraryScrape.ts` | 剧集候选 `collectSeriesCandidates` / `pendingSeriesEntries` / `planSeriesLibraryScrape` / `startSeriesLibraryScrape(ByIds)` |
-| `src/main/src/modules/library/libraryStore.ts` | `coverUrlsOf` / `listSummaries().videoCount` 按库类型分派 |
-| `src/main/src/modules/media/mediaSeriesItems.ts` | 剧集条目层：`seriesItemId` / `seasonItemId` / `episodeItemId` / `findOwnedItem` 认领、`ensureSeriesItem` / `ensureSeasonItem` / `indexEpisode`（多版本合成一集） |
-| `src/main/src/modules/media/mediaSeriesIndexer.ts` | 剧集目录遍历 `indexSeriesLibraryPath`、图片归属 `indexSeriesImages`、`cleanupSeriesUnseen` |
-| `src/main/src/modules/media/mediaNfoScan.ts` | 扫描期 NFO：`collectNfoBases` / `hasNfoEvidence` / `importMovieNfo` / `importSeriesNfo` / `importSeasonNfo` / `importEpisodeNfo` |
-| `src/main/src/db/repo/mediaSeriesRepo.ts` | `SeriesItemStats` / `EMPTY_SERIES_STATS` / `listSeriesItems` / `listPendingSeriesItems` / `countSeriesItems` / `listSeasonItems` / `listEpisodeItems` / `seriesStatsOf` / `seriesStatsOfOne` / `replacePathPrefix` / `SeriesEpisodeFile` / `listSeriesEpisodes` |
-| `src/main/src/modules/media/mediaWall.ts` | `toSeriesWallItem` / `readNfoInDir` / `loadSeriesDetail` / `loadWallItems` 认 series |
-| `src/main/src/modules/media/mediaBrowse.ts` | 目录浏览块（**只认影片库**） |
-| `src/main/src/modules/media/mediaClearNfo.ts` | 还原分派器 + `clearMovieNfo` |
-| `src/main/src/modules/media/mediaClearSeriesNfo.ts` | `clearSeriesNfo`（剧集三步还原） |
-| `src/main/src/modules/media/mediaClearShared.ts` | 还原公共工具（NFO 名常量、`readRestore`、`restorePlantedFiles`、`removeEmptyDir`…） |
-| `src/main/src/modules/scrape/scrapeSeriesJob.ts` | `runSeriesJob` 剧集任务入口 + 产物命名常量 |
-| `src/main/src/modules/scrape/scrapeSeriesAssets.ts` | `indexRemoteEpisodes` / `landAssets` / `imagesOf` / `pruneEmptyDirs` |
-| `src/main/src/modules/scrape/scrapeJobApply.ts` | `metadataOf`（`detail.genres ?? []`）、`mergeRestoreFiles`、`carryRestore`、`refreshSourcePath`（单文件条目）、`refreshItemDir`（目录型条目：条目 `path` 换成新目录 + 逐源重算路径） |
-| `src/main/src/modules/scrape/scrapeJobPlan.ts` | `collectFromPlugins`（第三参 `pick`，剧集传 `pickSeriesCandidate`） |
-| `src/main/src/modules/scrape/scrapeMatcher.ts` | `pickSeriesCandidate` |
-| `src/renderer/src/components/media/MediaWallCard.vue` | 剧集卡「N 季 M 集」标签 |
-| `src/renderer/src/windows/main/pages/media/detail/` | `composables/useEpisodeSelection.ts`、`components/MediaEpisodeList.vue`、`MediaDetailPage.vue`、`useDetailView.ts`、`mediaDetailCells.ts`、`MediaDetailHero.vue` |
-| `src/renderer/src/windows/main/pages/media/{home,library,wall}/…` | 库摘要与墙面文案按 `library.type` 分说 |
+| `src-dashou/core/modules/library/libraryScrapeDispatch.ts` | 按库类型分派三个入口（唯一判断点 `isTvLibrary`） |
+| `src-dashou/core/modules/library/libraryScan.ts` | 扫描编排：`isTv` 二选一走剧集索引 / 清理，`skippedVideos` 提示 |
+| `src-dashou/core/modules/library/libraryScrape.ts` | 剧集候选 `collectSeriesCandidates` / `pendingSeriesEntries` / `planSeriesLibraryScrape` / `startSeriesLibraryScrape(ByIds)` |
+| `src-dashou/core/modules/library/libraryStore.ts` | `coverUrlsOf` / `listSummaries().videoCount` 按库类型分派 |
+| `src-dashou/core/modules/media/mediaSeriesItems.ts` | 剧集条目层：`seriesItemId` / `seasonItemId` / `episodeItemId` / `findOwnedItem` 认领、`ensureSeriesItem` / `ensureSeasonItem` / `indexEpisode`（多版本合成一集） |
+| `src-dashou/core/modules/media/mediaSeriesIndexer.ts` | 剧集目录遍历 `indexSeriesLibraryPath`、图片归属 `indexSeriesImages`、`cleanupSeriesUnseen` |
+| `src-dashou/core/modules/media/mediaNfoScan.ts` | 扫描期 NFO：`collectNfoBases` / `hasNfoEvidence` / `importMovieNfo` / `importSeriesNfo` / `importSeasonNfo` / `importEpisodeNfo` |
+| `src-dashou/core/db/repo/mediaSeriesRepo.ts` | `SeriesItemStats` / `EMPTY_SERIES_STATS` / `listSeriesItems` / `listPendingSeriesItems` / `countSeriesItems` / `listSeasonItems` / `listEpisodeItems` / `seriesStatsOf` / `seriesStatsOfOne` / `replacePathPrefix` / `SeriesEpisodeFile` / `listSeriesEpisodes` |
+| `src-dashou/core/modules/media/mediaWall.ts` | `toSeriesWallItem` / `readNfoInDir` / `loadSeriesDetail` / `loadWallItems` 认 series |
+| `src-dashou/core/modules/media/mediaBrowse.ts` | 目录浏览块（**只认影片库**） |
+| `src-dashou/core/modules/media/mediaClearNfo.ts` | 还原分派器 + `clearMovieNfo` |
+| `src-dashou/core/modules/media/mediaClearSeriesNfo.ts` | `clearSeriesNfo`（剧集三步还原） |
+| `src-dashou/core/modules/media/mediaClearShared.ts` | 还原公共工具（NFO 名常量、`readRestore`、`restorePlantedFiles`、`removeEmptyDir`…） |
+| `src-dashou/core/modules/scrape/scrapeSeriesJob.ts` | `runSeriesJob` 剧集任务入口 + 产物命名常量 |
+| `src-dashou/core/modules/scrape/scrapeSeriesAssets.ts` | `indexRemoteEpisodes` / `landAssets` / `imagesOf` / `pruneEmptyDirs` |
+| `src-dashou/core/modules/scrape/scrapeJobApply.ts` | `metadataOf`（`detail.genres ?? []`）、`mergeRestoreFiles`、`carryRestore`、`refreshSourcePath`（单文件条目）、`refreshItemDir`（目录型条目：条目 `path` 换成新目录 + 逐源重算路径） |
+| `src-dashou/core/modules/scrape/scrapeJobPlan.ts` | `collectFromPlugins`（第三参 `pick`，剧集传 `pickSeriesCandidate`） |
+| `src-dashou/core/modules/scrape/scrapeMatcher.ts` | `pickSeriesCandidate` |
+| `src/components/media/MediaWallCard.vue` | 剧集卡「N 季 M 集」标签 |
+| `src/windows/main/pages/media/detail/` | `composables/useEpisodeSelection.ts`、`components/MediaEpisodeList.vue`、`MediaDetailPage.vue`、`useDetailView.ts`、`mediaDetailCells.ts`、`MediaDetailHero.vue` |
+| `src/windows/main/pages/media/{home,library,wall}/…` | 库摘要与墙面文案按 `library.type` 分说 |
 
 ## 10. 注意事项与已知限制
 

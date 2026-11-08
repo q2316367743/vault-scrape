@@ -27,38 +27,38 @@
 | `src/common/types/setting/librarySetting.ts` | `SettingLibrary.extensions`、`DEFAULT_LIBRARY_EXTENSIONS`、`LIBRARY_EXTENSION_LIMIT`、`normalizeExtensionList()`、`libraryExtensionsOf()` |
 | `src/common/types/plugin/builtin.ts` | `R18_OFFLINE_PLUGIN_ID = 'r18-offline'`（内置 R18 离线数据包，唯一一份） |
 | `src/common/types/file/path.ts` | 连接内路径工具：`FILE_ROOT`、`normalizeRemotePath`、`isRemotePathInside()`（重叠判定）、`dirnameRemotePath()` 等 |
-| `src/main/src/db/schema/library.ts` | `library` / `library_path` 表定义 |
-| `src/main/src/db/repo/libraryRepo.ts` | 资料库仓储（`isSameOrInsidePath`、`findLibraryByPath`、行级增删改） |
-| `src/main/src/modules/library/libraryStore.ts` | 校验与增删改、**`normalizePaths()` 重叠规则**、库摘要（含 `coverUrlsOf()`）、按存储级联清理 |
-| `src/main/src/modules/library/libraryScan.ts` | 扫描编排：单例互斥、取消、清理、**按库类型取后缀**、自动刮削四分支 |
-| `src/main/src/modules/library/libraryScrape.ts` | 待刮削候选、同目录同番号去重、按目录分组启动任务、空刮削器拒绝；剧集版候选 `collectSeriesCandidates` / `pendingSeriesEntries` / `startSeriesLibraryScrape(ByIds)` 也在这里（剧集之间不去重、不做体积过滤） |
-| `src/main/src/modules/library/libraryScrapeDispatch.ts` | **按库类型分派**三个入口（`isTvLibrary` 是唯一判断点）：tv → 剧集版候选 / 启动，否则影片版；`libraryScan` / `libraryIpc` / `scrapeIpc` 三个调用点都走它 |
-| `src/main/src/modules/library/libraryIpc.ts` | `library:*` 通道注册与入参收窄 |
-| `src/main/src/modules/library/libraryEvents.ts` | 扫描进度广播 |
+| `src-dashou/core/db/schema/library.ts` | `library` / `library_path` 表定义 |
+| `src-dashou/core/db/repo/libraryRepo.ts` | 资料库仓储（`isSameOrInsidePath`、`findLibraryByPath`、行级增删改） |
+| `src-dashou/core/modules/library/libraryStore.ts` | 校验与增删改、**`normalizePaths()` 重叠规则**、库摘要（含 `coverUrlsOf()`）、按存储级联清理 |
+| `src-dashou/core/modules/library/libraryScan.ts` | 扫描编排：单例互斥、取消、清理、**按库类型取后缀**、自动刮削四分支 |
+| `src-dashou/core/modules/library/libraryScrape.ts` | 待刮削候选、同目录同番号去重、按目录分组启动任务、空刮削器拒绝；剧集版候选 `collectSeriesCandidates` / `pendingSeriesEntries` / `startSeriesLibraryScrape(ByIds)` 也在这里（剧集之间不去重、不做体积过滤） |
+| `src-dashou/core/modules/library/libraryScrapeDispatch.ts` | **按库类型分派**三个入口（`isTvLibrary` 是唯一判断点）：tv → 剧集版候选 / 启动，否则影片版；`libraryScan` / `libraryIpc` / `scrapeIpc` 三个调用点都走它 |
+| `src-dashou/core/modules/library/libraryIpc.ts` | `library:*` 通道注册与入参收窄 |
+| `src-dashou/core/modules/library/libraryEvents.ts` | 扫描进度广播 |
 | `src/common/types/media/mediaRules.ts` | **命名规则纯函数**（扫描与刮削共用）：`parseMediaName` / `versionLabelOf` / `isVersionOfFolder` / `compareVersionLabel` / `seasonNumberOfDir` / `parseEpisodeNumbers` / `isExtraVideoDir` / `extraKindOfName` / `seriesKeywordOf` / `seriesYearOf`（见 §4.7） |
-| `src/main/src/modules/media/mediaScanCommon.ts` | 两个索引器共用的底层工具：`MAX_SCAN_ENTRIES` / `MAX_SCAN_DEPTH`、`hashId`、`movieItemId` / `folderItemId` / `mediaSourceId` / `mediaImageId`、`IndexPathOptions` / `IndexPathResult`、`isVideoExtension` / `isBigEnoughVideo`、`imageTypeOfBaseName`、**`findOwnedItem`（条目身份认领）** |
-| `src/main/src/modules/media/mediaIndexer.ts` | 影片库：目录游标 BFS、**目录 = 条目分组（`movieGroupsOf`）**、媒体源 / 图片落库、配合 `extensions` 判定视频、花絮跳过、清理未扫到的行 |
-| `src/main/src/modules/media/mediaSeriesIndexer.ts` | 剧集库的三层索引（`indexSeriesLibraryPath`）、图片归属、`cleanupSeriesUnseen`（见 §4.6） |
-| `src/main/src/modules/media/mediaSeriesItems.ts` | 剧集树的条目层：`seriesItemId` / `seasonItemId` / `episodeItemId`、`ensureSeriesItem` / `ensureSeasonItem` / `indexEpisode`（多版本合成一集）、`DirContext`（从 `mediaSeriesIndexer.ts` 拆出，见 §4.6） |
-| `src/main/src/db/repo/mediaSeriesRepo.ts` | 剧集读模型仓储：`listSeriesItems` / `listPendingSeriesItems` / `listSeasonItems` / `listEpisodeItems` / `seriesStatsOf` / `replacePathPrefix` / `listSeriesEpisodes`（**表与影片完全共用，无新表**） |
-| `src/main/src/modules/media/mediaNfoScan.ts` | 扫描期的 NFO 处理：`collectNfoBases` / `hasNfoEvidence`（`has_nfo` 证据）、`importMovieNfo` / `importSeriesNfo` / `importSeasonNfo` / `importEpisodeNfo`（**未刮削条目按根元素种类读 NFO，元数据落条目、名单落 `media_cast`**） |
-| `src/main/src/modules/media/mediaWall.ts` | 首页 / 整墙与详情读模型（含剧集详情 `loadSeriesDetail` 与通用 `readNfoInDir`）；目录浏览块已拆到 `mediaBrowse.ts`（**只认影片库**） |
-| `src/main/src/modules/media/mediaBrowse.ts` | 目录浏览块（`owningPath` / `movieSubtree` / `toBrowseEntry` / `compareBrowse` / `browseLibrary`），只认影片库——渲染层没有剧集库的浏览入口 |
-| `src/main/src/modules/media/mediaClearNfo.ts` | 「还原刮削前」的分派器（空 id / 条目不存在 / series → `clearSeriesNfo` / 非 movie 一律 `notFound`）与影片版实现 |
-| `src/main/src/modules/media/mediaClearSeriesNfo.ts` | 剧集版还原 `clearSeriesNfo`：剧集根 → 逐季 → 逐集三层，按 NFO 记录改名 / 搬回并 `refreshSourcePath` |
-| `src/main/src/modules/media/mediaClearShared.ts` | 还原公共工具：`SERIES_NFO_NAME` / `SEASON_NFO_NAME`、`readRestore`、`restorePlantedFiles`、`libraryRoots`、`removeEmptyDir`… |
-| `src/main/src/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口）；另有一种**路径形式** `storage://{连接ID}/path/{连接内路径}`，给存储页预览未入库的任意文件用（见 [存储页 §7.1](../page/02-storage-page.md)） |
+| `src-dashou/core/modules/media/mediaScanCommon.ts` | 两个索引器共用的底层工具：`MAX_SCAN_ENTRIES` / `MAX_SCAN_DEPTH`、`hashId`、`movieItemId` / `folderItemId` / `mediaSourceId` / `mediaImageId`、`IndexPathOptions` / `IndexPathResult`、`isVideoExtension` / `isBigEnoughVideo`、`imageTypeOfBaseName`、**`findOwnedItem`（条目身份认领）** |
+| `src-dashou/core/modules/media/mediaIndexer.ts` | 影片库：目录游标 BFS、**目录 = 条目分组（`movieGroupsOf`）**、媒体源 / 图片落库、配合 `extensions` 判定视频、花絮跳过、清理未扫到的行 |
+| `src-dashou/core/modules/media/mediaSeriesIndexer.ts` | 剧集库的三层索引（`indexSeriesLibraryPath`）、图片归属、`cleanupSeriesUnseen`（见 §4.6） |
+| `src-dashou/core/modules/media/mediaSeriesItems.ts` | 剧集树的条目层：`seriesItemId` / `seasonItemId` / `episodeItemId`、`ensureSeriesItem` / `ensureSeasonItem` / `indexEpisode`（多版本合成一集）、`DirContext`（从 `mediaSeriesIndexer.ts` 拆出，见 §4.6） |
+| `src-dashou/core/db/repo/mediaSeriesRepo.ts` | 剧集读模型仓储：`listSeriesItems` / `listPendingSeriesItems` / `listSeasonItems` / `listEpisodeItems` / `seriesStatsOf` / `replacePathPrefix` / `listSeriesEpisodes`（**表与影片完全共用，无新表**） |
+| `src-dashou/core/modules/media/mediaNfoScan.ts` | 扫描期的 NFO 处理：`collectNfoBases` / `hasNfoEvidence`（`has_nfo` 证据）、`importMovieNfo` / `importSeriesNfo` / `importSeasonNfo` / `importEpisodeNfo`（**未刮削条目按根元素种类读 NFO，元数据落条目、名单落 `media_cast`**） |
+| `src-dashou/core/modules/media/mediaWall.ts` | 首页 / 整墙与详情读模型（含剧集详情 `loadSeriesDetail` 与通用 `readNfoInDir`）；目录浏览块已拆到 `mediaBrowse.ts`（**只认影片库**） |
+| `src-dashou/core/modules/media/mediaBrowse.ts` | 目录浏览块（`owningPath` / `movieSubtree` / `toBrowseEntry` / `compareBrowse` / `browseLibrary`），只认影片库——渲染层没有剧集库的浏览入口 |
+| `src-dashou/core/modules/media/mediaClearNfo.ts` | 「还原刮削前」的分派器（空 id / 条目不存在 / series → `clearSeriesNfo` / 非 movie 一律 `notFound`）与影片版实现 |
+| `src-dashou/core/modules/media/mediaClearSeriesNfo.ts` | 剧集版还原 `clearSeriesNfo`：剧集根 → 逐季 → 逐集三层，按 NFO 记录改名 / 搬回并 `refreshSourcePath` |
+| `src-dashou/core/modules/media/mediaClearShared.ts` | 还原公共工具：`SERIES_NFO_NAME` / `SEASON_NFO_NAME`、`readRestore`、`restorePlantedFiles`、`libraryRoots`、`removeEmptyDir`… |
+| `src-dashou/core/modules/media/mediaProtocol.ts` | `storage://` 私有协议（媒体源与图片的取值 / Range 流式、视频路径自愈入口）；另有一种**路径形式** `storage://{连接ID}/path/{连接内路径}`，给存储页预览未入库的任意文件用（见 [存储页 §7.1](../page/02-storage-page.md)） |
 | `src/common/types/file/preview.ts` | 存储页预览地址的公共纯函数：`FILE_PREVIEW_SEGMENT`、`buildFilePreviewUrl()`、`parseFilePreviewUrl()`、`filePreviewKindOf()`（路径形式只在这里构造与解析，主进程侧只复核路径必须落在连接根内） |
-| `src/main/src/modules/media/mediaLocator.ts` | 播放期按「文件名 + 字节数」在资料库范围内找回被移动的视频（见 §4.5） |
+| `src-dashou/core/modules/media/mediaLocator.ts` | 播放期按「文件名 + 字节数」在资料库范围内找回被移动的视频（见 §4.5） |
 
-| `src/renderer/src/windows/main/pages/media/` | 影视墙首页 / 内容页 / 详情页与资料库抽屉、表单（抽屉与表单在 `media/library/`） |
-| `src/renderer/src/windows/main/pages/setting/components/SettingLibraryPanel.vue` | 「设置 → 资料库」面板：逐类型编辑媒体后缀 |
+| `src/windows/main/pages/media/` | 影视墙首页 / 内容页 / 详情页与资料库抽屉、表单（抽屉与表单在 `media/library/`） |
+| `src/windows/main/pages/setting/components/SettingLibraryPanel.vue` | 「设置 → 资料库」面板：逐类型编辑媒体后缀 |
 | `resources/drizzle/0000_moaning_black_panther.sql` | 全量基线迁移（12 张表 + 索引），`library.type` 列也在其中 |
 | `resources/drizzle/0001_familiar_lifeguard.sql` | 剧集增量迁移：给 `media_item` 加 `season_number` / `episode_number`（剧集库的季号 / 集号，见 [剧集支持](./02-series-support.md)） |
 
 ## 3. 数据结构
 
-`library` 表（14 列，`src/main/src/db/schema/library.ts`）：
+`library` 表（14 列，`src-dashou/core/db/schema/library.ts`）：
 
 | 列 | 类型 | 说明 |
 | --- | --- | --- |
@@ -90,7 +90,7 @@
 
 索引：`idx_library_path_library`（library_id）、唯一索引 `idx_library_path_conn_path`（connection_id, path）——后者是「一条目录只属于一个库」的兜底，嵌套重叠由 `normalizePaths()` 在保存时先拦下。
 
-条目侧三张表（`media_item` 32 列 / `media_source` 12 列 / `media_image` 9 列）的逐列以 `src/main/src/db/schema/mediaItem.ts` 等 schema 与 `resources/drizzle/` 迁移 SQL 为准；其中 `season_number` / `episode_number` 两列由剧集增量迁移 `0001_familiar_lifeguard.sql` 引入（基线里 `media_item` 是 26 列），`maker` / `label` / `series` / `director` 四列由详情页元信息落库的增量迁移 `0002_soft_masked_marvel.sql` 引入（`TEXT NOT NULL DEFAULT ''`，详见[数据存储](../data/01-sqlite-storage.md)）。
+条目侧三张表（`media_item` 32 列 / `media_source` 12 列 / `media_image` 9 列）的逐列以 `src-dashou/core/db/schema/mediaItem.ts` 等 schema 与 `resources/drizzle/` 迁移 SQL 为准；其中 `season_number` / `episode_number` 两列由剧集增量迁移 `0001_familiar_lifeguard.sql` 引入（基线里 `media_item` 是 26 列），`maker` / `label` / `series` / `director` 四列由详情页元信息落库的增量迁移 `0002_soft_masked_marvel.sql` 引入（`TEXT NOT NULL DEFAULT ''`，详见[数据存储](../data/01-sqlite-storage.md)）。
 
 `media_item.has_nfo`（在基线迁移 `0000_moaning_black_panther.sql` 里）是**扫描拥有**的列：扫描时同目录存在 `movie.nfo`、**目录型条目按目录名命名的 `.nfo`** 或与视频同名的 `.nfo` 就置 1（剧集库三层另见 §4.6）。它只表示「磁盘上有没有 NFO」，影视墙**不按它做分类**——旧的「是否刮削 = `scraped_at > 0` 或 `has_nfo > 0` 或有图片」三口径连同 `mediaWall.scrapedOf()` 与 `countScrapedMovieItems()` 一起下线。但它**参与刮削队列的候选判定**：批量刮削只处理 `scrapedAt === 0` **且 `has_nfo = 0`** 的条目，「磁盘上已有 NFO」= 已经刮过、不再自动 / 批量重刮，只能在详情页手动刮（见 §5）。唯一的写入口例外是「还原刮削前」（`clearItemMetadata` 会一并把 `has_nfo` 归零，因为调用方刚把该条目的 NFO 都删了，见[影视墙页面](../page/04-media-wall-page.md)）。
 
@@ -194,7 +194,7 @@
 - **写回**：命中后用 `updateSourcePath(source.id, …)` 只改 `media_source` 的 `path` / `name` / `extname` / `mime` / `size` / `modified_at`——**source id 不变**，`storage://` 地址与远端缓存都不失效；`media_item.path` / `parentId` 不动。成功记一条 info 日志「索引路径失效，已按文件名找回：<旧> → <新>」；写库失败（新路径已被别的媒体源占用）只记 warn，本次播放照常返回。
 - **找不到的缓存**：结论按「资料库 + 连接 + 文件名 + 字节数」缓存 `MISS_TTL_MS = 60_000`，播放器反复重试同一个源时不会一遍遍遍历整个资料库。
 - **并发去重**：主进程里同一个媒体源的并发 Range 请求共享一次查找（`healing: Map<sourceId, Promise<FileEntry | null>>`）。
-- **不做**：不主动扫盘、不监听文件系统、不新增 IPC、不改表结构。真删掉的文件仍然 404，渲染层由共用的 `src/renderer/src/components/media/MediaPlayer.vue` 的封面兜底层提示（存储页预览另给它一句「可以先用本机播放器打开它」，影视墙详情页仍提示「……也可以在影视墙里对资料库重新扫描一次」）。
+- **不做**：不主动扫盘、不监听文件系统、不新增 IPC、不改表结构。真删掉的文件仍然 404，渲染层由共用的 `src/components/media/MediaPlayer.vue` 的封面兜底层提示（存储页预览另给它一句「可以先用本机播放器打开它」，影视墙详情页仍提示「……也可以在影视墙里对资料库重新扫描一次」）。
 
 ### 4.6 剧集库的扫描层级（`mediaSeriesIndexer.ts`）
 
@@ -211,7 +211,7 @@
 
 - 季号：目录名写明时以目录为准（`Season 01` / `S1` / `第2季` / `第二季`），没写（剧集目录里直接放视频）时用文件名里的季号；**集号只认文件名**（`parseEpisodeNumbers`，`mediaRules.ts:175`，认可 `S01E02` / `1x02` / `EP02` / `第02集` / 兜底第一个独立数字，多集文件按第一集），认不出就跳过并计入 `skippedVideos`（提示「N 个视频认不出季 / 集号，未入库」）。
 - 季目录里的集挂季条目；剧集目录里直接放的集挂剧集条目（`parent_id = seriesId`，`seasonNumber` 仍是真实季号）——**读取侧要把两种都算进同一季**。
-- 条目 ID 都是 `sha1(...).slice(0,32)`：`seriesItemId(libraryId, connectionId, dirPath)`、`seasonItemId(..., seasonNumber)`（**带季号**，避免隐式季共用剧集目录撞 ID）、`episodeItemId(connectionId, path)`。身份认领走与影片库同一个 `findOwnedItem`（路径 → 组内视频的源 → 视频路径，**只认同类型条目**）；季必须**同时看路径与季号**（多个隐式季共用剧集目录这一条路径）。刮削改名后就地改写路径、**id 不变**，重扫不造重复也不丢元数据。条目层代码在 `src/main/src/modules/media/mediaSeriesItems.ts`（原本与遍历同文件，超出 RL-05 行数上限后拆出）。
+- 条目 ID 都是 `sha1(...).slice(0,32)`：`seriesItemId(libraryId, connectionId, dirPath)`、`seasonItemId(..., seasonNumber)`（**带季号**，避免隐式季共用剧集目录撞 ID）、`episodeItemId(connectionId, path)`。身份认领走与影片库同一个 `findOwnedItem`（路径 → 组内视频的源 → 视频路径，**只认同类型条目**）；季必须**同时看路径与季号**（多个隐式季共用剧集目录这一条路径）。刮削改名后就地改写路径、**id 不变**，重扫不造重复也不丢元数据。条目层代码在 `src-dashou/core/modules/media/mediaSeriesItems.ts`（原本与遍历同文件，超出 RL-05 行数上限后拆出）。
 - **扫描读 NFO 落库**（三类根元素各自校验，未刮削的条目才读）：剧集读目录里的 `tvshow.nfo`（根 `<tvshow>`）、季读 `season.nfo` / `seasonNN.nfo`（根 `<season>`）、集读与集文件同名的 `.nfo`（根 `<episodedetails>`，**同一集多个版本逐个试**）。这是修「剧集刮削写了 `tvshow.nfo`、扫描读不到」的根因：`parseNfoXml` 原先只认 `<movie>` 根，现在按根元素分派出 `kind`，读侧再比对 `kind`。与影片一样，带 `vaultscrape_translated` 标记的译文 NFO 也一律跳过。
 - 图片与 NFO 证据：与集同名的图当集主图、`<集名>-<用途>` 前缀名挂集、目录级固定名挂当前目录的条目（剧集或季）、`extrafanart` / `extrathumbs` 挂上一层条目；`tvshow.nfo` / `season.nfo` / 集 NFO 都算 `hasNfo` 证据。
 - 剧集库同样只把扩展名命中清单的文件当视频（`libraryExtensionsOf(setting.library, 'tv')`），花絮文件（`extraKindOfName`）同样过滤。

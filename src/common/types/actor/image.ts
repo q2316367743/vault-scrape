@@ -1,9 +1,9 @@
 /**
- * 演员图片的公共契约：用途、允许的格式、体积上限与私有协议地址。
+ * 演员图片的公共契约：用途、允许的格式、体积上限与本机媒体地址。
  *
  * 契约：
- * - 图片文件落在应用数据目录（默认 `~/.vault-scrape/media/actor`），数据库只存元信息；
- * - 渲染层拿到的地址是 `storage://actor/{图片ID}/{文件名}`，路径不出主进程；
+ * - 图片文件落在应用数据目录（默认 `<插件数据目录>/media/actor`），数据库只存元信息；
+ * - 渲染层拿到的地址是 本机媒体地址（演员图片），路径不出 core；
  * - 地址构造只走本文件的纯函数，渲染层不拼字符串。
  */
 import { buildMediaUrl } from '../media/source'
@@ -35,7 +35,7 @@ export const ACTOR_IMAGE_EXTENSIONS: readonly string[] = [
 /** 单个图片文件体积上限：20MB */
 export const ACTOR_IMAGE_MAX_BYTES = 20 * 1024 * 1024
 
-/** 私有协议里代表「演员图片」的固定段（与存储 ID 不会撞：存储 ID 是 UUID） */
+/** 媒体地址里代表「演员图片」的固定段（与存储 ID 不会撞：存储 ID 是 UUID） */
 export const ACTOR_MEDIA_SEGMENT = 'actor'
 
 /** 演员图片地址；文件名只参与展示与扩展名推断，定位靠图片 ID */

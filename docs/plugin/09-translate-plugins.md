@@ -58,9 +58,9 @@ await window.preload.pluginApi.translate.translate(id, { text, to, from? })
 | --- | --- |
 | `src/common/types/plugin/translate.ts` | 翻译契约类型、语言码判定与返回值归一化 |
 | `src/common/types/plugin/kind.ts` | `PLUGIN_KIND_METHODS.translate = { required: ['translate'], optional: [], all: ['translate'] }` |
-| `src/main/src/modules/plugin/pluginRuntime.ts` | `buildTranslatePlugin()`（编译期校验 + 返回值归一化）、`PluginTranslateHandler` |
-| `src/main/src/modules/plugin/pluginRegistry.ts` | `translateRequestOf()` 收窄 IPC 入参、`describeMissingArgument()` |
-| `src/main/src/modules/plugin/pluginIpc.ts` | `readInvokePayload()` 读取 `text` / `from` / `to` |
+| `src-dashou/core/modules/plugin/pluginRuntime.ts` | `buildTranslatePlugin()`（编译期校验 + 返回值归一化）、`PluginTranslateHandler` |
+| `src-dashou/core/modules/plugin/pluginRegistry.ts` | `translateRequestOf()` 收窄 IPC 入参、`describeMissingArgument()` |
+| `src-dashou/core/modules/plugin/pluginIpc.ts` | `readInvokePayload()` 读取 `text` / `from` / `to` |
 | `src/preload/src/modules/plugin/plugin.ts` | `createTranslateBridge()` 暴露 `translate(id, request)` |
 
 ## 2. 三个现成站点插件

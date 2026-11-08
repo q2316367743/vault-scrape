@@ -260,7 +260,7 @@ interface PluginResponse {
 - 超时：`max(1000, options.timeout ?? network.timeout * 1000)`；
 - 重试：按网络设置的 `retryCount` 重试，间隔 300ms（`invalidArgument` 不重试）；
 - 限速：两次插件请求之间至少间隔 `scrape.requestDelay` 秒（模块级串行，`concurrency` 归后续调度器）；
-- 代理：已接入。请求经 `src/main/src/modules/http/httpClient.ts` 的共享实例发出，由请求拦截器按最新网络设置注入 http/https 代理；`socket5` 暂不支持，会回落直连并写一条 `warn`，详见 [../http/01-http-client.md](../http/01-http-client.md)。
+- 代理：已接入。请求经 `src-dashou/core/modules/http/httpClient.ts` 的共享实例发出，由请求拦截器按最新网络设置注入 http/https 代理；`socket5` 暂不支持，会回落直连并写一条 `warn`，详见 [../http/01-http-client.md](../http/01-http-client.md)。
 - 字符集：`ctx.request` 以 `arraybuffer` 取回原始字节后自行解码，顺序为「响应头 `content-type` 的 `charset`」→「正文前 64KB 内 `<meta>` 声明的 `charset`」→「UTF-8 兜底」，因此 `euc-jp`、`shift_jis` 等站点（如 `h0930` / `h4610`）的日文不会变成乱码；字符集标签无法识别时回落 UTF-8 并继续，不会抛错。
 
 ## 4. 执行与超时
@@ -285,7 +285,7 @@ interface PluginResponse {
 - 同名覆盖导入（版本更高时自动触发，或确认 `overwrite: true`）只更新元信息、`envFields` 与源码文件，**保留**原有的 `enabled` 与 `envValues`（已保存的环境变量密文不丢）；
 - 清单里 `plugins` 数组的顺序就是该类别的插件列表展示顺序：插件页拖拽排序后经 `plugin:<类别>:reorder` 以完整 id 列表写回 `plugins.json`，顺序未变化时不写盘；
 - 内置插件在所在类别的清单里以 `builtin: true` 记录（`toPluginSummary` 据此给出 `source` 与空的 `filePath`），没有 `<id>.js`，store 层同时拒绝覆盖与删除；
-- 环境变量一律按敏感值处理：先 `safeStorage` 加密再写入清单（`plugins.json` 的 `envValues` 存 `safe:` 前缀密文），系统钥匙串不可用时回落 `plain:` + base64 并写 `warn` 日志。编解码统一在 `src/main/src/utils/secretCodec.ts`，与文件模块的连接密码共用；
+- 环境变量一律按敏感值处理：先 `safeStorage` 加密再写入清单（`plugins.json` 的 `envValues` 存 `safe:` 前缀密文），系统钥匙串不可用时回落 `plain:` + base64 并写 `warn` 日志。编解码统一在 `src-dashou/core/utils/secretCodec.ts`，与文件模块的连接密码共用；
 - **环境变量明文永不跨 IPC**：`plugin:<类别>:getEnv` 只返回声明表 `fields` 与「是否已填写」掩码 `filled`，不回读任何取值；
 - 清单读取失败时回落空列表并写 `error` 日志，不影响应用启动；单个插件加载失败只体现在摘要的 `loadError` 上（列表标红），不阻塞其他插件；
 - **旧版平铺文件不会被加载**：类别是必需的，`~/.vault-scrape/plugin/` 根目录下历史遗留的 `<id>.js` 与 `plugins.json` 只由 `pluginStore.ts` 的只读 `legacyPluginFiles()` 探测，经 `plugin:legacy` 通道上报给插件页顶部的警告条（见 §6 与 [插件类别](./03-plugin-categories.md)第 7 节），没有自动迁移。
@@ -367,18 +367,18 @@ interface PluginEnvField {
 | --- | --- |
 | `src/common/types/plugin/kind.ts` | 类别定义：`PluginKind`、`PLUGIN_KINDS`、界面文案、各类别方法表 `PLUGIN_KIND_METHODS`、`isPluginKind` |
 | `src/common/types/plugin/` 其余 | 三端共享的纯类型与纯函数（`MoviePlugin` / `ActorPlugin` / `TranslatePlugin` 契约、归一化、环境变量声明校验、错误码、信封） |
-| `src/main/src/modules/plugin/pluginStore.ts` | 每个类别的 `plugin/<类别>/plugins.json` 落盘（含顺序重排）、源码读写、safeStorage 加解密接入，另含旧版残留的只读探测 |
-| `src/main/src/modules/plugin/pluginRuntime.ts` | vm 沙箱编译（按类别校验方法表）、方法调用与超时 |
-| `src/main/src/modules/plugin/pluginHost.ts` | `ctx` 构造：共享 http 客户端请求（超时 / 重试 / 限速）、cheerio 注入、日志桥（scope 为 `plugin:<类别>:<id>`；环境变量不经 ctx） |
-| `src/main/src/modules/plugin/pluginRegistry.ts` | `createPluginRegistry(kind)` 工厂：该类别的内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/排序/环境变量/调用入口 |
-| `src/main/src/modules/plugin/pluginRegistries.ts` | 四个类别注册表单例：`moviePlugins` / `actorPlugins` / `translatePlugins` / `storagePlugins`（各调用方按类别取用） |
-| `src/main/src/modules/plugin/pluginImport.ts` | 导入预处理：按 `kind` 编译校验、同批同名择优（版本比较） |
-| `src/main/src/modules/plugin/pluginIpc.ts` | 三套类别通道 + `plugin:legacy` 的注册与信封转换（唯一转换点），系统文件选择框 |
-| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义与实现（当前仅影片类别的 `r18-offline`，见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)） |
-| `src/main/src/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
+| `src-dashou/core/modules/plugin/pluginStore.ts` | 每个类别的 `plugin/<类别>/plugins.json` 落盘（含顺序重排）、源码读写、safeStorage 加解密接入，另含旧版残留的只读探测 |
+| `src-dashou/core/modules/plugin/pluginRuntime.ts` | vm 沙箱编译（按类别校验方法表）、方法调用与超时 |
+| `src-dashou/core/modules/plugin/pluginHost.ts` | `ctx` 构造：共享 http 客户端请求（超时 / 重试 / 限速）、cheerio 注入、日志桥（scope 为 `plugin:<类别>:<id>`；环境变量不经 ctx） |
+| `src-dashou/core/modules/plugin/pluginRegistry.ts` | `createPluginRegistry(kind)` 工厂：该类别的内存缓存（id → 编译结果 + mtime）、摘要、导入/删除/启停/排序/环境变量/调用入口 |
+| `src-dashou/core/modules/plugin/pluginRegistries.ts` | 四个类别注册表单例：`moviePlugins` / `actorPlugins` / `translatePlugins` / `storagePlugins`（各调用方按类别取用） |
+| `src-dashou/core/modules/plugin/pluginImport.ts` | 导入预处理：按 `kind` 编译校验、同批同名择优（版本比较） |
+| `src-dashou/core/modules/plugin/pluginIpc.ts` | 三套类别通道 + `plugin:legacy` 的注册与信封转换（唯一转换点），系统文件选择框 |
+| `src-dashou/core/modules/plugin/builtinPlugins.ts` | 内置插件定义与实现（当前仅影片类别的 `r18-offline`，见 [02-builtin-offline-plugin.md](./02-builtin-offline-plugin.md)） |
+| `src-dashou/core/utils/secretCodec.ts` | safeStorage 编解码，插件与文件连接配置共用 |
 | `src/preload/src/modules/plugin/` | `channelsOf(kind)` 通道常量与 `pluginApi.{movie,actor,translate,legacy}` 桥 |
-| `src/renderer/src/windows/main/pages/plugin/` | 插件页：外壳（`PluginHomePage.vue` 四个 tab + 旧版残留提示）与四个类别子页（存储子页 `storage/StoragePluginPage.vue`，不渲染配置区块与试运行）；共用管理视图 `components/PluginManagerView.vue`（左列表 + 右详情，`props: kind`，导入与批量删除的确认弹窗）、列表（`PluginList.vue`，transparent 左栏，sortablejs 拖拽重排、整行可拖、行内勾选多选）与面板头 `components/PluginListHeader.vue`（全选 + 数量 + 刷新 / 导入 + 批量操作条）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停 + `#extra` 类别专属插槽）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`）；`composables/usePluginManager.ts` 按类别各维护一份状态（批量启停 / 删除为串行循环，复用既有单条 IPC），`composables/usePluginSelection.ts` 管多选 UI 状态 |
-| `src/renderer/src/windows/main/pages/tools/` | 工具箱：索引页在根（`ToolsPage.vue` + `toolRegistry.ts`），子路由各自成目录——搜索工具在 `search/`（`ToolSearchPage.vue` 用 `SubPageLayout`：标题左侧返回图标 + 选插件 + 两个入口，插件选择与「影片信息插件」页共享 `usePluginManager('movie')`），影片详情抽屉在 `search/modals/`（`MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `search/composables/useMoviePreview.ts`） |
+| `src/windows/main/pages/plugin/` | 插件页：外壳（`PluginHomePage.vue` 四个 tab + 旧版残留提示）与四个类别子页（存储子页 `storage/StoragePluginPage.vue`，不渲染配置区块与试运行）；共用管理视图 `components/PluginManagerView.vue`（左列表 + 右详情，`props: kind`，导入与批量删除的确认弹窗）、列表（`PluginList.vue`，transparent 左栏，sortablejs 拖拽重排、整行可拖、行内勾选多选）与面板头 `components/PluginListHeader.vue`（全选 + 数量 + 刷新 / 导入 + 批量操作条）、详情（`PluginDetail.vue`：概览 + 配置区块 + 启停 + `#extra` 类别专属插槽）、配置区块（`PluginConfigPanel.vue`：环境变量，仅 `hasEnv` 时渲染）、源码编辑器弹窗（`modals/`）；`composables/usePluginManager.ts` 按类别各维护一份状态（批量启停 / 删除为串行循环，复用既有单条 IPC），`composables/usePluginSelection.ts` 管多选 UI 状态 |
+| `src/windows/main/pages/tools/` | 工具箱：索引页在根（`ToolsPage.vue` + `toolRegistry.ts`），子路由各自成目录——搜索工具在 `search/`（`ToolSearchPage.vue` 用 `SubPageLayout`：标题左侧返回图标 + 选插件 + 两个入口，插件选择与「影片信息插件」页共享 `usePluginManager('movie')`），影片详情抽屉在 `search/modals/`（`MovieDetailDrawer.tsx` + `MovieDetailDrawerContent.vue`，状态在 `search/composables/useMoviePreview.ts`） |
 
 ## 10. 完整示例插件
 

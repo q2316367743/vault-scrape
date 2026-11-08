@@ -6,16 +6,16 @@
 
 | 路由 | 名称 | 页面 | 说明 |
 | --- | --- | --- | --- |
-| `/media` | 影视墙 | `src/renderer/src/windows/main/pages/media/home/MediaHomePage.vue` | 首页：资料库横排 + 最近添加 / 推荐两排 |
-| `/media/library` | 影视墙资料库 | `src/renderer/src/windows/main/pages/media/wall/MediaWallPage.vue` | 内容页：query `libraryId`（**空串 = 全部条目**，标题回落「影视墙」）+ 可选 `keyword`；影视库列影片、剧集库列剧集（**整部剧一条**） |
-| `/media/detail` | 影视墙详情 | `src/renderer/src/windows/main/pages/media/detail/MediaDetailPage.vue` | 详情页：query 只带 `itemId`；影片是单条详情，剧集是整部剧详情 + 选集区 |
+| `/media` | 影视墙 | `src/windows/main/pages/media/home/MediaHomePage.vue` | 首页：资料库横排 + 最近添加 / 推荐两排 |
+| `/media/library` | 影视墙资料库 | `src/windows/main/pages/media/wall/MediaWallPage.vue` | 内容页：query `libraryId`（**空串 = 全部条目**，标题回落「影视墙」）+ 可选 `keyword`；影视库列影片、剧集库列剧集（**整部剧一条**） |
+| `/media/detail` | 影视墙详情 | `src/windows/main/pages/media/detail/MediaDetailPage.vue` | 详情页：query 只带 `itemId`；影片是单条详情，剧集是整部剧详情 + 选集区 |
 
-- 侧栏一级菜单「影视墙」（在「概览」下方），菜单项用 `match: 'prefix'` 判定选中，所以停在内容页 / 详情页时侧栏仍高亮「影视墙」（`src/renderer/src/windows/main/router.ts`、`pages/app/AppSide.vue`）。
+- 侧栏一级菜单「影视墙」（在「概览」下方），菜单项用 `match: 'prefix'` 判定选中，所以停在内容页 / 详情页时侧栏仍高亮「影视墙」（`src/windows/main/router.ts`、`pages/app/AppSide.vue`）。
 - **本轮没有播放历史**：所以首页第二屏里没有「继续观看」，只有最近添加 / 推荐两排。
 - **不按刮削与否分类**：Jellyfin 也没有「待刮削 / 已刮削」这种库内分类，所以影视墙上没有这类角标、排序与统计，资料库详情也没有「已刮削优先」；刮削进度只在概览页的进度卡片与刮削记录里体现（刮削队列口径是 `scrapedAt === 0` **且 `has_nfo = 0`**，见[资料库](../media/01-media-library.md)）。
 - 内容口径：**以磁盘为准**。墙面主体是资料库扫描出来的条目——影视库是影片（一个视频一条），**剧集库是剧集（一整部剧一条，卡上是「N 季 M 集」标签）**；未刮削的条目也会上墙（影片用文件名占位、剧集用剧集目录名占位），磁盘上被删掉的会在下次扫描后从墙上消失。
 - 资料库范围：所有数据源（本机 / WebDAV / SMB）聚合成一堵墙，每张卡片带**资料库角标**（`item.libraryName`）。**每个条目（影片 / 剧集）都归属于某个资料库**（归属是条目上的真实外键，不再按路径最长前缀猜），因此没有「未归入资料库」这一档。
-- 取数：`@/api` 的 `mediaApi`（`home()` / `wall()` / `detail()`），主进程实现见 `src/main/src/modules/media/mediaWall.ts`。
+- 取数：`@/api` 的 `mediaApi`（`home()` / `wall()` / `detail()`），主进程实现见 `src-dashou/core/modules/media/mediaWall.ts`。
 - 详情页另有「**还原刮削前**」入口（详情页右上角「更多」菜单里，通道仍是 `media:clear-nfo`）：二次确认后清掉这条影片的刮削数据与磁盘 NFO，并按 NFO 里记的「刮削前位置」把文件改回原名、搬回原目录，用来处理刮错的数据，见 §4。**剧集条目走同一入口做三层还原**（剧集目录 → 逐季 → 逐集，确认文案按类型分说），这是影视墙域唯一的写操作。
 
 ## 2. 首页（`home/MediaHomePage.vue`）
@@ -71,7 +71,7 @@
 - 网格 `repeat(auto-fill, minmax(180px, 1fr))`，卡片仍是 `MediaWallCard.vue`；加载 `t-loading`、失败 `t-alert`、空态 `t-empty`（全部条目时「墙上还没有内容」，单库时「这个资料库还没有影片 / 剧集」，描述「点上方「资料库」扫描后，影片 / 剧集会自动出现在这里」），页头 description 同样是「资料库里的影片 / 剧集聚成一堵墙，标题与封面来自刮削」。
 - `libraryId` 用 `watch(() => route.query.libraryId)` 跟随地址变化；`useMediaWall` 内部的 `watch(..., { immediate: true })` 负责首次取数，页面 `onMounted` 只补一次连接列表与库名。
 
-## 4. 数据流（主进程 `src/main/src/modules/media/mediaWall.ts`）
+## 4. 数据流（主进程 `src-dashou/core/modules/media/mediaWall.ts`）
 
 **整墙**（`media:wall`）：`loadMediaWall({ libraryId })` —— `libraryId` 为空串时遍历 `listLibraries()`，否则只取 `getLibrary(libraryId)`（库不存在抛 `notFound`「资料库不存在」）。每个库按类型取条目：影视库走 `listMovieItems(libraryId)`（**只列 `type='movie'` 的条目**，条目没有主源、已被清理时跳过），**剧集库走 `listSeriesItems(libraryId)` + `seriesStatsOf(libraryId)` + `toSeriesWallItem`**（不要求主源，靠集文件聚合算季数 / 集数 / 体积 / 时间）；不属于任何资料库的条目不会出现在墙上。`indexedAt = maxSourceIndexedAt()`（最新媒体源的 `indexed_at`），`libraries = listSummaries()`（带 `videoCount` / `coverUrls`，**0 个条目的库也会出现**，`videoCount` 影视库数影片、剧集库数剧集），返回 `MediaWallResult{ items, total, indexedAt, libraries }`。整墙一次拉全，搜索 / 排序全在渲染层做，主进程不复制排序规则（首页两排的取样在**主进程**做，见 §2）。
 
@@ -82,7 +82,7 @@
 - NFO 候选顺序 `movie.nfo` → `{目录名}.nfo` → `{文件名}.nfo` 现在只服务于两条**扫描期 / 还原期**路径：扫描导入（`mediaNfoScan.importNfo`，只处理 `scrapedAt === 0` 的条目）与「还原刮削前」（`mediaClearNfo`，读还原记录、删 NFO）；详情页取数不再走这条；
 - NFO 解析用三端共享的纯函数 `parseNfoXml`（`@common/types/media/nfo.ts`），**按根元素分派出 `kind`**（`<movie>` / `<tvshow>` / `<season>` / `<episodedetails>`，读侧比对种类，这是「剧集写了 `tvshow.nfo` 却读不到」的修法），字段口径与写入侧 `buildNfoXml` 对齐；`runtime` 转成分钟。
 
-**清除 NFO / 还原刮削前**（`media:clear-nfo`，本域唯一的写通道）：`clearMediaNfo({ itemId })`（`src/main/src/modules/media/mediaClearNfo.ts`）——空 id 报 `invalidArgument`「缺少条目 ID」；条目不存在报 `notFound`「索引里没有这个条目」；`type === 'series'` 转 `clearSeriesNfo`（`src/main/src/modules/media/mediaClearSeriesNfo.ts`），`type !== 'movie'`（季 / 集条目）报 `notFound`「索引里没有这部影片」，其余走 `clearMovieNfo`。影视库语义是「一键还原成刮削前的样子」的**单条影片**流程（下面 1~6 步），**剧集库是整部剧的「剧集根 → 逐季 → 逐集」三步流程**（见第 7 条）；剧集完整口径见[剧集支持](../media/02-series-support.md) §8：
+**清除 NFO / 还原刮削前**（`media:clear-nfo`，本域唯一的写通道）：`clearMediaNfo({ itemId })`（`src-dashou/core/modules/media/mediaClearNfo.ts`）——空 id 报 `invalidArgument`「缺少条目 ID」；条目不存在报 `notFound`「索引里没有这个条目」；`type === 'series'` 转 `clearSeriesNfo`（`src-dashou/core/modules/media/mediaClearSeriesNfo.ts`），`type !== 'movie'`（季 / 集条目）报 `notFound`「索引里没有这部影片」，其余走 `clearMovieNfo`。影视库语义是「一键还原成刮削前的样子」的**单条影片**流程（下面 1~6 步），**剧集库是整部剧的「剧集根 → 逐季 → 逐集」三步流程**（见第 7 条）；剧集完整口径见[剧集支持](../media/02-series-support.md) §8：
 
 1. **读还原记录**：按上面同一套候选顺序读同目录 NFO，取第一条能解析出记录的那份（`parseNfoRestore`，见[刮削模块 §5.2](../scrape/01-scrape-module.md)）。旧版本刮削的 NFO、第三方工具写的 NFO 里都没有记录，这种情况退化成「只清数据 + 删 NFO」；
 2. **删磁盘 NFO**：按同一套候选顺序逐个 `exists` 再 `remove`，存在的都删。任何一个删不掉（连接不可用、权限不足）就抛 `writeFailed`「磁盘上的 NFO 没有删除（原因），刮削数据保持不变」，**库内数据保持原样**——只清库不删盘，下次开「优先读取本地 NFO」重刮会把同一份错误数据读回来；
@@ -112,7 +112,7 @@
 - 封面 `coverUrl`：按 `MEDIA_COVER_IMAGE_TYPE_ORDER`（主图 → 缩略图 → 背景图 → 剧照 → 其他）逐类找，同一类里先条目自己的图片、再**父目录条目**的图片，取到第一张就返回。目录级 `poster` / `cover` / `folder` 在扫描时挂在目录条目上，刮削器写的 `[基名-]thumb.jpg`、`extrafanart/stillN.jpg` 也已在扫描时入库，所以「有快照没封面」会自动回退到快照。地址 `buildMediaUrl(image.connectionId, image.id, 文件名)`；一张都没有则空串（卡片显示占位）。注意 `image.id` 有两种形态（扫描图 32 位十六进制 / 刮削图 UUID），主进程 `handleMediaRequest()` 的 `MEDIA_ID_PATTERN` 形态校验必须两种都放行，否则刮削封面会静默 404（`notFound()` 分支不打日志），表现为「封面全都不显示」——见[资料库 · 确定性 ID](../media/01-media-library.md)。
 - 播放 `playUrl`：`buildMediaUrl(source.connectionId, source.id, source.name)`——用的是**媒体源 id**，渲染层因此拿不到磁盘路径。
 
-**播放**（`storage://` 协议 + 自建 Range 服务端，`src/main/src/modules/media/mediaProtocol.ts`）：
+**播放**（`storage://` 协议 + 自建 Range 服务端，`src-dashou/core/modules/media/mediaProtocol.ts`）：
 
 - scheme 名仍是 `storage`（CSP 不变），地址只认 ID：`storage://{连接ID}/{媒体ID}/{文件名}`。
 - `resolveTarget(connectionId, mediaId)` 先查 `media_source`（kind 由扩展名 / MIME 判定，视频走流式），再查 `media_image`；连接对不上或都查不到返回 404。
@@ -124,11 +124,11 @@
 - 取值路径：本机连接（`protocol === 'local'`）直读；远端视频 / 图片先落到 `~/.vault-scrape/cache/media/<媒体ID>`（总量上限 512MB，超了按 mtime 由旧到新剪到 80%）再读。刮削产物（视频与全部图片）都落在影片自己的文件夹里，没有独立的图片存储位置。
 - 区间读与流适配：`FileClient.readRange(path, start, end)`（**闭区间，含 end**）返回 node 流，再用 `modules/file/streamToWeb.ts` 的 `toWebStream` 适配成 `Response` 的 body（队列积压时 `pause()` 源流、`pull` 时 `resume()`，下游 `cancel` 时 `destroy()` 源流）。
 - 任何异常都记一条去重 warn（同一媒体 60s 内只记一条）并返回 404，不在渲染层抛异常；**唯一的例外是下面的路径自愈**。
-- **播放期路径自愈**（`src/main/src/modules/media/mediaLocator.ts`）：`media_source.path` 只在扫描与刮削改名 / 移动时更新，用户在文件管理器里手工把 `.mp4` 挪走又不重扫时，`client.stat()` 会抛 ENOENT——以前直接变 404（封面还在原地，所以表现为「图片正常、视频 404」）。现在 `handleRangeRequest`（媒体源与存储页路径预览共用的区间请求入口）把 `stat` 包进 try/catch，命中 `isNotFoundError(error)` 且请求来自**媒体源**时按「文件名等价（trim + 忽略大小写）+ 字节数相同」找回：
+- **播放期路径自愈**（`src-dashou/core/modules/media/mediaLocator.ts`）：`media_source.path` 只在扫描与刮削改名 / 移动时更新，用户在文件管理器里手工把 `.mp4` 挪走又不重扫时，`client.stat()` 会抛 ENOENT——以前直接变 404（封面还在原地，所以表现为「图片正常、视频 404」）。现在 `handleRangeRequest`（媒体源与存储页路径预览共用的区间请求入口）把 `stat` 包进 try/catch，命中 `isNotFoundError(error)` 且请求来自**媒体源**时按「文件名等价（trim + 忽略大小写）+ 字节数相同」找回：
   - 先在同目录 `client.list(dirname(path))` 快查（同目录改名、移进子目录最常见），再从该资料库配置的媒体目录（`getLibrary(libraryId).paths` 里 `connectionId` 匹配的，`/` = 连接根）广度优先遍历；单目录列不出来只跳过该目录，单次最多 `MAX_ENTRIES = 20_000` 条、`MAX_DEPTH = 8` 层；不做标题 / 番号模糊匹配——宁可继续 404，也不放错片子。
   - 命中后用 `updateSourcePath(source.id, …)` 只改 `media_source` 的 `path` / `name` / `extname` / `mime` / `size` / `modified_at`：**source id 不变**，`storage://` 地址与远端缓存都不失效；`media_item.path` / `parentId` 不动。成功记 info 日志「索引路径失效，已按文件名找回：<旧> → <新>」；写库失败只记 warn，本次播放照常返回。
   - 找不到的结论按「资料库 + 连接 + 文件名 + 字节数」缓存 `MISS_TTL_MS = 60_000`，同一媒体源的并发 Range 请求共享一次查找（模块级 `healing: Map<sourceId, Promise<FileEntry | null>>`）。不主动扫盘、不监听文件系统、不新增 IPC；真删掉的文件仍然 404。
-- 渲染层 `MediaPlayer.vue`（已移到共用目录 `src/renderer/src/components/media/MediaPlayer.vue`，供[存储页预览](./02-storage-page.md)使用；影视墙详情页已不再内嵌播放器，播放窗口的内置后端是另一套实现，见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）监听 artplayer 的 `video:error`：视频读不出来（文件被移走 / 删除，或视频格式不受支持）时不再留一块黑屏，而是在播放器位置盖一层 `poster`（就是上面的 `coverUrl`，通常已回退到快照）加一句说明文案（存储页预览保留组件那句「……可以先用本机播放器打开它」；详情页这条链路已下线，播放窗口的内置后端走自己的 `PlayerState.error` 文案，见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）；换片（`url` 变化）或重新起播时清掉这个状态，本版本不做转码。
+- 渲染层 `MediaPlayer.vue`（已移到共用目录 `src/components/media/MediaPlayer.vue`，供[存储页预览](./02-storage-page.md)使用；影视墙详情页已不再内嵌播放器，播放窗口的内置后端是另一套实现，见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）监听 artplayer 的 `video:error`：视频读不出来（文件被移走 / 删除，或视频格式不受支持）时不再留一块黑屏，而是在播放器位置盖一层 `poster`（就是上面的 `coverUrl`，通常已回退到快照）加一句说明文案（存储页预览保留组件那句「……可以先用本机播放器打开它」；详情页这条链路已下线，播放窗口的内置后端走自己的 `PlayerState.error` 文案，见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）；换片（`url` 变化）或重新起播时清掉这个状态，本版本不做转码。
 - 协议在 app ready 之前由 `registerMediaScheme()` 登记为特权 scheme（`standard` / `secure` / `supportFetchAPI` / `stream`），ready 之后、开窗之前 `registerMediaProtocol()` 接管（见 `src/main/index.ts`）。
 
 ### 详情页版式（`detail/MediaDetailPage.vue` + `detail/components/`）
@@ -185,7 +185,7 @@
 | 名称 | 必填，空则「请填写资料库名称」 |
 | 类型 | `t-select`，选项来自 `LIBRARY_TYPES` / `LIBRARY_TYPE_LABELS`；**新建可选，编辑态 disabled**（说明文案「类型创建后不可修改」），理由：条目已按原类型后缀索引，中途换类型会留下孤儿条目 |
 | 媒体目录 | 多行编辑器 `LibraryDirectoryEditor.vue`：每行「存储下拉 + 选择目录 + 路径回显」，未选存储时选择按钮禁用并 `t-tooltip` 提示「请先选择存储」；换存储会清空该行路径；只剩一行时删除按钮禁用；底部「添加媒体目录」+ 说明「一个资料库可以包含多个存储上的多个目录，扫描时会全部递归遍历」 |
-| 选择目录 | 走资料库自己的 `RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`（`fileApi.list({ connectionId, path })`，**只列目录**，带面包屑与「上级目录」，路径全程是**连接内路径**（`/` = 连接根），点「选择当前目录」把当前路径回调回该行）；弹窗 footer 左侧跟着内容组件 `defineExpose` 出来的当前路径、右侧是「取消 / 选择当前目录」（契约见 `src/renderer/src/utils/modal/ModalContent.ts`）；**不复用本机目录选择器** |
+| 选择目录 | 走资料库自己的 `RemoteDirDialog.tsx` + `RemoteDirPickerContent.vue`（`fileApi.list({ connectionId, path })`，**只列目录**，带面包屑与「上级目录」，路径全程是**连接内路径**（`/` = 连接根），点「选择当前目录」把当前路径回调回该行）；弹窗 footer 左侧跟着内容组件 `defineExpose` 出来的当前路径、右侧是「取消 / 选择当前目录」（契约见 `src/utils/modal/ModalContent.ts`）；**不复用本机目录选择器** |
 | 刮削器 | 通用多选控件 `CheckboxSelect`（`@/components/CheckboxSelect.vue`：外框 + 搜索框 + 可滚动 checkbox 列表，`v-model` 是 `string[]`，契约见 [ui/03](../ui/03-checkbox-select.md)），候选项来自 `useScraperOptions`（`pluginApi.movie.list()` 过滤 `enabled && loadError === ''`，只列**影片信息插件**）；说明「不选择刮削器表示这个资料库不刮削，扫描后不会自动刮削」；已保存但当前不可用的 id 不进候选，会被补进选项数据、label 标注「（已失效）」显示，取消勾选才会从配置里清除（不会被静默清空）；**新建时默认勾选内置 `R18_OFFLINE_PLUGIN_ID`（`r18-offline`），插件不可用时保持不勾** |
 | 库级选项 | NSFW 保护 / 「文件过滤」`minFileSizeMb`（`t-input-number`，`:min="0"`、`:step="100"`，**新建默认 10**，说明「小于该体积（MB）的视频不参与扫描与刮削；填 0 表示不过滤」）/ 「优先读取本地 NFO 和图片」`localFirst`（开关，文案「优先读取本地 NFO 文件中的信息和本地图片，仅从互联网上获取缺失的信息」）/ 移动文件（**开启时才显示「目标目录」输入**，关闭时存空串）；**写 NFO、按命名规则重命名、图片与影片同目录都是固定行为，表单里没有对应开关** |
 
@@ -196,7 +196,7 @@
 ## 6. 目录结构
 
 ```
-src/renderer/src/windows/main/pages/media/
+src/windows/main/pages/media/
 ├── components/
 │   └── MediaWallCard.vue                 # 首页与内容页共用的卡片：封面、资料库 / 番号角标、体积 / 时间；剧集卡多一枚「N 季 M 集」标签、不显示番号
 ├── home/                                 # /media（首页）
@@ -225,9 +225,9 @@ src/renderer/src/windows/main/pages/media/
 
 - `pages/media/` 下**不再有平铺文件**（RL-09：页面目录分层），跨首页与内容页共用的组件放 `pages/media/components/`。
 - 详情页与播放窗口共用的两块已上移到公共目录：选集区组件 `@/components/media/MediaEpisodeList.vue`、选集状态 `@/hooks/UseEpisodeSelection.ts`（两份头注释都写明「详情页与播放窗口共用」，区块标题 `.section-title` 的样式由调用方给），`detail/components/` 与 `detail/composables/` 里不再有这两份。
-- 原来页面私有的 `mediaUtils.ts` 已上移为 `src/renderer/src/utils/format.ts`（`formatSize` / `formatTime` / `formatDuration`，未知值统一显示「—」；本轮新增播放时钟 `formatClock(seconds)`——`mm:ss`、超一小时 `h:mm:ss`，播放位置 0 是正常值、不显示「—」），引用点统一用 `@/utils/format`；刮削展示也在用同一份，所以不要再在页面里复制。
-- 主进程侧：`src/main/src/modules/media/mediaWall.ts`（首页 / 整墙 / 详情取数，剧集详情走 `loadSeriesDetail`，并导出 `nfoCandidates` / `primarySourceOf` 给清除流程共用）、`mediaBrowse.ts`（`media:browse` 逐级浏览，**只认影片库**）、`mediaClearNfo.ts`（「还原刮削前」分派器 + `clearMovieNfo`：按 NFO 里的还原记录删 NFO、还原文件、清库内刮削数据，本域唯一写操作）、`mediaClearSeriesNfo.ts`（剧集版 `clearSeriesNfo` 三步还原）、`mediaClearShared.ts`（还原公共工具），文件搬移与路径回写复用 `$/modules/scrape/scrapeJobApply` 的 `refreshSourcePath`（单文件条目）/ `refreshItemDir`（目录型条目：整个影片目录搬回 + 刷新条目与全部源）；`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/renderer/src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
-- 本机路径与连接内路径互转仍走 `src/renderer/src/utils/remotePath.ts`（`toRemoteDir` / `toDisplayDir`）。
+- 原来页面私有的 `mediaUtils.ts` 已上移为 `src/utils/format.ts`（`formatSize` / `formatTime` / `formatDuration`，未知值统一显示「—」；本轮新增播放时钟 `formatClock(seconds)`——`mm:ss`、超一小时 `h:mm:ss`，播放位置 0 是正常值、不显示「—」），引用点统一用 `@/utils/format`；刮削展示也在用同一份，所以不要再在页面里复制。
+- 主进程侧：`src-dashou/core/modules/media/mediaWall.ts`（首页 / 整墙 / 详情取数，剧集详情走 `loadSeriesDetail`，并导出 `nfoCandidates` / `primarySourceOf` 给清除流程共用）、`mediaBrowse.ts`（`media:browse` 逐级浏览，**只认影片库**）、`mediaClearNfo.ts`（「还原刮削前」分派器 + `clearMovieNfo`：按 NFO 里的还原记录删 NFO、还原文件、清库内刮削数据，本域唯一写操作）、`mediaClearSeriesNfo.ts`（剧集版 `clearSeriesNfo` 三步还原）、`mediaClearShared.ts`（还原公共工具），文件搬移与路径回写复用 `$/modules/scrape/scrapeJobApply` 的 `refreshSourcePath`（单文件条目）/ `refreshItemDir`（目录型条目：整个影片目录搬回 + 刷新条目与全部源）；`mediaProtocol.ts`（`storage://` 协议与 Range 流式、视频路径自愈入口）、`mediaLocator.ts`（播放期按文件名 + 字节数找回被移动的视频）、`mediaIpc.ts`（IPC 注册）；preload 桥为 `src/preload/src/modules/media/{mediaChannels.ts,media.ts}`，渲染层出口 `src/api/media.ts`；资料库的主进程实现见[资料库](../media/01-media-library.md)。
+- 本机路径与连接内路径互转仍走 `src/utils/remotePath.ts`（`toRemoteDir` / `toDisplayDir`）。
 
 ## 7. NSFW 保护
 

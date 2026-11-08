@@ -108,7 +108,7 @@ export interface MediaLibrarySummary extends MediaLibrary {
   /** 该库在墙上的条目数：影视库数影片，剧集库数剧集（整部剧集算一条） */
   videoCount: number
   /**
-   * 库卡片封面拼贴用的海报地址（`storage://`），最多 4 张、按最近添加排序。
+   * 库卡片封面拼贴用的海报地址（本机媒体地址），最多 4 张、按最近添加排序。
    *
    * 影片一个封面都没有时是空数组，渲染层回落到文字卡片。
    */

@@ -1,6 +1,6 @@
 # 设置项清单
 
-本文档按功能域列出全部设置项、默认值与落盘键。定义文件在 `src/common/types/setting/`，界面在 `src/renderer/src/windows/main/pages/setting/components/`。
+本文档按功能域列出全部设置项、默认值与落盘键。定义文件在 `src/common/types/setting/`，界面在 `src/windows/main/pages/setting/components/`。
 
 落盘键与分组（`SettingGroupKey`）：`app` / `library` / `scrape` / `network` / `translate` / `naming` / `download` / `file`（共八组，设置页标签顺序与 `SETTING_GROUP_KEYS` 一致，`app` 为第一个分组）。站点账号参数不在设置页，由插件在 `env` 里声明、在插件页的配置区块填写，见第 9 节与 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 
@@ -14,7 +14,7 @@
 | `mpvPath` | mpv 可执行文件路径（**仅 Windows 会用到**，用户自备，不内置）；留空按 `PATH` 与常见安装位置自动探测。**总开关开着时才看它**：只有配到（或探测到）mpv，播放窗口才用 mpv 播放；探测不到时**静默**用内置 artplayer，播放窗口不提示，说明文案只在本设置页 | `''` | 输入框（留空 = 自动探测）+「选择文件」+「检测」（`playerApi.detect(path)`）；**macOS 上整项不显示** |
 | `macEmbed` | **停用字段**：macOS 已停用 mpv，本字段当前没有任何效果、设置页也不再暴露（原先 macOS 上的「mpv 画面嵌入窗口（实验）」开关已移除），只保留在类型里以便将来恢复 macOS 方案。历史含义：把 mpv 画面嵌进播放窗口（`--wid`），默认关闭时走「mpv 无边框独立窗口贴住视频区」，嵌入路径有「只有声音没有画面」的已知风险 | `false` | 无（曾是开关） |
 
-应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/renderer/src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。演员图片目录留空表示使用默认位置（`~/<数据目录>/media/actor`），选择按钮由通用组件 `DirectoryPickerField.vue` 提供（走 `dialog:open` 的 `directory: true`，选完把绝对路径写回输入框）；目录在真正写入图片时才创建与校验（不可写则回落默认目录并记一条 `scope: 'actor'` 的 warn），详见[演员模块](../actor/01-actor-module.md)。资料库侧的配合项是库级 `nsfwProtection`（见[资料库](../media/01-media-library.md)；连接上已**没有** NSFW 标记，见[存储管理页面](../page/02-storage-page.md)）：**总开关开启是前提，再命中所属资料库开了 `nsfwProtection` 就遮罩；总开关关着时它不生效**，判定收敛在 `src/renderer/src/hooks/UseNsfwProtection.ts`（`useNsfwProtection(libraryProtected)` 返回 `{ protection, protect }`，`protect` = 总开关 ∧ 库级 `nsfwProtection`；影视墙卡片、资料库卡片、详情页与播放侧栏用的是 `protect`，库级标记由主进程随 `MediaWallItem.nsfwProtected` / `MediaDetailResult.item.nsfwProtected` 下发，没有库上下文的存储页预览用 `protection`）。
+应用设置是设置页的第一个分组（`SettingPage.vue` 里 `<t-tab-panel value="app" label="应用设置">`，也是默认分组），面板为 `SettingAppPanel.vue`。**主题不在 `settings.json` 里**：它同样放在应用设置分组内，但由 `src/global/AppTheme.ts`（`themeMode` + `setThemeMode`）持久化到 localStorage，切换后立即生效，不走设置 IPC。演员图片目录留空表示使用默认位置（`~/<数据目录>/media/actor`），选择按钮由通用组件 `DirectoryPickerField.vue` 提供（走 `dialog:open` 的 `directory: true`，选完把绝对路径写回输入框）；目录在真正写入图片时才创建与校验（不可写则回落默认目录并记一条 `scope: 'actor'` 的 warn），详见[演员模块](../actor/01-actor-module.md)。资料库侧的配合项是库级 `nsfwProtection`（见[资料库](../media/01-media-library.md)；连接上已**没有** NSFW 标记，见[存储管理页面](../page/02-storage-page.md)）：**总开关开启是前提，再命中所属资料库开了 `nsfwProtection` 就遮罩；总开关关着时它不生效**，判定收敛在 `src/hooks/UseNsfwProtection.ts`（`useNsfwProtection(libraryProtected)` 返回 `{ protection, protect }`，`protect` = 总开关 ∧ 库级 `nsfwProtection`；影视墙卡片、资料库卡片、详情页与播放侧栏用的是 `protect`，库级标记由主进程随 `MediaWallItem.nsfwProtected` / `MediaDetailResult.item.nsfwProtected` 下发，没有库上下文的存储页预览用 `protection`）。
 
 总开关在渲染层是模块级缓存（`protection` ref，一次读取、全应用共享），所以**它必须能被刷新**：`SettingAppStore.ts` 给 `createSettingGroupStore` 传了 `onSaved` 回调，应用分组保存成功后调用 `refreshNsfwProtection()`。刷新点只能挂在「保存成功之后」——落盘有 300ms 防抖，挂在值变化上会读到主进程里还没更新的旧值，反而把保护状态刷成旧值。效果：切换开关约 300ms 后全应用生效，不需要重启或刷新页面，影视墙的遮罩会立刻出现/消失（见[设置存储](../setting/01-setting-storage.md)的「注意事项」）。
 

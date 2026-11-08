@@ -4,7 +4,7 @@
 
 在线插件依赖目标站点可用、账号有效、页面结构不变，任何一环失效刮削就归零。r18.dev 每月（实际按周滚动）发布一份**全量 PostgreSQL 转储**（`r18dotdev_dump_YYYY-MM-DD.sql.gz`），包含番号、标题、演员、类别、厂牌、导演、发行日期与 DMM 图片相对路径。把它落到本机后即可**离线**完成刮削，作为在线刮削的保底方案。
 
-内置插件 id 为 `r18-offline`，常量是 `R18_OFFLINE_PLUGIN_ID`：定义在 `src/common/types/plugin/builtin.ts`，由 `src/common/types/plugin/index.ts` 再导出，`src/main/src/modules/plugin/builtinPlugins.ts` 从 `@common/types/plugin` 引入后 `export` 给主进程内部使用——**全仓库只有这一处定义**。之所以把常量提到 common 层：渲染层的资料库表单（新建资料库时默认勾选它）与主进程的插件注册表 / 离线数据包面板必须引用同一个 ID，写两份字符串迟早会对不上。它与用户导入的 JS 插件走同一套列表 / 启停 / 调用入口（在工具箱的搜索工具里被选中执行），但**没有源码文件**：不可编辑、不可删除、不可被同名导入覆盖（`unsupported`）。
+内置插件 id 为 `r18-offline`，常量是 `R18_OFFLINE_PLUGIN_ID`：定义在 `src/common/types/plugin/builtin.ts`，由 `src/common/types/plugin/index.ts` 再导出，`src-dashou/core/modules/plugin/builtinPlugins.ts` 从 `@common/types/plugin` 引入后 `export` 给主进程内部使用——**全仓库只有这一处定义**。之所以把常量提到 common 层：渲染层的资料库表单（新建资料库时默认勾选它）与主进程的插件注册表 / 离线数据包面板必须引用同一个 ID，写两份字符串迟早会对不上。它与用户导入的 JS 插件走同一套列表 / 启停 / 调用入口（在工具箱的搜索工具里被选中执行），但**没有源码文件**：不可编辑、不可删除、不可被同名导入覆盖（`unsupported`）。
 
 代价与边界：
 
@@ -66,7 +66,7 @@
 
 ## 4. 导入流水线
 
-`src/main/src/modules/offline/offlineImporter.ts` 用「单任务 + 全局互斥」模型：已有任务进行时再启动直接返回 `offlineBusy`。
+`src-dashou/core/modules/offline/offlineImporter.ts` 用「单任务 + 全局互斥」模型：已有任务进行时再启动直接返回 `offlineBusy`。
 
 | 阶段 | 动作 |
 | --- | --- |
@@ -85,7 +85,7 @@
 
 ## 5. 查询层
 
-`src/main/src/modules/offline/offlineRepo.ts` 只读打开 `r18.db`（`readonly: true, fileMustExist: true`）：
+`src-dashou/core/modules/offline/offlineRepo.ts` 只读打开 `r18.db`（`readonly: true, fileMustExist: true`）：
 
 - `offlineSearch(keyword, limit = 50)`：先把关键字按「番号」归一化（大写、去掉空白与 `-`/`_`），分三档查 `derived_video`：`dvd_id_norm = ?`（精确）、`content_id = ?` / `dvd_id_norm LIKE ?||'%'`（前缀区间扫描，命中索引）、其余 `title_ja/title_en LIKE ? ESCAPE '\'`（兜底）；候选合并去重后按 rank（0 精确 / 1 content_id / 2 前缀 / 3 标题）+ 数据完整度排序，写进结果时顺带 join `derived_video_actress` 取最多 10 个演员名填到 `PluginMovieCandidate.actors`（供列表展示，详情仍取全量）；
 - `offlineDetail(movieId)`：按 content_id 找最佳行，再 join 演员（按 `CAST(ordinality AS INTEGER)` 排序）、类别、导演、maker / label / series / site 字典；
@@ -114,7 +114,7 @@
 
 ## 7. 检查更新
 
-`src/main/src/modules/offline/offlineCheck.ts`：
+`src-dashou/core/modules/offline/offlineCheck.ts`：
 
 - 只发一个 `HEAD`（`maxRedirects: 0`，超时 15 s，UA `vault-scrape-offline/1.0`），从 `Location` 头解析最新数据包日期；跟随重定向的客户端抛错时从 `error.response.headers.location` 兜底；
 - **自动检查**：启动时 `runOfflineStartupCheck()`（`src/main/index.ts` 在 `createWindow()` 之后 `void` 调用）。距上次成功检查不足 7 天直接返回；发现更新广播 `offline:updateAvailable`；**只提示，绝不自动下载**；
@@ -159,20 +159,20 @@
 | 位置 | 职责 |
 | --- | --- |
 | `src/common/types/offline/` | 三端共享类型：状态、阶段与进度、状态归一化与常量（`OFFLINE_AUTO_CHECK_INTERVAL_MS`、`OFFLINE_MIN_VIDEO_ROWS`、`OFFLINE_DUMPS_LATEST_URL`、文件名正则） |
-| `src/main/src/modules/offline/offlineSchema.ts` | 表白名单、主键 / 索引 / 生成列、建表与插入 SQL 生成 |
-| `src/main/src/modules/offline/pgCopyImporter.ts` | pg_dump `COPY` 文本流解析（gunzip、转义解码、批量回调、进度） |
-| `src/main/src/modules/offline/offlineFileStore.ts` | 路径、状态文件、磁盘余量、临时文件清理、换库 |
-| `src/main/src/modules/offline/offlineImporter.ts` | 任务编排：下载 / 导入 / 校验 / 换库 / 取消 |
-| `src/main/src/modules/offline/offlineCheck.ts` | 检查更新与启动自动检查 |
-| `src/main/src/modules/offline/offlineRepo.ts` | 只读查询：search / detail / covers / extras |
-| `src/main/src/modules/offline/offlineMapper.ts` | 行 → 候选 / 详情映射、番号归一化、DMM 图片与预告片地址 |
-| `src/main/src/modules/offline/offlineEvents.ts` | 进度 / 完成 / 有更新三条推送 |
-| `src/main/src/modules/offline/offlineIpc.ts` | IPC 注册（含系统文件选择框） |
+| `src-dashou/core/modules/offline/offlineSchema.ts` | 表白名单、主键 / 索引 / 生成列、建表与插入 SQL 生成 |
+| `src-dashou/core/modules/offline/pgCopyImporter.ts` | pg_dump `COPY` 文本流解析（gunzip、转义解码、批量回调、进度） |
+| `src-dashou/core/modules/offline/offlineFileStore.ts` | 路径、状态文件、磁盘余量、临时文件清理、换库 |
+| `src-dashou/core/modules/offline/offlineImporter.ts` | 任务编排：下载 / 导入 / 校验 / 换库 / 取消 |
+| `src-dashou/core/modules/offline/offlineCheck.ts` | 检查更新与启动自动检查 |
+| `src-dashou/core/modules/offline/offlineRepo.ts` | 只读查询：search / detail / covers / extras |
+| `src-dashou/core/modules/offline/offlineMapper.ts` | 行 → 候选 / 详情映射、番号归一化、DMM 图片与预告片地址 |
+| `src-dashou/core/modules/offline/offlineEvents.ts` | 进度 / 完成 / 有更新三条推送 |
+| `src-dashou/core/modules/offline/offlineIpc.ts` | IPC 注册（含系统文件选择框） |
 | `src/common/types/plugin/builtin.ts` | 内置插件常量 `R18_OFFLINE_PLUGIN_ID = 'r18-offline'`（唯一一份，渲染层资料库表单与主进程注册表共用；由 `src/common/types/plugin/index.ts` 导出） |
-| `src/main/src/modules/plugin/builtinPlugins.ts` | 内置插件定义（影片类别的 `r18-offline`，`kind: 'movie'`），四个方法映射到查询层；按类别导出 `listBuiltinPlugins(kind)` / `findBuiltinPlugin(kind, id)`，从 `@common/types/plugin` 引入 `R18_OFFLINE_PLUGIN_ID` 后再 `export` |
-| `src/renderer/src/windows/main/pages/plugin/movie/components/OfflinePackPanel.vue` | 数据包面板（挂在「影片信息」tab 的内置插件详情里） |
-| `src/renderer/src/windows/main/pages/plugin/movie/composables/useOfflineData.ts` | 数据包状态与操作的单例 |
-| `src/renderer/src/windows/main/composables/useOfflineUpdateNotice.ts` | 启动时的更新提示 |
+| `src-dashou/core/modules/plugin/builtinPlugins.ts` | 内置插件定义（影片类别的 `r18-offline`，`kind: 'movie'`），四个方法映射到查询层；按类别导出 `listBuiltinPlugins(kind)` / `findBuiltinPlugin(kind, id)`，从 `@common/types/plugin` 引入 `R18_OFFLINE_PLUGIN_ID` 后再 `export` |
+| `src/windows/main/pages/plugin/movie/components/OfflinePackPanel.vue` | 数据包面板（挂在「影片信息」tab 的内置插件详情里） |
+| `src/windows/main/pages/plugin/movie/composables/useOfflineData.ts` | 数据包状态与操作的单例 |
+| `src/windows/main/composables/useOfflineUpdateNotice.ts` | 启动时的更新提示 |
 
 ## 12. 本期不做（后续项）
 

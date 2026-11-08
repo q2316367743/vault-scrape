@@ -7,7 +7,7 @@
 - 渲染层入口只剩一个：影视墙资料库抽屉里的整库「刮削」（[影视墙页面](../page/04-media-wall-page.md)），由 `startLibraryScrape` 取本库全部待刮削候选。原「工作台」（选资料库 → 逐级浏览 → 勾选影片排队）已整体下线，刮削的进度 / 取消 / 继续 / 逐文件结果改在概览页看（[刮削进度与详情页](../page/03-scrape-detail-page.md)）。调用只经 `@/api` 的 `scrapeApi` / `libraryApi`，不触碰 `window.preload`。
 - **候选与刮削器都来自资料库**：候选是本库 `scrapedAt = 0` **且 `has_nfo = 0`** 的**影片**条目（剧集库则是 `scrapedAt = 0` 且 `has_nfo = 0` 的**剧集**条目，见 §3 与 §5.3），刮削器是 `library.scrapers`（见 [资料库](../media/01-media-library.md)）。这里存的 id 是**影片信息插件**（`kind: 'movie'`）的 id，运行时从影片类别注册表 `moviePlugins` 取用，演员信息插件不参与影片刮削。**刮削阶段不扫盘、也不自己建索引**，`FileConnection` 上已经没有 `scrapers` 字段。按库类型分派（影片版 / 剧集版）收口在 `libraryScrapeDispatch.ts` 的 `isTvLibrary()`。
 - preload 桥：`src/preload/src/modules/scrape/scrape.ts`（`scrapeApi`）与 `scrapeChannels.ts`（通道常量，主进程通过别名 `~` 引用同一份定义）。
-- 主进程实现：`src/main/src/modules/scrape/`。
+- 主进程实现：`src-dashou/core/modules/scrape/`。
 - 公共类型：`src/common/types/scrape/`（`keyword` / `media` / `asset` / `naming` / `nfo` / `error` / `result` / `task`）。
 - 数据表：`task`（任务）与 `scrape_file`（逐文件结果），见 [SQLite 存储](../data/01-sqlite-storage.md)。
 
@@ -30,7 +30,7 @@
 ## 2. 目录结构
 
 ```
-src/main/src/modules/scrape/
+src-dashou/core/modules/scrape/
 ├── scrapeRunner.ts       # 任务编排：单任务互斥、并发调度、取消 / 继续、启动时中断标记、按条目启动（startScrapeTaskForEntries）
 ├── scrapeRunSlot.ts      # 运行槽位单例（takeRunSlot / releaseRunSlot / currentRun / isRunActive），批量任务与手动匹配共用
 ├── scrapeManualPolicy.ts # 手动匹配的策略小模块：任务名前缀、forced 内存表（rememberForced / forcedOf / forgetForced）、applyForcedMatch（localFirst:false + CLEAR_KEEP）、assertManualTaskResumable（重启后拒绝继续）
@@ -64,7 +64,7 @@ src/common/types/scrape/
 
 > 命名规则（季号 / 集号 / 花絮目录与文件名 / 剧集关键词 / 影片名与版本）已统一到 `src/common/types/media/mediaRules.ts`：剧集与影片**共用同一套纯函数**（`parseEpisodeNumbers` / `seasonNumberOfDir` / `isExtraVideoDir` / `extraKindOfName` / `seriesKeywordOf` / `seriesYearOf` / `parseMediaName` / `isVersionOfFolder`），原来的 `src/common/types/scrape/episode.ts` 已删除。
 >
-> 流水线**收尾的自动翻译**与**译文回写 NFO** 不在本目录：`src/main/src/modules/translate/` 里的 `autoTranslate.ts`（判定该不该翻、调 `translateItem`）与 `translateNfo.ts`（把刚写下的 NFO 读回来按标签名打补丁）由两条流水线各自在收尾调用一次，单条目翻译编排在 `itemTranslate.ts`，完整契约见 [翻译能力接入](../plugin/10-translate-integration.md)。
+> 流水线**收尾的自动翻译**与**译文回写 NFO** 不在本目录：`src-dashou/core/modules/translate/` 里的 `autoTranslate.ts`（判定该不该翻、调 `translateItem`）与 `translateNfo.ts`（把刚写下的 NFO 读回来按标签名打补丁）由两条流水线各自在收尾调用一次，单条目翻译编排在 `itemTranslate.ts`，完整契约见 [翻译能力接入](../plugin/10-translate-integration.md)。
 
 ## 3. 候选来源：资料库的待刮削条目
 

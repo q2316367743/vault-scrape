@@ -1,11 +1,15 @@
 # 托盘与 macOS Dock
 
+> **插件化后的变化（2026-11）**：插件没有托盘 / Dock API，本模块与 `modules/tray` 已删除；
+> `resident: true` 让 core 在窗口关光后继续跑长任务。本文仅作历史参考。
+
+
 ## 实现思路
 
 桌面端「关闭 = 退进程」的默认语义会连后台任务一起带走（刮削、演员补全、离线包下载都在主进程跑），
 所以这一版把主窗口的关闭改成**隐藏**，用一个常驻托盘当恢复入口：
 
-- **托盘**：`src/main/src/modules/tray/tray.ts` 建 `Tray`，菜单**只有两项**——「打开」（显示并聚焦主窗口）、
+- **托盘**：`src-dashou/core/modules/tray/tray.ts` 建 `Tray`，菜单**只有两项**——「打开」（显示并聚焦主窗口）、
   「退出」（真的结束进程）。
 - **关闭 = 隐藏**：主窗口的 `close` 事件被拦截，非退出场景一律 `event.preventDefault()` + `win.hide()`。
   窗口根节点不销毁，重开比重建便宜，渲染层状态（当前路由、滚动位置、表单草稿）全部还在。
@@ -75,8 +79,8 @@ else showMainWindow()
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/main/src/modules/tray/tray.ts` | 托盘创建与菜单、关闭拦截、`quitting` 标志、macOS Dock 同步 |
-| `src/main/src/modules/appWindow/appWindowIpc.ts` | `bindAppWindow(win)` / `mainWindow()`：窗口域里唯一的应用主窗口引用（托盘据此显示聚焦） |
+| `src-dashou/core/modules/tray/tray.ts` | 托盘创建与菜单、关闭拦截、`quitting` 标志、macOS Dock 同步 |
+| `src-dashou/core/modules/appWindow/appWindowIpc.ts` | `bindAppWindow(win)` / `mainWindow()`：窗口域里唯一的应用主窗口引用（托盘据此显示聚焦） |
 | `src/main/index.ts` | `createWindow()` 里 `bindAppWindow` + `createTray`；`before-quit` 里 `markQuitting()`；`activate` 恢复隐藏窗口 |
 
 ## 注意事项

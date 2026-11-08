@@ -3,13 +3,14 @@
  *
  * 契约：
  * - 本模块只放纯类型与纯函数（渲染层要打包），**禁止引入 `node:*`**；
- * - 私有协议形如 `storage://{存储ID}/{媒体ID}/{原始文件名}`，
+ * - 地址形如 `{媒体基地址}{存储ID}/{媒体ID}/{原始文件名}`，媒体基地址由 core 的回环
+ *   HTTP 服务在启动时注入（见 `mediaBaseUrl` / `setMediaBaseUrl`）；
  *   媒体 ID 是 `media_source` / `media_image` 表的主键，URL 里只出现 ID，不暴露真实路径；
- * - `parseMediaUrl` 只做形状解析，是否越权、文件是否存在由主进程处理器判定。
+ * - `parseMediaUrl` 只做形状解析，是否越权、文件是否存在由 core 的处理器判定。
  */
 import { isVideoExt } from '../scrape/keyword'
 
-/** 媒体源归类：用于图标、封面判定与私有协议的响应分支 */
+/** 媒体源归类：用于图标、封面判定与媒体地址的响应分支 */
 export type MediaSourceKind = 'video' | 'image' | 'nfo' | 'other'
 
 export const MEDIA_SOURCE_KINDS: readonly MediaSourceKind[] = ['video', 'image', 'nfo', 'other']
@@ -63,21 +64,38 @@ export const MEDIA_COVER_IMAGE_TYPE_ORDER: readonly MediaImageType[] = [
   'other'
 ]
 
-/** 私有协议名（Electron 自定义协议，渲染层可直接用于 img/video 的 src） */
-export const MEDIA_SCHEME = 'storage'
+/**
+ * 媒体地址前缀（带尾斜杠）。
+ *
+ * 原 Electron 版本用 `storage://` 私有协议；插件没有自定义协议，改由 core 里的
+ * 本机 HTTP 服务提供同一套「只认媒体 ID」的读取能力。服务的端口与一次性 token
+ * 在启动后才确定，所以这里用可变前缀：core 启动时调 `setMediaBaseUrl()`，
+ * 窗口侧在挂载前通过 `appInfo` 拿到同一个值。
+ *
+ * 地址形如 `http://127.0.0.1:<port>/p/<token>/{存储ID}/{媒体ID}/{文件名}`。
+ */
+let mediaBase = 'http://127.0.0.1/'
 
-export const MEDIA_URL_PREFIX = `${MEDIA_SCHEME}://`
+/** core 启动媒体服务后注入真实前缀（末尾自动补斜杠） */
+export function setMediaBaseUrl(base: string): void {
+  mediaBase = base.endsWith('/') ? base : `${base}/`
+}
+
+/** 当前媒体地址前缀（末尾带斜杠） */
+export function mediaBaseUrl(): string {
+  return mediaBase
+}
 
 /**
  * 媒体 ID：扫描出来的 `sha1(前缀 + 连接 ID + 路径)` 前 32 位十六进制，
  * 或刮削产物图落库时的 `randomUUID()`。两种形态都只含十六进制字符与连字符，
- * 不含路径分隔符，可以直接当私有协议的一段路径。
+ * 不含路径分隔符，可以直接当媒体地址的一段路径。
  */
 export const MEDIA_ID_PATTERN = /^(?:[0-9a-f]{32}|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$/
 
 /** 一次媒体源索引的写入形状（对应 `media_source` 表） */
 export interface MediaSourceItem {
-  /** 媒体源 ID：由连接 ID + 路径哈希得来，**跨改名/移动保持稳定**（改名时按 ID 就地更新路径），私有协议靠它定位 */
+  /** 媒体源 ID：由连接 ID + 路径哈希得来，**跨改名/移动保持稳定**（改名时按 ID 就地更新路径），媒体地址靠它定位 */
   id: string
   /** 所属条目（`media_item.id`） */
   itemId: string
@@ -128,9 +146,9 @@ export function mediaSourceKindOf(mime: string, extname: string): MediaSourceKin
   return 'other'
 }
 
-/** 私有协议的解析结果 */
+/** 媒体地址的解析结果 */
 export interface MediaUrlParts {
-  /** 存储 ID（standard 协议会把 host 归一化为小写） */
+  /** 存储 ID */
   connectionId: string
   /** 媒体 ID（`media_source.id` 或 `media_image.id`） */
   mediaId: string
@@ -146,14 +164,15 @@ export interface MediaUrlParts {
  */
 export function buildMediaUrl(connectionId: string, mediaId: string, fileName: string): string {
   const name = fileName.trim().length > 0 ? fileName.trim() : 'media'
-  return `${MEDIA_URL_PREFIX}${connectionId}/${mediaId}/${encodeURIComponent(name)}`
+  return `${mediaBaseUrl()}${connectionId}/${mediaId}/${encodeURIComponent(name)}`
 }
 
 /** 解析媒体地址；形状不对或文件名解码失败时返回 null */
 export function parseMediaUrl(url: string): MediaUrlParts | null {
+  const base = mediaBaseUrl()
   const text = url.trim()
-  if (!text.startsWith(MEDIA_URL_PREFIX)) return null
-  const rest = text.slice(MEDIA_URL_PREFIX.length).split('?')[0]?.split('#')[0] ?? ''
+  if (!text.startsWith(base)) return null
+  const rest = text.slice(base.length).split('?')[0]?.split('#')[0] ?? ''
   const parts = rest.split('/')
   const connectionId = parts[0] ?? ''
   const mediaId = parts[1] ?? ''

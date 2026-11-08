@@ -11,23 +11,23 @@
 | 文件 | 职责 |
 | --- | --- |
 | `src/renderer/index.html` | HTML 入口，脚本指向 `windows/main/main.ts` |
-| `src/renderer/src/windows/main/main.ts` | 挂载 Vue 应用，注册 pinia 与 router |
-| `src/renderer/src/windows/main/App.vue` | 应用外壳：标题栏 + 侧栏 + 内容区 |
-| `src/renderer/src/windows/main/router.ts` | 路由表 |
-| `src/renderer/src/components/app/AppTitleBar.vue` | 自定义标题栏（主窗口与播放窗口共用）：`title` prop、`leading` / `trailing` 插槽（主窗口在 `#leading` 放折叠按钮）、非 macOS 的自绘窗口按钮；主题切换已移到设置页 |
-| `src/renderer/src/windows/main/pages/app/AppSide.vue` | 侧栏容器与菜单数据 |
-| `src/renderer/src/components/menu/types.ts` | `SideMenuItem` 接口 |
-| `src/renderer/src/components/menu/SideMenu.vue` | 菜单列表容器 |
-| `src/renderer/src/components/menu/SideMenuNode.vue` | 单个菜单节点（递归） |
-| `src/renderer/src/components/PageLayout/PageLayout.vue` | 页面统一容器 |
-| `src/renderer/src/components/PageLayout/SubPageLayout.vue` | 子页面容器：标题左侧返回图标 + `router.back()`，无历史时回落 `fallback` |
-| `src/renderer/src/global/AppState.ts` | 侧栏折叠状态等全局状态 |
-| `src/renderer/src/global/AppTheme.ts` | 主题模式（亮色 / 深色 / 跟随系统）状态与窗口材质同步 |
-| `src/renderer/src/hooks/{UseState.ts,UseLog.ts}` | 通用 hooks |
-| `src/renderer/src/assets/style/global.less` | 样式入口，仅汇总导入 |
-| `src/renderer/src/assets/style/theme.less` | TDesign Token 与 `--fluent-*` 变量定义 |
-| `src/renderer/src/assets/style/tdesign-cover.less` | 对 TDesign 组件的少量样式修正 |
-| `src/renderer/src/assets/style/customer.less` | 全局 reset 与跨页面共享类 |
+| `src/windows/main/main.ts` | 挂载 Vue 应用，注册 pinia 与 router |
+| `src/windows/main/App.vue` | 应用外壳：标题栏 + 侧栏 + 内容区 |
+| `src/windows/main/router.ts` | 路由表 |
+| `src/components/app/AppTitleBar.vue` | 自定义标题栏（主窗口与播放窗口共用）：`title` prop、`leading` / `trailing` 插槽（主窗口在 `#leading` 放折叠按钮）、非 macOS 的自绘窗口按钮；主题切换已移到设置页 |
+| `src/windows/main/pages/app/AppSide.vue` | 侧栏容器与菜单数据 |
+| `src/components/menu/types.ts` | `SideMenuItem` 接口 |
+| `src/components/menu/SideMenu.vue` | 菜单列表容器 |
+| `src/components/menu/SideMenuNode.vue` | 单个菜单节点（递归） |
+| `src/components/PageLayout/PageLayout.vue` | 页面统一容器 |
+| `src/components/PageLayout/SubPageLayout.vue` | 子页面容器：标题左侧返回图标 + `router.back()`，无历史时回落 `fallback` |
+| `src/global/AppState.ts` | 侧栏折叠状态等全局状态 |
+| `src/global/AppTheme.ts` | 主题模式（亮色 / 深色 / 跟随系统）状态与窗口材质同步 |
+| `src/hooks/{UseState.ts,UseLog.ts}` | 通用 hooks |
+| `src/assets/style/global.less` | 样式入口，仅汇总导入 |
+| `src/assets/style/theme.less` | TDesign Token 与 `--fluent-*` 变量定义 |
+| `src/assets/style/tdesign-cover.less` | 对 TDesign 组件的少量样式修正 |
+| `src/assets/style/customer.less` | 全局 reset 与跨页面共享类 |
 
 ## 外壳结构
 
@@ -94,7 +94,7 @@ export interface SideMenuItem {
 三档：亮色 / 深色 / **跟随系统**（默认），选择持久化在 localStorage 的 `vault-scrape:theme-mode`。
 
 - **开关机制**：`<html theme-mode="dark">` 是 TDesign 官方的深色模式开关，深色 Token 块写成 `:root[theme-mode='dark']`；亮色块仍用 `:root`（不写属性或写 `light` 都命中）。因此属性取值只有 `light` / `dark`，三档里的 `auto` 在写属性前就被解析成了两者之一。
-- **状态**：`src/renderer/src/global/AppTheme.ts` 用 vueuse 的 `useColorMode({ attribute: 'theme-mode', modes: { light: 'light', dark: 'dark' }, initialValue: 'auto', storageKey: 'vault-scrape:theme-mode' })`。它自带 `prefers-color-scheme` 订阅与属性写入，`auto` 档不需要另写媒体查询；返回值的 `store` 保留用户原始选择（含 `auto`）用于回显，`.value` 是解析结果（`light` / `dark`）。
+- **状态**：`src/global/AppTheme.ts` 用 vueuse 的 `useColorMode({ attribute: 'theme-mode', modes: { light: 'light', dark: 'dark' }, initialValue: 'auto', storageKey: 'vault-scrape:theme-mode' })`。它自带 `prefers-color-scheme` 订阅与属性写入，`auto` 档不需要另写媒体查询；返回值的 `store` 保留用户原始选择（含 `auto`）用于回显，`.value` 是解析结果（`light` / `dark`）。
   - vueuse 15 **没有** `useTheme`（网上不少示例是旧版本或误传），等价能力就是 `useColorMode`；只需要布尔值时用 `useDark`。
 - **首屏不闪**：`AppTheme.ts` 在模块求值阶段（早于 `app.mount`）就写好属性，且 `useColorMode` 默认 `disableTransition`，切换时不会出现整屏过渡动画。
 - **入口**：标题栏左侧折叠按钮旁的图标按钮，点击出 `t-dropdown` 三选一，当前档位用 `active` 高亮、面板收起后按钮图标即当前档位。图标按档位取 `ModeLightIcon` / `ModeDarkIcon` / `DesktopIcon`，三个按钮共用 `.bar-toggle` / `.theme-toggle` 的 32×32 几何与 `no-drag`，见 [02-window-chrome.md](./02-window-chrome.md)。
@@ -110,8 +110,8 @@ export interface SideMenuItem {
 ## 注意事项
 
 - 窗口层面的改动（亚克力材质、自定义标题栏、窗口按钮、`appWindow` IPC、侧栏折叠形态）见 [02-window-chrome.md](./02-window-chrome.md)；本文件只覆盖窗口内部的外壳与主题。
-- 弹窗与抽屉一律用命令式 API（`DialogPlugin` / `DrawerPlugin`），默认 `placement: center`；外壳与内容拆成两个文件——`.tsx` 外壳导出 `openXxx(options)`，内容组件为 `.vue`，用 JSX 渲染（`tsconfig.web.json` 已配 `jsx: preserve` + `jsxImportSource: vue`，**不要在 `.tsx` 里用 `h()` 拼 VNode**）。**操作按钮由外壳的 `footer` 提供**（JSX 渲染 `tdesign` 的 `Button`，固定底部不随内容滚动），内容组件不含按钮，只用 `defineExpose` 暴露 `ModalContentExpose`（`src/renderer/src/utils/modal/ModalContent.ts` 的 `submit` / `saving` / `canSubmit`）供外壳的模板 ref 读取；`footer: false` 只用于没有操作按钮的场景（如只读抽屉）。禁止 `<t-dialog :visible>` + `v-if` 的声明式写法，也禁止把弹窗内容写在 tsx 里。
-- 组件存放：与页面强相关的组件放该页面目录下的 `components/`；只有真正通用的组件（如 `PageLayout`、`menu`）才放 `src/renderer/src/components/`，业务组件不得进入该目录。
+- 弹窗与抽屉一律用命令式 API（`DialogPlugin` / `DrawerPlugin`），默认 `placement: center`；外壳与内容拆成两个文件——`.tsx` 外壳导出 `openXxx(options)`，内容组件为 `.vue`，用 JSX 渲染（`tsconfig.web.json` 已配 `jsx: preserve` + `jsxImportSource: vue`，**不要在 `.tsx` 里用 `h()` 拼 VNode**）。**操作按钮由外壳的 `footer` 提供**（JSX 渲染 `tdesign` 的 `Button`，固定底部不随内容滚动），内容组件不含按钮，只用 `defineExpose` 暴露 `ModalContentExpose`（`src/utils/modal/ModalContent.ts` 的 `submit` / `saving` / `canSubmit`）供外壳的模板 ref 读取；`footer: false` 只用于没有操作按钮的场景（如只读抽屉）。禁止 `<t-dialog :visible>` + `v-if` 的声明式写法，也禁止把弹窗内容写在 tsx 里。
+- 组件存放：与页面强相关的组件放该页面目录下的 `components/`；只有真正通用的组件（如 `PageLayout`、`menu`）才放 `src/components/`，业务组件不得进入该目录。
 - 页面/store 不直接访问 `window.preload`，统一经 `@/api` 出口。
 - 不使用 `unplugin-auto-import`：所有 API 与组合式函数显式 import，避免依赖需要运行 dev/build 才能生成的声明文件。
 - 新增图标前先确认 `tdesign-icons-vue-next` 的导出名（可用 `node -e "import('tdesign-icons-vue-next').then(m => console.log(Object.keys(m)))"` 查看），不要臆造图标名，也不要手写 SVG。

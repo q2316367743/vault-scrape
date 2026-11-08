@@ -4,7 +4,7 @@
 
 ## 1. 数据模型
 
-`src/main/src/db/schema/actor.ts`（四张表都在全量基线迁移 `resources/drizzle/0000_moaning_black_panther.sql` 里；早期强关联的 `media_actor` 与拆分出来的 `0005` / `0006` 迁移都已删除重建）：
+`src-dashou/core/db/schema/actor.ts`（四张表都在全量基线迁移 `resources/drizzle/0000_moaning_black_panther.sql` 里；早期强关联的 `media_actor` 与拆分出来的 `0005` / `0006` 迁移都已删除重建）：
 
 | 表 | 关键列 | 说明 |
 | --- | --- | --- |
@@ -23,7 +23,7 @@
 
 ## 2. 图片落盘与 `storage://actor` 协议
 
-目录解析（`src/main/src/modules/actor/actorPaths.ts`）：
+目录解析（`src-dashou/core/modules/actor/actorPaths.ts`）：
 
 1. 设置 `app.actorImageDir` 非空且是绝对路径、且可写 → 用它；
 2. 否则回落默认目录 `join(app.getPath('home'), '.vault-scrape', 'media', 'actor')`，并写一条 `warn` 日志；

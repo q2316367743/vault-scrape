@@ -127,14 +127,14 @@ interface ScrapeMatchResult {
 | 文件 | 职责 |
 | --- | --- |
 | `src/common/types/scrape/match.ts` | `ScrapeMatchRequest` / `ScrapeMatchResult`（`{ itemId, taskId }`），由 `types/scrape/index.ts` 导出 |
-| `src/main/src/modules/scrape/scrapeManualMatch.ts` | `matchItemManually()`：校验 → 取落点 → 建单文件任务（`forced`）→ 返回 taskId |
-| `src/main/src/modules/scrape/scrapeRunner.ts` | 任务编排与启动入口：`ScrapeEntriesRequest.forced`、建任务时记 `forced`、`execute()` 里应用 `forced` 策略 |
-| `src/main/src/modules/scrape/scrapeManualPolicy.ts` | 手动匹配的策略小模块：`MANUAL_MATCH_TASK_PREFIX`、`taskForced` 内存表（`rememberForced` / `forcedOf` / `forgetForced`）、`applyForcedMatch()`（`localFirst:false` + `CLEAR_KEEP`）、`assertManualTaskResumable()`（重启后拒绝继续） |
-| `src/main/src/modules/scrape/scrapeUsablePlugins.ts` | 「资料库刮削器 ∩ 可用插件」的挑选（`usablePlugins` / `assertUsablePlugins` / `LibraryPlugins`），任务、手动匹配与「配置了但都不可用」提示共用 |
-| `src/main/src/modules/scrape/scrapeRunSlot.ts` | 单例运行槽位（`takeRunSlot` / `releaseRunSlot` / `currentRun` / `isRunActive`），批量与手动共用 |
-| `src/main/src/modules/scrape/scrapeJobPlan.ts` | `collectFromPlugins` 的 `forced` 分支（跳过 search 与挑选） |
-| `src/main/src/modules/scrape/scrapeJobTypes.ts` | `ScrapeForcedMatch` 与 `ScrapeJobContext.forced` |
-| `src/main/src/modules/scrape/scrapeIpc.ts` | `scrape:match` 通道 + `readMatchRequest()` 入参收窄 |
+| `src-dashou/core/modules/scrape/scrapeManualMatch.ts` | `matchItemManually()`：校验 → 取落点 → 建单文件任务（`forced`）→ 返回 taskId |
+| `src-dashou/core/modules/scrape/scrapeRunner.ts` | 任务编排与启动入口：`ScrapeEntriesRequest.forced`、建任务时记 `forced`、`execute()` 里应用 `forced` 策略 |
+| `src-dashou/core/modules/scrape/scrapeManualPolicy.ts` | 手动匹配的策略小模块：`MANUAL_MATCH_TASK_PREFIX`、`taskForced` 内存表（`rememberForced` / `forcedOf` / `forgetForced`）、`applyForcedMatch()`（`localFirst:false` + `CLEAR_KEEP`）、`assertManualTaskResumable()`（重启后拒绝继续） |
+| `src-dashou/core/modules/scrape/scrapeUsablePlugins.ts` | 「资料库刮削器 ∩ 可用插件」的挑选（`usablePlugins` / `assertUsablePlugins` / `LibraryPlugins`），任务、手动匹配与「配置了但都不可用」提示共用 |
+| `src-dashou/core/modules/scrape/scrapeRunSlot.ts` | 单例运行槽位（`takeRunSlot` / `releaseRunSlot` / `currentRun` / `isRunActive`），批量与手动共用 |
+| `src-dashou/core/modules/scrape/scrapeJobPlan.ts` | `collectFromPlugins` 的 `forced` 分支（跳过 search 与挑选） |
+| `src-dashou/core/modules/scrape/scrapeJobTypes.ts` | `ScrapeForcedMatch` 与 `ScrapeJobContext.forced` |
+| `src-dashou/core/modules/scrape/scrapeIpc.ts` | `scrape:match` 通道 + `readMatchRequest()` 入参收窄 |
 | `src/preload/src/modules/scrape/scrape.ts` | `scrapeApi.match(request)`（`scrapeChannels.ts` 的 `match: 'scrape:match'`） |
 | `.../pages/media/detail/composables/useMediaMatchSearch.ts` | 可用插件、输入语义、搜索与候选去重 |
 | `.../pages/media/detail/composables/useManualMatch.ts` | 页面侧入口胶水（读条目 → 开窗 → 拿 taskId 跳进度页） |

@@ -4,7 +4,7 @@
 
 翻译弹窗要「从全部翻译插件里挑一个」：既要能看出哪些插件不可用、为什么不可用，又要在插件多起来之后能搜。`t-select` 的下拉面板放不下两行说明、也不能一眼看全，`t-radio-group` 裸用又没有外框与搜索。于是照 `CheckboxSelect` 的外观做一份**单栏单选控件**——外框里上面是搜索框、下面是可滚动的 radio 列表，每项可以带一行灰字说明。
 
-控件是通用表单控件（不依赖任何业务类型），放在 `src/renderer/src/components/RadioSelect.vue`，调用方用文件路径显式 import。
+控件是通用表单控件（不依赖任何业务类型），放在 `src/components/RadioSelect.vue`，调用方用文件路径显式 import。
 
 ```vue
 <radio-select v-model="pluginId" :options="pluginOptions" placeholder="搜索插件" />
@@ -38,7 +38,7 @@
 
 ## 使用方
 
-- `src/renderer/src/windows/main/pages/media/detail/modals/TranslateDialogContent.vue`：`options` = 全部翻译插件（`PluginSummary[]`）映射出的 `{ label: plugin.name, value: plugin.id, disabled: !isPluginUsable(plugin), description: translatePluginHint(plugin) }`，不可用的项置灰并显示「未启用」/「需要先补全插件设置」/「插件加载失败」；初始选中第一个可用插件（与设置里 `pluginId` 留空的「自动选择」同口径）。接入说明见 [plugin/10-translate-integration.md](../plugin/10-translate-integration.md)。
+- `src/windows/main/pages/media/detail/modals/TranslateDialogContent.vue`：`options` = 全部翻译插件（`PluginSummary[]`）映射出的 `{ label: plugin.name, value: plugin.id, disabled: !isPluginUsable(plugin), description: translatePluginHint(plugin) }`，不可用的项置灰并显示「未启用」/「需要先补全插件设置」/「插件加载失败」；初始选中第一个可用插件（与设置里 `pluginId` 留空的「自动选择」同口径）。接入说明见 [plugin/10-translate-integration.md](../plugin/10-translate-integration.md)。
 
 ## 注意事项
 

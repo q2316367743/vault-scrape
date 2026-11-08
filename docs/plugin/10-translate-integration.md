@@ -25,7 +25,7 @@
 | `plugin_id` | 产出这份译文的插件 ID |
 | `translated_at` | 翻译完成时间，0 表示未知 |
 
-定义在 `src/main/src/db/schema/translation.ts`（`mediaTranslationTable`），仓储是 `src/main/src/db/repo/translationRepo.ts`：
+定义在 `src-dashou/core/db/schema/translation.ts`（`mediaTranslationTable`），仓储是 `src-dashou/core/db/repo/translationRepo.ts`：
 
 - `getTranslation(itemId)` / `listTranslations(itemIds)`（**批量读**，剧集详情一次要读剧集本身 + 全部集，避免 N+1）/ `upsertTranslation(input)` / `deleteTranslation(itemId)` / `deleteTranslationsByItems(itemIds)`；
 - 脏 `language`（不在宿主 5 码里）整行当作没有译文、读回 `null`：译文是纯派生物，读不回来重翻即可，不必报错；
@@ -55,7 +55,7 @@
 | `unusable` | 有已启用的，但**全都不可用**（典型是两个插件都要求必填 key） | 「翻译插件都需要先补全设置，请到插件页填写」 |
 | `ready` | 至少有一个可用 | 打开弹窗选插件 |
 
-判定与文案集中在 `src/renderer/src/windows/main/composables/useTranslatePlugins.ts`（设置页与详情页共用）：
+判定与文案集中在 `src/windows/main/composables/useTranslatePlugins.ts`（设置页与详情页共用）：
 
 - `plugins` = `pluginApi.translate.list()` 的**全量**结果，**不做任何过滤**（否则界面分不出上面前三种状态）；
 - `usable` = `plugins.filter(isPluginUsable)`，`isPluginUsable` 来自 `src/common/types/plugin/manifest.ts`：`enabled && loadError.length === 0 && envReady`，**主进程挑插件与渲染层画弹窗共用这一份判定**；
@@ -139,7 +139,7 @@
 | `translate:clear` | `TranslateClearRequest { itemId }` | `TranslateResult<TranslateClearResult>` |
 
 - 通道常量在 `src/preload/src/modules/translate/translateChannels.ts`（主进程用 `~` 别名引用，与其它域同款）；翻译插件自身的增删改查仍走 `plugin:translate:*`，本域不重复提供。
-- 桥在 `src/preload/src/modules/translate/translate.ts`（`translateApi.item` / `translateApi.clear`，**返回信封不抛异常**），渲染层出口 `src/renderer/src/api/translate.ts`。
+- 桥在 `src/preload/src/modules/translate/translate.ts`（`translateApi.item` / `translateApi.clear`，**返回信封不抛异常**），渲染层出口 `src/api/translate.ts`。
 - 错误码（`src/common/types/translate/error.ts`）：`invalidItem` / `pluginMissing` / `pluginUnusable` / `busy` / `invokeFailed`，文案都是给用户看的成品句。**没有「未启用」这个码**——开关不影响手动翻译。
 
 ## 7. 关键文件
@@ -149,18 +149,18 @@
 | `src/common/types/translate/{index,request,result,error}.ts` | 读模型 `MediaItemTranslation`、IPC 入参 / 出参、错误码与文案 |
 | `src/common/types/setting/translateSetting.ts` | `SettingTranslate`（`enabled` / `targetLanguage` / `pluginId` / `writeNfo`）与 `TRANSLATE_LANGUAGE_LABELS` |
 | `src/common/types/scrape/nfo.ts` | 译文 NFO 的私有标记（`NFO_TRANSLATED_TAG` / `nfoTranslatedLine` / `isTranslatedNfo`） |
-| `src/main/src/db/schema/translation.ts` + `repo/translationRepo.ts` | 译文表与读写 |
-| `src/main/src/modules/translate/translatePlugins.ts` | 挑插件：`pickTranslatePlugin(preferredId)`（顺序 = 插件页顺序，只认 `isPluginUsable`） |
-| `src/main/src/modules/translate/translateFields.ts` | 纯函数：从 `MediaItemRow` + 演员名单 + 库语言组装待翻译字段，以及把译文合并回读模型 |
-| `src/main/src/modules/translate/itemTranslate.ts` | 编排：一条目 + 剧集逐集、字段级并发 3、条目级去重、译文入库 |
-| `src/main/src/modules/translate/autoTranslate.ts` | 自动翻译的触发判定与失败兜底 |
-| `src/main/src/modules/translate/translateNfo.ts` | NFO 打补丁与写回 |
-| `src/main/src/modules/translate/translateIpc.ts` | 两个 IPC 通道 + 信封 |
-| `src/renderer/src/windows/main/composables/useTranslatePlugins.ts` | 插件列表 / 可用集合 / 四态 / 原因提示 |
-| `src/renderer/src/windows/main/pages/media/detail/modals/TranslateDialog{,Content}` | 手动翻译弹窗（外壳 + 内容） |
-| `src/renderer/src/windows/main/pages/media/detail/components/MediaTranslationBar.vue` | 「原文 / 译文」切换条 + 清除译文 |
-| `src/renderer/src/windows/main/pages/media/detail/composables/useTranslationView.ts` | 切换状态（换条目回落原文） |
-| `src/renderer/src/windows/main/pages/media/detail/mediaDetailCells.ts` | `translatedDetail()` 纯函数（把译文叠到读模型上） |
+| `src-dashou/core/db/schema/translation.ts` + `repo/translationRepo.ts` | 译文表与读写 |
+| `src-dashou/core/modules/translate/translatePlugins.ts` | 挑插件：`pickTranslatePlugin(preferredId)`（顺序 = 插件页顺序，只认 `isPluginUsable`） |
+| `src-dashou/core/modules/translate/translateFields.ts` | 纯函数：从 `MediaItemRow` + 演员名单 + 库语言组装待翻译字段，以及把译文合并回读模型 |
+| `src-dashou/core/modules/translate/itemTranslate.ts` | 编排：一条目 + 剧集逐集、字段级并发 3、条目级去重、译文入库 |
+| `src-dashou/core/modules/translate/autoTranslate.ts` | 自动翻译的触发判定与失败兜底 |
+| `src-dashou/core/modules/translate/translateNfo.ts` | NFO 打补丁与写回 |
+| `src-dashou/core/modules/translate/translateIpc.ts` | 两个 IPC 通道 + 信封 |
+| `src/windows/main/composables/useTranslatePlugins.ts` | 插件列表 / 可用集合 / 四态 / 原因提示 |
+| `src/windows/main/pages/media/detail/modals/TranslateDialog{,Content}` | 手动翻译弹窗（外壳 + 内容） |
+| `src/windows/main/pages/media/detail/components/MediaTranslationBar.vue` | 「原文 / 译文」切换条 + 清除译文 |
+| `src/windows/main/pages/media/detail/composables/useTranslationView.ts` | 切换状态（换条目回落原文） |
+| `src/windows/main/pages/media/detail/mediaDetailCells.ts` | `translatedDetail()` 纯函数（把译文叠到读模型上） |
 
 ## 8. 已知限制
 

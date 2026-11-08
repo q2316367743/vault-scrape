@@ -2,9 +2,12 @@ node_modules
 dist
 out
 .DS_Store
-.eslintcache
 *.log*
 
+# 搭手插件的生成物：由 dashou-plugin dev / build 产出，不进仓库
+src-dashou/core.mjs
+src-dashou/ui/
+src-dashou/dashou-dist/
 
 # 本地参考用的站点脚本（按插件类别分目录），不进仓库
 script/

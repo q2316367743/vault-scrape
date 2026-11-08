@@ -7,7 +7,7 @@
  *   条目属于哪个资料库是**真实外键**（`libraryId`），不再按路径前缀推导；
  * - 元数据（标题、简介、番号、图片）来自刮削结果与扫描读到的 NFO，写在条目与 `media_image` 上，
  *   所以重扫不会丢元数据，磁盘上删掉的影片会在扫描清理时从墙上消失；
- * - 路径一律是连接内绝对路径，封面与播放地址一律是 `storage://` 协议地址（封面空串表示没有封面）；
+ * - 路径一律是连接内绝对路径，封面与播放地址一律是本机媒体地址（core 起的回环 HTTP 服务；空串表示没有）；
  * - 播放地址由主进程用媒体源 ID 构造，渲染层拿不到磁盘路径、也构造不出越权地址；
  * - 目录 / 文件名规则（年份、版本标签、季集号、花絮识别）见 `./mediaRules`。
  */
@@ -46,9 +46,9 @@ export interface MediaWallItem {
   num: string
   /** 展示标题：优先刮削命中标题，否则是去掉扩展名的文件名 */
   title: string
-  /** 封面地址（`storage://`），空串表示没有封面 */
+  /** 封面地址（本机媒体地址），空串表示没有封面 */
   coverUrl: string
-  /** 播放地址（`storage://`），可直接喂给 video / artplayer；**剧集条目为空串**（选集后才有的地址） */
+  /** 播放地址（本机媒体地址），可直接喂给 video / artplayer；**剧集条目为空串**（选集后才有的地址） */
   playUrl: string
   /** 剧集条目的季数；影片固定为 0 */
   seasonCount: number
@@ -137,14 +137,14 @@ export interface MediaDetailRequest {
 export interface MediaActorRef {
   actorId: string
   name: string
-  /** 头像地址（`storage://actor/...`），没有头像为空串 */
+  /** 头像地址（本机媒体地址），没有头像为空串 */
   avatarUrl: string
 }
 
 /**
  * 详情页里的一张图（沉浸头部的背景大图、剧照墙的缩略图都从这里取）。
  *
- * 契约：`url` 是 `storage://` 地址，只能喂给 tdesign 的图片组件，渲染层不解析它；
+ * 契约：`url` 是 本机媒体地址，只能喂给 tdesign 的图片组件，渲染层不解析它；
  * `type` 是刮削写下的用途，同一地址只会出现一次。
  */
 export interface MediaDetailImage {
@@ -227,9 +227,9 @@ export interface MediaEpisodeRef {
   runtimeMinutes: number
   /** 首播日期（`YYYY-MM-DD`）；未知为空串 */
   premiereDate: string
-  /** 播放地址（`storage://`），可直接喂给播放器 */
+  /** 播放地址（本机媒体地址），可直接喂给播放器 */
   playUrl: string
-  /** 剧照地址（`storage://`）：集的图 → 季海报 → 剧集封面，全没有时为空串 */
+  /** 剧照地址（本机媒体地址）：集的图 → 季海报 → 剧集封面，全没有时为空串 */
   coverUrl: string
   /** 集文件在连接内的绝对路径 */
   path: string
@@ -245,7 +245,7 @@ export interface MediaSeasonRef {
   seasonNumber: number
   /** 季目录名（如 `Season 01`）；特别篇是「特别篇」 */
   name: string
-  /** 季海报地址（`storage://`），没有为空串（渲染层可退回剧集封面） */
+  /** 季海报地址（本机媒体地址），没有为空串（渲染层可退回剧集封面） */
   posterUrl: string
   episodes: MediaEpisodeRef[]
 }

@@ -1,5 +1,10 @@
 # 窗口外观与自定义标题栏
 
+> **插件化后的变化（2026-11）**：窗口由宿主按 `plugin.json` 创建，插件没有 `nativeTheme` / 窗口材质 API；
+> 自绘标题栏保留（`AppTitleBar` + `-webkit-app-region: drag`），最小化 / 最大化 / 关闭改走 `@dashou/api/window`。
+> 透明材质、Dock / 托盘相关段落属于历史实现。
+
+
 ## 实现思路
 
 窗口外观由两部分协作：**系统材质**提供真正的模糊，**渲染层透明化**让材质透出来。
@@ -35,11 +40,11 @@
 
 ## 自定义标题栏
 
-组件 `src/renderer/src/components/app/AppTitleBar.vue`：**主窗口与播放窗口共用**（播放窗口见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）。它原来是「外壳部件、只给主窗口用」，本轮上移到 `components/app/`——两个渲染入口都要它，几何与窗口按钮语义必须只有一份。主窗口在 `#leading` 插槽里放折叠按钮，`#afterTitle` 里放「正在播放」标签（`components/app/AppPlayerBadge.vue`，没开播放窗口时不渲染；见[播放窗口与 mpv 播放](../media/03-mpv-playback.md) §7.1）。
+组件 `src/components/app/AppTitleBar.vue`：**主窗口与播放窗口共用**（播放窗口见[播放窗口与 mpv 播放](../media/03-mpv-playback.md)）。它原来是「外壳部件、只给主窗口用」，本轮上移到 `components/app/`——两个渲染入口都要它，几何与窗口按钮语义必须只有一份。主窗口在 `#leading` 插槽里放折叠按钮，`#afterTitle` 里放「正在播放」标签（`components/app/AppPlayerBadge.vue`，没开播放窗口时不渲染；见[播放窗口与 mpv 播放](../media/03-mpv-playback.md) §7.1）。
 
 - **几何**：高 40px 通栏，整条 `-webkit-app-region: drag`（同时写 `app-region: drag`）；其中的按钮显式声明 `no-drag`，否则点击会被窗口拖动吞掉。macOS 下 `.title-bar.is-mac` 用 `padding-left: 80px` 给红黄绿灯让位。
 - **内容**：左侧是 `leading` 插槽（主窗口放折叠按钮，`MenuFoldIcon` / `MenuUnfoldIcon` 切换，32×32、外面套 `t-tooltip`）+ 产品名（`title` prop：主窗口用默认 `vault-scrape`，播放窗口传当前影片名）+ `afterTitle` 插槽（紧挨产品名，主窗口放「正在播放」胶囊；`trailing` 在 `bar-fill` 之后、会被推到右侧，不跟着标题走）+ `trailing` 插槽；非 macOS 时右侧三个 46×40 的自绘按钮（`MinusIcon` / `Fullscreen1Icon`↔`FullscreenExit1Icon` / `CloseIcon`），关闭键悬停用 `--td-error-color` + `--td-text-color-anti` 还原 Windows 11 语义。
-- **主题切换已不在标题栏**：它现在只在「设置 → 应用设置」的 `t-radio-group` 里（`src/renderer/src/global/AppTheme.ts` 的 `themeMode` / `setThemeMode`，三档亮色 / 深色 / 跟随系统，状态与配色见 [01-renderer-shell.md](./01-renderer-shell.md) 的「深色模式」）。保留一条教训：`t-dropdown` 与 `t-tooltip` 都会接管触发元素的引用，两层弹层互抢同一个按钮会出问题——若以后把主题档位做回标题栏，要照这条办。
+- **主题切换已不在标题栏**：它现在只在「设置 → 应用设置」的 `t-radio-group` 里（`src/global/AppTheme.ts` 的 `themeMode` / `setThemeMode`，三档亮色 / 深色 / 跟随系统，状态与配色见 [01-renderer-shell.md](./01-renderer-shell.md) 的「深色模式」）。保留一条教训：`t-dropdown` 与 `t-tooltip` 都会接管触发元素的引用，两层弹层互抢同一个按钮会出问题——若以后把主题档位做回标题栏，要照这条办。
 - **最大化状态**：系统标题栏隐藏后渲染层无法自行感知最大化，只能由主进程驱动。`bindWindowState(win)` 监听窗口 `maximize` / `unmaximize`，经 `appWindow:maximizedChanged` 单向推送；渲染层 `onMaximizedChange(listener)` 订阅并返回退订函数，组件 `onUnmounted` 时必须调用。
 - **样式压制**：窗口按钮用 `t-button variant="text"`，几何与关闭键悬停态写在 `.window-buttons .window-button` 父级选择器下，靠层叠特异性（而非 `!important`）压过 TDesign 自带样式。
 
@@ -62,7 +67,7 @@
 - 另有 `isMac: boolean`（值为 `process.platform === 'darwin'`），是 preload 里的**常量**而非 IPC。刻意不用 `NodeJS.Platform` 类型：`tsconfig.web.json` 里 Node 命名空间不可解析。
 - `toggleMaximize` 直接返回目标态而不是调用后的 `isMaximized()`：`maximize()` / `unmaximize()` 异步生效，紧接着查询会拿到旧值（随后的推送事件会确认最终状态）。
 - 所有 handler 都用 `BrowserWindow.fromWebContents(event.sender)` 反查发起窗口，多窗口时各操作自己。
-- 相关文件：`src/preload/src/modules/appWindow/{appWindowChannels.ts,appWindow.ts}`、`src/main/src/modules/appWindow/appWindowIpc.ts`、`src/renderer/src/api/appWindow.ts`，并在 `src/preload/index.ts`（暴露 `appWindow`）、`src/preload/index.d.ts`（`window.preload.appWindow` 类型）、`src/main/src/registerIpc.ts`（挂一行）各登记一次。
+- 相关文件：`src/preload/src/modules/appWindow/{appWindowChannels.ts,appWindow.ts}`、`src-dashou/core/modules/appWindow/appWindowIpc.ts`、`src/api/appWindow.ts`，并在 `src/preload/index.ts`（暴露 `appWindow`）、`src/preload/index.d.ts`（`window.preload.appWindow` 类型）、`src-dashou/core/registerIpc.ts`（挂一行）各登记一次。
 
 ## 窗口材质跟随深色主题
 
@@ -75,7 +80,7 @@ macOS 的 vibrancy 与 Windows 的 acrylic 由**主进程**的系统主题决定
 
 ## 侧栏折叠
 
-- **状态**：`src/renderer/src/global/AppState.ts` 中 `collapsed = useLocalStorage('vault-scrape:collapsed', false)`（`@vueuse/core`）+ `toggleCollapsed()`。key 与旧的手写 localStorage 实现保持一致，历史值 `"true"` / `"false"` 与新的 JSON 值都能解析，重启后保持。
+- **状态**：`src/global/AppState.ts` 中 `collapsed = useLocalStorage('vault-scrape:collapsed', false)`（`@vueuse/core`）+ `toggleCollapsed()`。key 与旧的手写 localStorage 实现保持一致，历史值 `"true"` / `"false"` 与新的 JSON 值都能解析，重启后保持。
 - **形态**：224px ↔ 64px 图标轨道。`AppSide.vue` 用 `<t-aside :width="collapsed ? '64px' : '224px'">`，宽度过渡 `--fluent-transition-normal`；`.side-inner` 不再设 `min-width`（否则会撑破 64px 轨道）。产品名已上移到标题栏，侧栏不再有品牌行。
 - **下钻方式**：折叠态经显式 props `AppSide → SideMenu → SideMenuNode` 传递，通用菜单组件不直接 import 全局状态。
 - **折叠态表现**：隐藏标签与箭头（`.menu-item.is-collapsed` 让图标居中）、用 `t-tooltip placement="right"` 在悬停时显示标签（`:disabled="!collapsed"`）、有子项的节点点击不展开（当前菜单只有一级项，等价于无操作）。
@@ -117,4 +122,4 @@ macOS 的 vibrancy 与 Windows 的 acrylic 由**主进程**的系统主题决定
 
 - 只做 `yarn typecheck`，不跑 `dev` / `build` 作为验证手段。
 - 主窗口的「关闭」不是退进程：主进程把 `close` 拦成 `hide()`，恢复入口是托盘「打开」，Dock 显隐与托盘契约见 [04-tray-and-dock.md](./04-tray-and-dock.md)。
-- 新增 TDesign 组件（如本项目新引入的 `TTooltip`）必须**手工**补进 `src/renderer/src/renderer/components.d.ts` 的两处列表：该文件由 `unplugin-vue-components` 在 dev/build 时生成，不跑构建就不会自动更新，缺失会导致 `typecheck` 失败。
+- 新增 TDesign 组件（如本项目新引入的 `TTooltip`）必须**手工**补进 `src/renderer/components.d.ts` 的两处列表：该文件由 `unplugin-vue-components` 在 dev/build 时生成，不跑构建就不会自动更新，缺失会导致 `typecheck` 失败。

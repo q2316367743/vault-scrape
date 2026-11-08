@@ -3,7 +3,7 @@
  *
  * 契约：
  * - `ActorSummary` 用于列表页与影片详情页的演员条，字段够画头像 + 名字 + 作品数；
- * - `ActorDetail` 是演员详情页的完整形状，图片地址一律是 `storage://actor/...`；
+ * - `ActorDetail` 是演员详情页的完整形状，图片地址一律是 `本机媒体地址actor/...`；
  * - 出生地与三围的文案在渲染前由纯函数拼好，两个页面共用同一套写法。
  */
 import type { ActorGender } from './gender'
@@ -12,7 +12,7 @@ import type { ActorImageSource } from './image'
 /** 演员图片（头像与图集共用一种形状） */
 export interface ActorPhoto {
   imageId: string
-  /** `storage://actor/{imageId}/{文件名}` */
+  /** 本机媒体地址（演员图片） */
   url: string
   /** 原始文件名，用于展示与提示 */
   name: string

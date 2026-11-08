@@ -1,0 +1,10 @@
+# pnpm 12 起，工程级设置统一放在这里（package.json 的 "pnpm" 字段不再读取）。
+#
+# 只声明两次「允许执行安装脚本」的白名单：
+# - esbuild：Vite 的打包器，安装脚本负责校验 / 落地对应平台的二进制；
+# - vue-demi：@vueuse/core 依赖，安装脚本负责切到当前 Vue 版本的入口。
+#
+# 不写 `packages` 字段 = 只有根目录这一个包，不是 monorepo。
+onlyBuiltDependencies:
+  - esbuild
+  - vue-demi

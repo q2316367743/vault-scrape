@@ -4,11 +4,11 @@
 
 九个一级页面（概览 / 影视墙 / 演员 / 存储 / 插件 / 工具 / 设置 / 日志 / 关于）覆盖「看状态、浏览库、管演员、调试、配置、查日志、看版本、管插件」这些事，子页面有存储管理（见[存储管理页面](./02-storage-page.md)）、影视墙详情（见[影视墙页面](./04-media-wall-page.md)）、演员详情（见[演员页面](./05-actor-pages.md)）、工具搜索（见下文「工具」）与刮削进度详情（见[刮削进度与详情页](./03-scrape-detail-page.md)）。当前概览、日志、关于、设置四个页面接了真实数据（数据库与设置 IPC），存储页接了文件模块 IPC（只读：连接管理、`list` / `stat`、读 nfo 原文，加 `storage://` 路径预览的区间流），插件页接了插件模块 IPC（按类别分影片信息 / 演员信息 / 翻译三个 tab；导入 / 启停 / 拖拽排序 / 环境变量配置）与离线数据包 IPC（检查更新 / 下载导入 / 本地导入 / 删除），工具页的搜索工具接了插件模块 IPC（关键字搜索 / 影片 ID 直查），概览接了任务与刮削模块 IPC（任务统计 / 分页记录 / 当前任务快照 / 进度推送 / 取消 / 继续）与演员补全队列的快照 + 进度推送，影视墙接了媒体与资料库模块 IPC（整墙取数 / 影片详情与 NFO 解析 / 详情页「还原刮削前」/ 资料库增删改与扫描），演员页接了演员模块 IPC（列表 / 详情 / 编辑 / 删图 / 抓取资料 / 批量补全）。
 
-页面目录位于 `src/renderer/src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
+页面目录位于 `src/windows/main/pages/<页面名>/`，页面私有组件放在同目录的 `components/` 下。嵌套路由再按同一个路径段分一级：一级页面目录放索引页，子路由各占一个同名目录，页面与它的 `components/`、`composables/`、`modals/` 一起进去（例：`/tools` → `pages/tools/ToolsPage.vue`，`/tools/search` → `pages/tools/search/`）。
 
 ## 路由
 
-`src/renderer/src/windows/main/router.ts`，使用 `createWebHashHistory`（Electron 文件协议下无需服务端配合）：
+`src/windows/main/router.ts`，使用 `createWebHashHistory`（Electron 文件协议下无需服务端配合）：
 
 | 路径 | 页面 | 名称 |
 | --- | --- | --- |
@@ -61,7 +61,7 @@
 - 环境变量在插件页右栏的**配置区块**（`components/PluginConfigPanel.vue`）填写：只在插件声明了环境变量（`hasEnv`）时渲染，内置插件与没写 `env` 的脚本插件都不会出现空区域；选中插件后按声明表渲染多行文本域，保存以插件为单位；环境变量一律按敏感处理，明文永不回传，文本域留空表示保持已保存的值。保存成功后用主进程返回的 `PluginSummary` 上抛（`PluginDetail` 的 `changed` → 页面的 `applySummary`），列表上的「待填写变量」标签即时更新，不整表刷新。
 - 安装（导入 / 保存源码）时会在沙箱里执行一次脚本，读取 `env` 声明并写入索引，不联网、不调用四个方法；声明表即配置区块的数据源。
 - 影片详情是命令式抽屉（现位于 `pages/tools/search/`）：外壳 `modals/MovieDetailDrawer.tsx`（`openMovieDetailDrawer`，`DrawerPlugin` 680px、`destroyOnClose`）+ 内容 `modals/MovieDetailDrawerContent.vue`（打开即拉一次详情；顶部「影片 ID + 重新拉详情 / 取封面 / 取花絮」；详情 11 格网格；剧集表；下载配置表按当前下载设置标注「会下载 / 当前不下载」，方便核对防盗链请求头）。
-- 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，只有编辑器本体；底部 footer 的「取消 / 保存」由外壳渲染，保存动作与 `saving` / `canSubmit` 由内容组件 `defineExpose` 暴露，见 `src/renderer/src/utils/modal/ModalContent.ts`；保存时主进程先编译校验再落盘）。
+- 源码编辑器是命令式弹窗：外壳 `modals/PluginEditorDialog.tsx`（`openPluginEditorDialog`）+ 内容 `modals/PluginEditorDialogContent.vue`（`t-textarea` + 契约提示，只有编辑器本体；底部 footer 的「取消 / 保存」由外壳渲染，保存动作与 `saving` / `canSubmit` 由内容组件 `defineExpose` 暴露，见 `src/utils/modal/ModalContent.ts`；保存时主进程先编译校验再落盘）。
 - 导入支持在系统文件选择框里一次多选多个 `.js`；同名（`meta.id`）只保留最新——先比 `meta.version`，版本相同再比源文件 mtime，批内与本机已安装的旧版本都不落盘，只用 `MessagePlugin.info` 提示「已跳过 N 个旧版本插件」；仅当版本相同且未覆盖时弹 `DialogPlugin.confirm`，确认后带 `overwrite: true` 重试；导入的系统文件选择框由主进程弹出。
 - 契约、沙箱白名单、超时、存储与错误码见 [../plugin/01-plugin-module.md](../plugin/01-plugin-module.md)。
 - 内置插件（当前只有 `r18-offline`「R18 离线数据包」，属**影片信息**类别）用 `PluginSummary.source === 'builtin'` 区分：列表与详情都带「内置」标签，没有源码文件，因此详情页隐藏「编辑代码」「删除」，源文件一行显示「内置插件（无源码文件）」。
@@ -111,4 +111,4 @@
 | 插件 | 在线插件仓库 / 远程更新；插件请求走代理；子进程级隔离（`utilityProcess`）；编辑器语法高亮；内置离线数据包的增量更新与后台下载（当前只提示、由用户手动触发）；环境变量的「清空 / 单独重置」交互 |
 | 全局 | 暗色模式（`theme.less` 目前只有亮色一套） |
 
-> 本地磁盘的根目录由通用控件 `DirectoryPickerField.vue` 承担：它选的是**本机绝对路径**（输入框 + 「选择」按钮，内部调 `dialogApi.open({ directory: true })`），`src/renderer/src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53` 的 `<directory-picker-field>` 正是它。资料库的媒体目录**不**用它——那里要的是连接内目录，走资料库自己的 `RemoteDirDialog`（`fileApi.list` 列连接内目录，见[影视墙页面](./04-media-wall-page.md)）。两者并存是正确设计，详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md) 与[存储管理页面](./02-storage-page.md) §5。
+> 本地磁盘的根目录由通用控件 `DirectoryPickerField.vue` 承担：它选的是**本机绝对路径**（输入框 + 「选择」按钮，内部调 `dialogApi.open({ directory: true })`），`src/windows/main/pages/storage/modals/ConnectionDialogContent.vue:53` 的 `<directory-picker-field>` 正是它。资料库的媒体目录**不**用它——那里要的是连接内目录，走资料库自己的 `RemoteDirDialog`（`fileApi.list` 列连接内目录，见[影视墙页面](./04-media-wall-page.md)）。两者并存是正确设计，详见[系统对话框模块 §6.1](../dialog/01-dialog-module.md) 与[存储管理页面](./02-storage-page.md) §5。
