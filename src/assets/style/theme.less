@@ -4,8 +4,9 @@
  *
  * 明暗切换靠 `<html theme-mode>`：亮色块为 `:root`（不写属性或写 light 都命中），
  * 深色块为 `:root[theme-mode='dark']`，特异性更高，属性一挂上就整片生效。
- * 不引入 tdesign 官方的 es/style/index.css：它的选择器特异性会盖过本文件，且会给当前未定义的
- * 组件内部 Token 补上取值、改变既有亮色观感。
+ * 本文件必须排在 tdesign 官方 Token（入口里显式引的 `es/style/index.css`）之后，
+ * 才能用同一片 `:root` 覆盖官方默认值；只覆盖品牌观感相关的 Token，
+ * 其余 `--td-comp-*` / `--td-font-*` 仍用官方默认值——缺了它们组件里的 var() 会全部失效。
  */
 :root {
   /* 品牌色（Fluent 蓝阶梯） */
