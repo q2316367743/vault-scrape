@@ -20,9 +20,9 @@
   "dependencies": {},
   "devDependencies": {
     "@awo00/smb2": "1.1.1",
-    "@dashou/api": "link:../../app/da-shou-plugin-ext/packages/api",
-    "@dashou/cli": "link:../../app/da-shou-plugin-ext/packages/cli",
-    "@dashou/core": "link:../../app/da-shou-plugin-ext/packages/core",
+    "@dashou/api": "^1.0.0",
+    "@dashou/cli": "^1.0.0",
+    "@dashou/core": "^1.0.1",
     "@imengyu/vue3-context-menu": "^1.5.6",
     "@tdesign-vue-next/auto-import-resolver": "^0.1.8",
     "@types/node": "^22.19.1",
