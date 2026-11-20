@@ -15,8 +15,8 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
       '@dashou/cli':
-        specifier: ^1.0.0
-        version: 1.0.0
+        specifier: ^1.1.0
+        version: 1.1.0
       '@dashou/core':
         specifier: ^1.0.1
         version: 1.0.1
@@ -241,8 +241,8 @@ packages:
   '@dashou/api@1.0.0':
     resolution: {integrity: sha512-Fsj6D7qMMn/0NJiHGiOxr17gkcxVFtNbZccZGJBntN36oOoZiw7zPJH2AmW5liWtEVv/N1gRusqZf31noT3KWw==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fapi/-/1.0.0/@dashou%2Fapi-1.0.0.tgz}
 
-  '@dashou/cli@1.0.0':
-    resolution: {integrity: sha512-YRd3CqHqn3K8JvoaDkPKbMwXZnoFbELhrqC6YYK7lCM6mlU83o92M2cbD0cYUd3wmvfVJJRXTLlGoDBJx4Rgyw==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fcli/-/1.0.0/@dashou%2Fcli-1.0.0.tgz}
+  '@dashou/cli@1.1.0':
+    resolution: {integrity: sha512-+evltxpFIsWeTBKNxH2Q3l6Ns80tdiaKhbhW90Jkl5vFTDReMhCUnQgesbD7HY0JsZ3GD/9WF0f0p6puwv2sww==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fcli/-/1.1.0/@dashou%2Fcli-1.1.0.tgz}
     hasBin: true
 
   '@dashou/core@1.0.1':
@@ -2452,7 +2452,7 @@ snapshots:
     dependencies:
       '@dashou/schema': 1.0.0
 
-  '@dashou/cli@1.0.0':
+  '@dashou/cli@1.1.0':
     dependencies:
       '@dashou/schema': 1.0.0
       adm-zip: 0.6.1
