@@ -12,14 +12,14 @@ importers:
         specifier: 1.1.1
         version: 1.1.1
       '@dashou/api':
-        specifier: ^1.1.0
-        version: 1.1.0
-      '@dashou/cli':
         specifier: ^1.2.0
         version: 1.2.0
+      '@dashou/cli':
+        specifier: ^1.4.0
+        version: 1.4.0
       '@dashou/core':
-        specifier: ^1.1.0
-        version: 1.1.0
+        specifier: ^1.2.0
+        version: 1.2.0
       '@imengyu/vue3-context-menu':
         specifier: ^1.5.6
         version: 1.5.7
@@ -238,18 +238,21 @@ packages:
   '@buttercup/fetch@0.2.1':
     resolution: {integrity: sha512-sCgECOx8wiqY8NN1xN22BqqKzXYIG2AicNLlakOAI4f0WgyLVUbAigMf8CZhBtJxdudTcB1gD5lciqi44jwJvg==}
 
-  '@dashou/api@1.1.0':
-    resolution: {integrity: sha512-y8COJLSPSBl4muFEAC+JdzqYhPme+gvtoYZZqFXteedgNeLhij9w04U3DySvJeT5Lwu7R4o3DAehyKT/KZi0FQ==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fapi/-/1.1.0/@dashou%2Fapi-1.1.0.tgz}
+  '@dashou/api@1.2.0':
+    resolution: {integrity: sha512-cOKvY5a2NdGEl1RWnOTG0LO2+GMv2pWCMhw1mwJtt9OQyl+1lA//mAtJuO250fpXjhOxZ3egMV1rwLAaQJ1nIQ==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fapi/-/1.2.0/@dashou%2Fapi-1.2.0.tgz}
 
-  '@dashou/cli@1.2.0':
-    resolution: {integrity: sha512-VoSdC7+ySIA5cA3bEVbBkx3atEsn+XLZtl+xmk+e5dG1gFPRO3h7zrIyJpvuuVupCJf6QQmvEy/mQhRWbGjPBA==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fcli/-/1.2.0/@dashou%2Fcli-1.2.0.tgz}
+  '@dashou/cli@1.4.0':
+    resolution: {integrity: sha512-1qaA7iOgFzTV7D21L+LMTt9fo3XxAn/cbwGT1x7Ex/o1GVxsh7ri4ot/NlKOMdpPbSNPJxOh2CM9aqLYpJ0iEw==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fcli/-/1.4.0/@dashou%2Fcli-1.4.0.tgz}
     hasBin: true
 
-  '@dashou/core@1.1.0':
-    resolution: {integrity: sha512-EnAx24ouMOw2K/hqz575NeNdfeAAWKAadXtnd5jR72YcAFQfVh728aWRehxdvMrOnaufcc4Q9m0e+qF7/OAnLg==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fcore/-/1.1.0/@dashou%2Fcore-1.1.0.tgz}
+  '@dashou/core@1.2.0':
+    resolution: {integrity: sha512-inBQXTJTXthllNCULQr5KrsSWx3bKT6HOlQ/r5g7qCuTVrEdtJIWQ1TTaVr/5rZqmYTilz+X+6nsMg1c7PpGWA==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fcore/-/1.2.0/@dashou%2Fcore-1.2.0.tgz}
 
-  '@dashou/schema@1.1.0':
-    resolution: {integrity: sha512-csaAlTSGvCE6D4NK/wEmOgp0XvWKg3kneYrJ/O7KFDcKvzlQljIznrmCoWlgWaF3S2gT9QAMa/J/MACiA/ZNkQ==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fschema/-/1.1.0/@dashou%2Fschema-1.1.0.tgz}
+  '@dashou/schema@1.2.0':
+    resolution: {integrity: sha512-4ziQEEOMNY+GizxP0iX51sWr5awFlkKSn6tEZCjgHh6T4nKk3x9K/OQgkzxsrUzb7UBd/38nK9XSb7QCJXpaOw==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fschema/-/1.2.0/@dashou%2Fschema-1.2.0.tgz}
+
+  '@dashou/schema@1.3.0':
+    resolution: {integrity: sha512-obT8S5oN1pCAWm0NOCXL7HU7LTUrgypO1PAv9AGf+UNH7yk9HSWtAc0yK0maR/6VqMqTGv1pbryYDeJVB+k/eA==, tarball: https://onedev-esion.iepose.cn/da-shou/da-shou-ext/~npm/@dashou%2Fschema/-/1.3.0/@dashou%2Fschema-1.3.0.tgz}
 
   '@esbuild/aix-ppc64@0.25.12':
     resolution: {integrity: sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA==}
@@ -2448,21 +2451,25 @@ snapshots:
     optionalDependencies:
       node-fetch: 3.3.2
 
-  '@dashou/api@1.1.0':
+  '@dashou/api@1.2.0':
     dependencies:
-      '@dashou/schema': 1.1.0
+      '@dashou/schema': 1.2.0
 
-  '@dashou/cli@1.2.0':
+  '@dashou/cli@1.4.0':
     dependencies:
-      '@dashou/schema': 1.1.0
+      '@dashou/schema': 1.3.0
       adm-zip: 0.6.1
       esbuild: 0.25.12
 
-  '@dashou/core@1.1.0':
+  '@dashou/core@1.2.0':
     dependencies:
-      '@dashou/schema': 1.1.0
+      '@dashou/schema': 1.2.0
 
-  '@dashou/schema@1.1.0':
+  '@dashou/schema@1.2.0':
+    dependencies:
+      zod: 4.6.7
+
+  '@dashou/schema@1.3.0':
     dependencies:
       zod: 4.6.7
 
