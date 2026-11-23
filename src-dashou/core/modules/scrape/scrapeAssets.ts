@@ -5,17 +5,17 @@
  * - 插件只给「链接 + 请求头」，下载走共享 `httpClient`（代理、超时、字符集无关），
  *   `responseType: 'arraybuffer'` 保证二进制不被解码破坏；
  * - 目标已存在且对应 `keepXxx` 为真时**跳过**（调用方用 `resolveAssetFile` 与 `exists` 判定）；
- * - 临时文件落在系统临时目录的 `vault-scrape-scrape` 子目录，文件名用随机 UUID，用完即删；
+ * - 临时文件落在插件私有临时目录的 `scrape` 子目录，文件名用随机 UUID，用完即删；
  * - 下载失败按 network.retryCount 重试，最终失败抛错由单文件流水线收敛成「失败」结果行。
  */
 import { mkdir, rm, writeFile } from 'fs/promises'
 import { join } from 'path'
-import { tmpdir } from 'os'
 import { randomUUID } from 'crypto'
 import type { PluginAsset } from '@common/types/plugin'
 import { ScrapeError } from '@common/types/scrape'
 import { httpClient } from '$/modules/http/httpClient'
 import { loadSetting } from '$/modules/setting/settingStore'
+import { tempPath } from '../../runtime/paths'
 
 export interface AssetDownload {
   /** 本机临时文件绝对路径 */
@@ -25,7 +25,7 @@ export interface AssetDownload {
 }
 
 function tempDir(): string {
-  return join(tmpdir(), 'vault-scrape-scrape')
+  return tempPath('scrape')
 }
 
 function delay(ms: number): Promise<void> {

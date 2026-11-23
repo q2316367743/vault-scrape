@@ -36,6 +36,7 @@ import {
 } from '@common/types/plugin'
 import { appendLog } from '$/db/repo/logRepo'
 import { loadSetting } from '$/modules/setting/settingStore'
+import { log } from '$/runtime/host'
 import { findBuiltinPlugin, listBuiltinPlugins } from './builtinPlugins'
 import { preparePluginImport } from './pluginImport'
 import { createPluginContext, createPluginLogSink } from './pluginHost'
@@ -151,10 +152,7 @@ export function createPluginRegistry(kind: PluginKind) {
         ensureBuiltinPlugin(kind, { meta: builtin.meta, envFields: builtin.env })
       } catch (error) {
         builtinsReady = false
-        console.error(
-          `[plugin] ${kind} 内置插件索引写入失败`,
-          describePluginError(error).message
-        )
+        log(`[plugin] ${kind} 内置插件索引写入失败：${describePluginError(error).message}`, 'error')
       }
     }
   }
@@ -333,10 +331,7 @@ export function createPluginRegistry(kind: PluginKind) {
     try {
       ensureCompiled(id)
     } catch (error) {
-      console.warn(
-        `[plugin] ${kind} 插件编译失败，环境变量面板沿用上次声明表`,
-        describePluginError(error).message
-      )
+      log(`[plugin] ${kind} 插件编译失败，环境变量面板沿用上次声明表：${describePluginError(error).message}`, 'warn')
     }
     return storedPlugin(id)
   }

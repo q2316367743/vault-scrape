@@ -52,6 +52,7 @@
       ],
       "permissions": [
         "core:event:allow-listen",
+        "core:window:allow-theme",
         "core:window:allow-minimize",
         "core:window:allow-maximize",
         "core:window:allow-unmaximize",
@@ -77,7 +78,8 @@
         "core:webview:allow-create-webview",
         "dialog:allow-open",
         "dialog:allow-save",
-        "opener:allow-open-url"
+        "opener:allow-open-url",
+        "os:allow-platform"
       ]
     }
   ],

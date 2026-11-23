@@ -13,8 +13,6 @@ import {
 import SideMenu from '@/components/menu/SideMenu.vue'
 import type { SideMenuItem } from '@/components/menu/types'
 import { collapsed } from '@/global/AppState'
-import { onMounted } from 'vue'
-import { themeSystem } from '@/global/AppTheme'
 
 /** 一级菜单：与 router.ts 的九个一级页面一一对应；带子页的项按前缀匹配，子页也保持高亮 */
 const menuItems: SideMenuItem[] = [
@@ -32,9 +30,6 @@ const menuItems: SideMenuItem[] = [
   { label: '关于', icon: InfoCircleIcon, to: '/about' }
 ]
 
-onMounted(() => {
-  console.log(`当前状态：${themeSystem.value}`)
-})
 </script>
 
 <template>

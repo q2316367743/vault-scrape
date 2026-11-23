@@ -2,18 +2,18 @@
  * 插件列表的页面状态：加载、选中、启停、导入、删除与源码读写。
  *
  * 三类插件（影片信息 / 演员信息 / 翻译）各持一份「模块级」状态与各自的选中项
- * localStorage key，互不影响；`usePluginManager(kind)` 首次调用时创建，之后复用同一份。
+ * 偏好 key（存 core 配置目录），互不影响；`usePluginManager(kind)` 首次调用时创建，之后复用同一份。
  * 选中项被删除后自动回落到该类别第一个可用插件。启停 / 删除都提供单个与批量两组方法，
  * 批量走串行循环（`plugins.json` 读改写，不能并发），完成后再统一刷新。
  */
 import { computed, ref, type ComputedRef, type Ref } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { pluginBridge } from '@/api'
+import { useUiPref } from '@/global/UiPrefs'
 import type { PluginImportResult, PluginKind, PluginSummary } from '@common/types/plugin'
 
 /** 选中项持久化 key 前缀，实际 key 为 `<前缀>:<类别>` */
-const ACTIVE_PLUGIN_KEY_PREFIX = 'vault-scrape:plugin-active'
+const ACTIVE_PLUGIN_KEY_PREFIX = 'plugin-active'
 
 export interface PluginManager {
   plugins: Ref<PluginSummary[]>
@@ -39,7 +39,7 @@ const managers = new Map<PluginKind, PluginManager>()
 
 function createManager(kind: PluginKind): PluginManager {
   const bridge = pluginBridge(kind)
-  const storedActiveId = useLocalStorage(`${ACTIVE_PLUGIN_KEY_PREFIX}:${kind}`, '')
+  const storedActiveId = useUiPref(`${ACTIVE_PLUGIN_KEY_PREFIX}:${kind}`, '')
   const plugins = ref<PluginSummary[]>([])
   const loading = ref(false)
   const activeId = ref(storedActiveId.value)

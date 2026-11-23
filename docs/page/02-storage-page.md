@@ -44,7 +44,7 @@ src/windows/main/pages/storage/
 | 导出 | 说明 |
 | --- | --- |
 | `connections` / `loading` | `fileApi.listConnections()` 的列表与加载态 |
-| `activeId` / `activeConnection` | 选中连接，`activeId` 用 `useLocalStorage('vault-scrape:storage-active-connection')` 记住；选中项被删或列表变化后自动回落到第一条 |
+| `activeId` / `activeConnection` | 选中连接，`activeId` 用 `useUiPref('storage-active-connection')` 记住（落 core 配置目录）；选中项被删或列表变化后自动回落到第一条 |
 | `refresh()` | 重新拉列表并纠正选中项，页面 `onMounted` 与保存后都会调 |
 | `select(id)` | 切换选中 |
 | `remove(connection)` | `fileApi.deleteConnection` → 提示 → 刷新 |

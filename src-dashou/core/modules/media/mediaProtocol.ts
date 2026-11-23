@@ -43,7 +43,7 @@ import {
 } from '@common/types/media'
 import { appendLog } from '$/db/repo/logRepo'
 import { getImage } from '$/db/repo/mediaImageRepo'
-import { dataPath } from '../../runtime/paths'
+import { cachePath } from '../../runtime/paths'
 import { getSource, updateSourcePath } from '$/db/repo/mediaRepo'
 import { serveActorImage } from '$/modules/actor/actorProtocol'
 import { getConnection } from '$/modules/file/fileConnectionStore'
@@ -66,7 +66,7 @@ let nextPruneAt = 0
 
 /** 远端媒体缓存目录：每个媒体一个文件，文件名就是媒体 ID */
 function cacheDir(): string {
-  return dataPath('cache', 'media')
+  return cachePath('media')
 }
 
 function notFound(): Response {

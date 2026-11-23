@@ -7,7 +7,8 @@ import {
   type SettingGroupKey,
   type SettingSchema
 } from '@common/types/setting'
-import { dataPath } from '../../runtime/paths'
+import { log } from '$/runtime/host'
+import { configPath } from '../../runtime/paths'
 
 /**
  * main 是设置的数据家：内存缓存 + 写时刷新。
@@ -20,7 +21,7 @@ import { dataPath } from '../../runtime/paths'
 let cache: SettingSchema | null = null
 
 function settingFilePath(): string {
-  return dataPath('setting', 'settings.json')
+  return configPath('settings.json')
 }
 
 function readFromDisk(): SettingSchema {
@@ -29,7 +30,7 @@ function readFromDisk(): SettingSchema {
   try {
     return normalizeSetting(JSON.parse(readFileSync(file, 'utf-8')))
   } catch (error) {
-    console.error('[setting] 设置读取失败，使用默认配置', error)
+    log(`[setting] 设置读取失败，使用默认配置：${String(error)}`, 'error')
     return buildSetting()
   }
 }

@@ -59,7 +59,7 @@ const { setting } = storeToRefs(useSettingAppStore())
 const themeOptions: { value: ThemeMode; label: string }[] = [
   { value: 'light', label: '亮色' },
   { value: 'dark', label: '深色' },
-  { value: 'auto', label: '跟随系统' }
+  { value: 'auto', label: '跟随窗口' }
 ]
 
 /** 用字面量收窄，避免断言；取值不合法时忽略 */

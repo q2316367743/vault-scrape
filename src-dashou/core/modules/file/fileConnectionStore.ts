@@ -2,8 +2,8 @@
  * 文件连接配置的落盘存储。
  *
  * 契约：
- * 1. 落盘位置 `<插件数据目录>/file/connections.json`，与设置文件相互独立；
- * 2. 密码与敏感配置不落明文：优先 `safeStorage`（系统钥匙串）加密，不可用时回落 base64 明文并在控制台告警；
+ * 1. 落盘位置 `<插件配置目录>/connections.json`，与设置文件相互独立；
+ * 2. 密码与敏感配置不落明文：由 `secretCodec` 加密后落盘；
  * 3. 对外只暴露 `hasPassword`，**密码与敏感配置永不跨 IPC**；
  * 4. 读取失败一律回落空列表，绝不因为配置损坏而阻塞启动；
  * 5. 连接上没有策略字段：旧版本写下的 `nsfw` 键在归一化时被直接忽略，不再回写；
@@ -27,7 +27,8 @@ import type { PluginEnvField } from '@common/types/plugin'
 import { PluginError } from '@common/types/plugin'
 import { readEnum, readNumber, readString, toSource } from '@common/types/setting/shared'
 import { decodeSecret, encodeSecret } from '$/utils/secretCodec'
-import { dataPath } from '../../runtime/paths'
+import { log } from '$/runtime/host'
+import { configPath } from '../../runtime/paths'
 import { storagePlugins } from '../plugin/pluginRegistries'
 
 /** 主进程私有的落盘形状：只比公开类型多一个 secret（密文）字段 */
@@ -106,7 +107,7 @@ export const DRAFT_CONNECTION_ID = 'draft'
 let cache: StoredFile | null = null
 
 function connectionFilePath(): string {
-  return dataPath('file', 'connections.json')
+  return configPath('connections.json')
 }
 
 function emptyStore(): StoredFile {
@@ -204,7 +205,7 @@ function readFromDisk(): StoredFile {
         .filter((item): item is StoredConnection => item !== null)
     }
   } catch (error) {
-    console.error('[file] 连接配置读取失败，已回落为空列表', error)
+    log(`[file] 连接配置读取失败，已回落为空列表：${String(error)}`, 'error')
     return emptyStore()
   }
 }

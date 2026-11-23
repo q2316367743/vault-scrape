@@ -1,36 +1,63 @@
 /**
- * 应用数据目录。
+ * 插件目录（搭手标准目录）。
  *
  * 契约：
- * - 一切可写数据都落在宿主给的插件私有目录（`ctx.paths.data`），跨版本保留；
- * - 目录布局沿用原 Electron 版本：`db/`、`setting/`、`plugin/`、`file/`、`media/`、`cache/`、`log/`；
- * - 本模块不依赖 `ctx`，由 `onReady` 调一次 `initPaths()` 注入绝对路径，其余模块直接用 `dataPath()`。
+ * - 六类目录全部由宿主 `ctx.paths` 提供，`onReady` 里 `initPaths()` 注入一次，
+ *   其余模块用 `dataPath()` / `configPath()` / `cachePath()` / `logPath()` / `tempPath()` 取绝对路径；
+ * - 目录语义按搭手约定划分：
+ *   data（跨版本保留的业务数据）/ config（配置与密钥）/ cache（可清理缓存）
+ *   / log（日志）/ temp（启动即清理的临时文件）/ pluginRoot（只读插件包）；
+ * - 本模块不依赖 `ctx`，未初始化就取路径会直接抛错，让启动顺序问题在开发期暴露。
  */
-import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
-let dataRoot = ''
-let root = ''
+interface PluginDirs {
+  data: string
+  config: string
+  cache: string
+  log: string
+  temp: string
+  pluginRoot: string
+}
 
-/** core 启动时注入插件数据目录与包目录 */
-export function initPaths(data: string, pluginRoot: string): void {
-  dataRoot = data
-  root = pluginRoot
+let dirs: PluginDirs | null = null
+
+/** core 启动时注入宿主给的六类目录 */
+export function initPaths(input: PluginDirs): void {
+  dirs = input
+}
+
+function root(): PluginDirs {
+  if (!dirs) throw new Error('插件目录尚未初始化')
+  return dirs
 }
 
 /** 插件包目录（只读） */
 export function appRoot(): string {
-  return root
+  return root().pluginRoot
 }
 
-/** 插件数据目录下的路径；可传多段相对路径 */
+/** 插件私有数据目录：跨版本保留的业务数据 */
 export function dataPath(...segments: string[]): string {
-  return join(dataRoot, ...segments)
+  return join(root().data, ...segments)
 }
 
-/** 确保某个数据子目录存在 */
-export function ensureDataDir(...segments: string[]): string {
-  const target = dataPath(...segments)
-  mkdirSync(target, { recursive: true })
-  return target
+/** 配置目录：设置、连接配置、插件索引、密钥 */
+export function configPath(...segments: string[]): string {
+  return join(root().config, ...segments)
+}
+
+/** 缓存目录：可随时清理，不影响业务数据 */
+export function cachePath(...segments: string[]): string {
+  return join(root().cache, ...segments)
+}
+
+/** 日志目录 */
+export function logPath(...segments: string[]): string {
+  return join(root().log, ...segments)
+}
+
+/** 临时目录：宿主启动时清理 */
+export function tempPath(...segments: string[]): string {
+  return join(root().temp, ...segments)
 }

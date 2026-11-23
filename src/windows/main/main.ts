@@ -8,6 +8,8 @@ import 'virtual:uno.css'
 import 'tdesign-vue-next/es/style/index.css'
 import '@/assets/style/global.less'
 import { initAppInfo, initJobs } from '@/api'
+import { initTheme } from '@/global/AppTheme'
+import { loadUiPrefs } from '@/global/UiPrefs'
 import App from './App.vue'
 import { router } from './router'
 
@@ -17,6 +19,8 @@ import { router } from './router'
  * - 长任务监听必须早于任何用户操作，否则可能漏掉执行过快的结果。
  */
 async function bootstrap(): Promise<void> {
+  await loadUiPrefs()
+  initTheme()
   await initAppInfo()
   await initJobs()
   createApp(App).use(createPinia()).use(router).mount('#app')

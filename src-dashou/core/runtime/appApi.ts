@@ -20,17 +20,12 @@ export interface AppInfo {
   mediaBase: string
 }
 
-function platformOf(): AppInfo['platform'] {
-  if (process.platform === 'darwin') return 'macos'
-  if (process.platform === 'win32') return 'windows'
-  return 'linux'
-}
-
 export const appApi = {
   appInfo: async (): Promise<AppInfo> => {
-    const info = await host().plugin.info()
+    const ctx = host()
+    const info = await ctx.plugin.info()
     return {
-      platform: platformOf(),
+      platform: await ctx.os.platform(),
       pluginId: info.id,
       pluginVersion: info.version,
       pluginName: info.name,

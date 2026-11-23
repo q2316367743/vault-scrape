@@ -76,7 +76,7 @@
 - 工具箱是**索引页**：`ToolsPage.vue` 按 `toolRegistry.ts` 的 `ToolEntry[]` 渲染入口卡片（图标 + 名称 + 说明），点击进入各自的工具页路由；新增工具时先在注册表登记、再在 `router.ts` 注册路由。
 - 当前唯一工具是**搜索**（`/tools/search`，`pages/tools/search/ToolSearchPage.vue`）：顶部用 `t-select` 选择「使用哪个插件」（选项带「加载失败 / 待填写变量 / 已停用」状态后缀，加载失败的选项禁用），下面 `components/ToolSearchPanel.vue` 提供两个入口——关键字搜索（结果每行 = 单行省略的标题 + `t-tooltip` 悬停看全，下面是带图标的标签行：番号 / 发行日期 / 集数 / 演员，演员超过 3 个折成 `+N` 悬停看全，点行或「详情」按钮打开抽屉）与直接填影片 ID 点「查看详情」。页面用 `SubPageLayout` 包裹：返回图标按钮在标题左侧、点它 `router.back()`，右上角 `#extra` 只放「刷新」。
 - 搜索状态在 `composables/useToolSearch.ts`（关键字、候选列表、loading），影片详情在 `composables/useMoviePreview.ts`（按影片 ID 拉详情 / 封面 / 花絮，并按当前下载设置标注资产），资源类型与下载判定在 `toolUtils.ts`（都在 `pages/tools/search/` 下）。
-- 选择器与「影片信息插件」页共享同一份「当前插件」（都用 `usePluginManager('movie')`，选中持久化到 localStorage 的 `vault-scrape:plugin-active:movie`）：在插件页影片信息 tab 选中哪个插件，进搜索工具页就是哪个。
+- 选择器与「影片信息插件」页共享同一份「当前插件」（都用 `usePluginManager('movie')`，选中经 `useUiPref` 持久化到 core 配置目录的 `plugin-active:movie`）：在插件页影片信息 tab 选中哪个插件，进搜索工具页就是哪个。
 - 未启用、必填变量未填的插件仍可被选中，调用由主进程以中文错误拒绝（渲染层不复制这套业务规则）；插件列表为空时页面提示先去「插件」页导入。
 
 ## 设置

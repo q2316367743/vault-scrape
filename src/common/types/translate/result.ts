@@ -2,7 +2,7 @@
  * 翻译 IPC 返回信封与结果。
  *
  * 契约：实现内部抛 `TranslateError`；跨 IPC 一律返回信封而不抛异常，
- * 因为 contextBridge 传递自定义错误的附加属性（如 code）并不可靠。
+ * 因为经 `plugin:api|` 通道传递时自定义错误的附加属性（如 code）不可靠。
  */
 import type { TranslateLanguage } from '../setting/translateSetting'
 import type { TranslateErrorCode } from './error'

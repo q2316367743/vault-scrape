@@ -2,7 +2,8 @@
  * 插件索引、源码与环境变量的落盘存储（按类别分目录）。
  *
  * 契约：
- * 1. 落盘位置 `<插件数据目录>/plugin/<类别>/`：`plugins.json` 存索引与环境变量，`<id>.js` 存源码；
+ * 1. 落盘位置：源码 `<插件数据目录>/plugin/<类别>/<id>.js`（用户安装的插件内容，跨版本保留），
+ *    索引与环境变量 `<插件配置目录>/plugin/<类别>/plugins.json`（配置敏感值，随配置备份）；
  *    类别之间互相独立，同一个 id 可以在不同类别里各存一份；
  * 2. 环境变量一律按敏感值处理、不落明文：复用 `$/utils/secretCodec`（safeStorage 优先，不可用时回落 base64 并告警）；
  * 3. 对外只暴露 `PluginSummary` 与「是否已填写」掩码，明文永不跨 IPC；
@@ -27,7 +28,8 @@ import {
 } from '@common/types/plugin'
 import { readBoolean, readNumber, readString, toSource } from '@common/types/setting/shared'
 import { decodeSecret, encodeSecret } from '$/utils/secretCodec'
-import { dataPath } from '../../runtime/paths'
+import { log } from '$/runtime/host'
+import { configPath, dataPath } from '../../runtime/paths'
 
 /** 单个插件源码大小上限 */
 export const PLUGIN_SOURCE_LIMIT_BYTES = 1024 * 1024
@@ -70,7 +72,7 @@ export function pluginDir(kind: PluginKind): string {
 }
 
 function indexPath(kind: PluginKind): string {
-  return join(pluginDir(kind), 'plugins.json')
+  return configPath('plugin', kind, 'plugins.json')
 }
 
 /** 插件源码路径；ID 必须合法，否则可能造成路径逃逸 */
@@ -116,7 +118,7 @@ function readFromDisk(kind: PluginKind): StoredFile {
       plugins: list.map(normalizeStored).filter((item): item is StoredPlugin => item !== null)
     }
   } catch (error) {
-    console.error(`[plugin] ${kind} 插件索引读取失败，已回落为空列表`, error)
+    log(`[plugin] ${kind} 插件索引读取失败，已回落为空列表：${String(error)}`, 'error')
     return emptyStore()
   }
 }
@@ -148,7 +150,7 @@ export function legacyPluginFiles(): { dir: string; files: string[] } {
     const files = readdirSync(dir).filter((name) => name.endsWith('.js') || name === 'plugins.json')
     return { dir, files: files.sort() }
   } catch (error) {
-    console.error('[plugin] 旧版插件目录检查失败', error)
+    log(`[plugin] 旧版插件目录检查失败：${String(error)}`, 'error')
     return { dir, files: [] }
   }
 }
@@ -256,7 +258,7 @@ export function ensureBuiltinPlugin(kind: PluginKind, record: PluginSourceRecord
   const store = readStore(kind)
   const previous = store.plugins.find((item) => item.id === record.meta.id) ?? null
   if (previous && !previous.builtin) {
-    console.warn(`[plugin] 内置插件 ${record.meta.id} 与同 ID 的已安装插件冲突，已按内置插件接管索引`)
+    log(`[plugin] 内置插件 ${record.meta.id} 与同 ID 的已安装插件冲突，已按内置插件接管索引`, 'warn')
   }
   const envFields = record.envFields
   const next: StoredPlugin = {

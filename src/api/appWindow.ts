@@ -1,8 +1,7 @@
 /**
- * 窗口外观的统一出口（最小化 / 最大化 / 关闭 / 平台信息）。
- *
- * 宿主没有窗口材质 API（vibrancy / acrylic 由宿主决定），所以旧版的
- * `setThemeSource` 变成空操作；最大化状态由窗口尺寸事件反查，不依赖主进程推送。
+ * 窗口控制的统一出口（最小化 / 最大化 / 关闭 / 平台信息）。
+ * 主题切换由 `@/global/AppTheme` 负责（跟随宿主窗口主题）；窗口无法直接改材质。
+ * 最大化状态由窗口尺寸事件反查。
  */
 import { getCurrentWindow, platform, type UnlistenFn } from '@dashou/api'
 import { callCore } from './invoke'
@@ -29,9 +28,6 @@ export const appWindowApi = {
 
   /** 用系统默认浏览器打开 http(s) 链接（窗口本身不导航） */
   openUrl: (url: string): Promise<void> => callCore('openUrl', url),
-
-  /** 宿主不允许插件改窗口材质，保留方法名让调用方无需分支 */
-  setThemeSource: (_source: 'light' | 'dark' | 'system'): void => undefined,
 
   /** 订阅最大化状态变化，返回取消订阅函数（组件卸载时必须调用） */
   onMaximizedChange: (listener: (maximized: boolean) => void): (() => void) => {

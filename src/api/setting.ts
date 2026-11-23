@@ -26,7 +26,13 @@ export const settingApi = {
     key: K,
     value: SettingSchema[K]
   ): Promise<SettingSchema> =>
-    callCore('settingSaveGroup', { key, value: toPlainValue(value) })
+    callCore('settingSaveGroup', { key, value: toPlainValue(value) }),
+
+  /** 窗口 UI 偏好：整树读 + 单键写（落盘由 core 负责） */
+  getUiPrefs: (): Promise<Record<string, unknown>> => callCore('uiPrefsGetAll'),
+
+  setUiPref: (key: string, value: unknown): Promise<void> =>
+    callCore('uiPrefsSet', { key, value: toPlainValue(value) })
 }
 
 export type SettingApi = typeof settingApi

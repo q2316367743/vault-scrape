@@ -1,41 +1,61 @@
-import { watch } from 'vue'
-import { useColorMode } from '@vueuse/core'
-import { appWindowApi } from '@/api'
-
-/** 主题模式三档：亮色 / 深色 / 跟随系统（`auto` 是 vueuse `useColorMode` 约定的固定取值） */
-export type ThemeMode = 'light' | 'dark' | 'auto'
-
 /**
- * 全局主题状态。
- * `useColorMode` 会把解析后的 light / dark 写成 `<html theme-mode="...">`，这正是 TDesign 深色模式的开关
- * （官方约定：`theme-mode='dark'` 生效、`light` 与不写属性等价）；它同时监听系统偏好，
- * 因此 `auto` 无需自己订阅 `prefers-color-scheme`。
+ * 主题状态：三档选择（亮 / 深 / 跟随窗口）+ 实际生效主题。
+ *
+ * 契约：
+ * - 用户选择存 core 配置（UiPrefs），不再写 localStorage；
+ * - `auto` 档以搭手窗口主题为准（`win.theme()` + `onThemeChanged`），宿主不可用（浏览器预览）
+ *   时退化为 `prefers-color-scheme`；
+ * - 实际主题写到 `<html theme-mode>`，这是 TDesign 深色模式的开关，也在挂载前定色避免闪屏。
  */
-const colorMode = useColorMode({
-  attribute: 'theme-mode',
-  modes: { light: 'light', dark: 'dark' },
-  initialValue: 'auto',
-  storageKey: 'vault-scrape:theme-mode'
+import { computed, ref, watch } from 'vue'
+import { hasInternals } from '@dashou/api'
+import { getCurrentWindow, type Window as PluginWindow } from '@dashou/api/window'
+import { useUiPref } from './UiPrefs'
+
+export type ThemeMode = 'light' | 'dark' | 'auto'
+type ThemeName = 'light' | 'dark'
+
+/** 用户选择的主题模式（存 core） */
+export const themeMode = useUiPref<ThemeMode>('theme-mode', 'auto')
+
+const media = window.matchMedia('(prefers-color-scheme: dark)')
+const systemTheme = ref<ThemeName>(media.matches ? 'dark' : 'light')
+const hostTheme = ref<ThemeName | null>(null)
+
+/** 实际生效主题（亮 / 深），供右键菜单等按当前配色选样式 */
+export const themeSystem = computed<ThemeName>(() => {
+  if (themeMode.value === 'light' || themeMode.value === 'dark') return themeMode.value
+  return hostTheme.value ?? systemTheme.value
 })
 
-/** 用户选择的主题模式（含跟随系统的 `auto`），持久化在 localStorage；回显必须用它而不是解析结果 */
-export const themeMode = colorMode.store
-export const themeSystem = colorMode.system
-
-/** 切换主题：只写选择值，换肤与窗口材质同步统一交给下方 watch */
-export function setThemeMode(mode: ThemeMode): void {
-  themeMode.value = mode
-}
-
-/**
- * 窗口材质跟随主题：macOS vibrancy / Windows acrylic 的深浅由主进程的 `nativeTheme` 决定，
- * 渲染层只能改自己的 CSS 变量，不通知主进程的话深色下窗口底色仍是浅的。
- * `immediate` 顺便覆盖启动时的初始同步（重启后材质与上次选择一致）。
- */
 watch(
-  themeMode,
-  (mode) => {
-    void appWindowApi.setThemeSource(mode === 'auto' ? 'system' : mode)
+  themeSystem,
+  (theme) => {
+    document.documentElement.setAttribute('theme-mode', theme)
   },
   { immediate: true }
 )
+
+/** 窗口挂载前调用：接宿主主题 + 监听系统偏好变化 */
+export function initTheme(): void {
+  media.addEventListener?.('change', (event) => {
+    systemTheme.value = event.matches ? 'dark' : 'light'
+  })
+  if (!hasInternals()) return
+  try {
+    const win: PluginWindow = getCurrentWindow()
+    void win.theme().then((theme) => {
+      hostTheme.value = theme === 'dark' ? 'dark' : 'light'
+    })
+    void win.onThemeChanged((theme) => {
+      hostTheme.value = theme === 'dark' ? 'dark' : 'light'
+    })
+  } catch {
+    // 宿主不提供主题时保持系统偏好
+  }
+}
+
+/** 切换主题：只写选择值，换肤由 themeSystem 的 watch 统一处理 */
+export function setThemeMode(mode: ThemeMode): void {
+  themeMode.value = mode
+}

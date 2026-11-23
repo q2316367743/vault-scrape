@@ -3,7 +3,7 @@
  *
  * 插件 core 里没有 Electron 的 `safeStorage`（系统钥匙串），这里改用本机密钥文件
  * 做 AES-256-GCM 加密：
- * - 密钥是首次运行时随机生成的 32 字节，落在插件数据目录（`secret.key`，权限 0600）；
+ * - 密钥是首次运行时随机生成的 32 字节，落在插件配置目录（`secret.key`，权限 0600）；
  * - 密文格式 `aesgcm:<base64(iv + tag + ciphertext)>`，空串表示「没有值」；
  * - 这不是钥匙串级的安全边界（同机其他程序仍能读到密钥文件），但能保证
  *   备份 / 同步配置文件时密码不以明文出现；
@@ -12,7 +12,7 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { dataPath } from '../runtime/paths'
+import { configPath } from '../runtime/paths'
 
 const PREFIX = 'aesgcm:'
 let cachedKey: Buffer | null = null
@@ -20,7 +20,7 @@ let cachedKey: Buffer | null = null
 /** 读取（或首次生成）本机密钥 */
 function secretKey(): Buffer {
   if (cachedKey) return cachedKey
-  const file = dataPath('secret.key')
+  const file = configPath('secret.key')
   if (existsSync(file)) {
     const raw = readFileSync(file)
     if (raw.length === 32) {

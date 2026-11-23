@@ -20,6 +20,7 @@ import { AbstractFileClient, type FileClientOptions, type TransferOptions } from
 import { isNotFoundError } from '../../fileErrorUtils'
 import { copyStreamToLocalFile, withProgress } from '../../streamCopy'
 import { openDirectLinkStream } from '../plugin/directLinkStream'
+import { log } from '$/runtime/host'
 import { OpenlistApi, type OpenlistFsObject } from './openlistApi'
 
 /** list 单页条数（服务端上限 100）与翻页保护，口径与插件实现一致 */
@@ -100,14 +101,14 @@ export class OpenlistFileClient extends AbstractFileClient {
         entries.push(this.toEntry(remote, item))
       }
       if (entries.length >= LIST_ENTRY_LIMIT) {
-        console.warn(`[file] ${this.label} 目录 ${remote} 条目超过 ${LIST_ENTRY_LIMIT}，已截断`)
+        log(`[file] ${this.label} 目录 ${remote} 条目超过 ${LIST_ENTRY_LIMIT}，已截断`, 'warn')
         break
       }
       if (result.total > 0 && entries.length >= result.total) break
       if (result.content.length < LIST_PAGE_SIZE) break
       page += 1
       if (page > LIST_PAGE_LIMIT) {
-        console.warn(`[file] ${this.label} 目录 ${remote} 翻页超过 ${LIST_PAGE_LIMIT} 页，已截断`)
+        log(`[file] ${this.label} 目录 ${remote} 翻页超过 ${LIST_PAGE_LIMIT} 页，已截断`, 'warn')
         break
       }
     }

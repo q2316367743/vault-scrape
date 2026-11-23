@@ -2,13 +2,13 @@
  * 数据源（连接）的全局状态：加载、选中、删除、连通性测试。
  *
  * 存储页与影视墙共用：两侧都需要「当前数据源」。
- * 选中项持久化到 localStorage，重开页面仍停在上次的数据源；
+ * 选中项持久化到 core 的配置目录，重开页面仍停在上次的数据源；
  * 该连接已被删除时自动回落到第一个可用连接。
  */
 import { computed, ref } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
 import { MessagePlugin } from 'tdesign-vue-next'
 import { fileApi } from '@/api'
+import { useUiPref } from '@/global/UiPrefs'
 import {
   isPluginConnection,
   type ConnectionTestResult,
@@ -16,7 +16,7 @@ import {
   type FileConnectionDraft
 } from '@common/types/file'
 
-const ACTIVE_CONNECTION_KEY = 'vault-scrape:storage-active-connection'
+const ACTIVE_CONNECTION_KEY = 'storage-active-connection'
 
 /** 已保存连接 → 草稿：不带 password 即沿用密钥串里已存的密码；插件连接的 secret 字段不回传即保持 */
 function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
@@ -67,7 +67,7 @@ function toConnectionDraft(connection: FileConnection): FileConnectionDraft {
 }
 
 export function useFileConnections() {
-  const storedActiveId = useLocalStorage(ACTIVE_CONNECTION_KEY, '')
+  const storedActiveId = useUiPref(ACTIVE_CONNECTION_KEY, '')
   const connections = ref<FileConnection[]>([])
   const loading = ref(false)
   const activeId = ref(storedActiveId.value)

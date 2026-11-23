@@ -22,7 +22,7 @@
 | `src/components/PageLayout/PageLayout.vue` | 页面统一容器 |
 | `src/components/PageLayout/SubPageLayout.vue` | 子页面容器：标题左侧返回图标 + `router.back()`，无历史时回落 `fallback` |
 | `src/global/AppState.ts` | 侧栏折叠状态等全局状态 |
-| `src/global/AppTheme.ts` | 主题模式（亮色 / 深色 / 跟随系统）状态与窗口材质同步 |
+| `src/global/AppTheme.ts` | 主题模式（亮色 / 深色 / 跟随窗口）状态与宿主主题同步 |
 | `src/hooks/{UseState.ts,UseLog.ts}` | 通用 hooks |
 | `src/assets/style/global.less` | 样式入口，仅汇总导入 |
 | `src/assets/style/theme.less` | TDesign Token 与 `--fluent-*` 变量定义 |
@@ -41,7 +41,7 @@ App.vue
             └── <router-view />         // 页面内容，背景 --fluent-acrylic-bg、圆角 --td-radius-medium
 ```
 
-侧栏（`AppSide.vue`）使用 `<t-aside :width="collapsed ? '64px' : '224px'">`，内部只有 `<side-menu :items="menuItems" :collapsed="collapsed" />`：产品名已上移到标题栏，侧栏不再有品牌行。折叠状态来自 `@/global/AppState` 的 `collapsed`（在模板中自动解包），经 `useLocalStorage` 持久化到 localStorage 的 `vault-scrape:collapsed`，切换由标题栏按钮调用 `toggleCollapsed()`。窗口层面的材质、标题栏与窗口按钮见 [02-window-chrome.md](./02-window-chrome.md)。
+侧栏（`AppSide.vue`）使用 `<t-aside :width="collapsed ? '64px' : '224px'">`，内部只有 `<side-menu :items="menuItems" :collapsed="collapsed" />`：产品名已上移到标题栏，侧栏不再有品牌行。折叠状态来自 `@/global/AppState` 的 `collapsed`（在模板中自动解包），经 `useUiPref` 持久化到 core 配置目录的 `ui-prefs.json`，切换由标题栏按钮调用 `toggleCollapsed()`。窗口层面的标题栏与窗口按钮见 [02-window-chrome.md](./02-window-chrome.md)。
 
 ## 菜单
 
@@ -91,14 +91,13 @@ export interface SideMenuItem {
 
 ## 深色模式
 
-三档：亮色 / 深色 / **跟随系统**（默认），选择持久化在 localStorage 的 `vault-scrape:theme-mode`。
+三档：亮色 / 深色 / **跟随窗口**（默认），选择经 `useUiPref` 持久化到 core 配置目录的 `ui-prefs.json`。
 
-- **开关机制**：`<html theme-mode="dark">` 是 TDesign 官方的深色模式开关，深色 Token 块写成 `:root[theme-mode='dark']`；亮色块仍用 `:root`（不写属性或写 `light` 都命中）。因此属性取值只有 `light` / `dark`，三档里的 `auto` 在写属性前就被解析成了两者之一。
-- **状态**：`src/global/AppTheme.ts` 用 vueuse 的 `useColorMode({ attribute: 'theme-mode', modes: { light: 'light', dark: 'dark' }, initialValue: 'auto', storageKey: 'vault-scrape:theme-mode' })`。它自带 `prefers-color-scheme` 订阅与属性写入，`auto` 档不需要另写媒体查询；返回值的 `store` 保留用户原始选择（含 `auto`）用于回显，`.value` 是解析结果（`light` / `dark`）。
-  - vueuse 15 **没有** `useTheme`（网上不少示例是旧版本或误传），等价能力就是 `useColorMode`；只需要布尔值时用 `useDark`。
-- **首屏不闪**：`AppTheme.ts` 在模块求值阶段（早于 `app.mount`）就写好属性，且 `useColorMode` 默认 `disableTransition`，切换时不会出现整屏过渡动画。
-- **入口**：标题栏左侧折叠按钮旁的图标按钮，点击出 `t-dropdown` 三选一，当前档位用 `active` 高亮、面板收起后按钮图标即当前档位。图标按档位取 `ModeLightIcon` / `ModeDarkIcon` / `DesktopIcon`，三个按钮共用 `.bar-toggle` / `.theme-toggle` 的 32×32 几何与 `no-drag`，见 [02-window-chrome.md](./02-window-chrome.md)。
-- **窗口材质同步**：切换会经 `appWindow:setThemeSource` 通知主进程改 `nativeTheme.themeSource`，macOS vibrancy / Windows acrylic 跟着变深，见 [02-window-chrome.md](./02-window-chrome.md)。
+- **开关机制**：`<html theme-mode="dark">` 是 TDesign 官方的深色模式开关，深色 Token 块写成 `:root[theme-mode='dark']`；亮色块仍用 `:root`。属性取值只有 `light` / `dark`，三档里的 `auto` 在写属性前解析成两者之一。
+- **状态**：`src/global/AppTheme.ts` 的 `themeMode` 是 `useUiPref<ThemeMode>('theme-mode', 'auto')`（core 持久化）；`themeSystem` 计算实际生效主题：`light` / `dark` 档直接返回，`auto` 档优先宿主 `getCurrentWindow().theme()`（`onThemeChanged()` 跟随），宿主不可用时用 `prefers-color-scheme`。窗口 bootstrap 里先 `loadUiPrefs()` 再 `initTheme()`。
+- **首屏不闪**：`AppTheme.ts` 在模块求值阶段（早于 `app.mount`）就装好 `themeSystem` 的 immediate watch 写好属性，宿主主题异步回填后自动更新。
+- **入口**：「设置 → 应用设置」的 `t-radio-group`（`SettingAppPanel.vue`），三选一「亮色 / 深色 / 跟随窗口」。
+- **宿主主题**：窗口材质由搭手决定，插件不改；画布配色只跟随 `themeSystem`，见 [02-window-chrome.md](./02-window-chrome.md)。
 - **深色取值**：按 Fluent 深色调色板重定义随明暗变化的 Token（文本 `#ffffff`/`#d6d6d6`/`#adadad`、禁用 `#5c5c5c`、背景 `#292929`/`#1f1f1f`/`#141414`、描边 `#525252`/`#3d3d3d`、品牌交互阶梯 `#115ea3`/`#0f6cbd`/`#0c3b5e` 与强调蓝 `#479ef5`）与全部 `--fluent-*`；**语义色 error / warning / success 刻意不覆盖**——TDesign 官方深色 Token 里它们与亮色同值，多作前景色或标签底色，跟着变浅反而丢掉警示语义。圆角、字体不随主题变化，仍由 `:root` 提供。
 - **不引入官方全量样式**：`tdesign-vue-next/es/style/index.css` 内亮色块是 `:root[theme-mode='light']`、深色块是 `:root[theme-mode='dark']`，特异性均为 (0,2,0)，高于本文件的 `:root`，引入后亮色覆盖会失效；它还会给当前未定义的 100+ 个组件内部 Token 补上取值、改变既有亮色观感。因此深色只覆盖本项目用到的部分，完整度与现状亮色一致。
 - **不设 `color-scheme: dark`**：窗口材质靠「根元素与 body 都不铺底色」透出，`color-scheme` 会让根元素用上 UA 的深色底，有盖住材质、丢掉模糊的风险。滚动条改用 `--td-scrollbar-color`（本次一并补齐：`customer.less` 一直在引用它，此前全项目未定义）。

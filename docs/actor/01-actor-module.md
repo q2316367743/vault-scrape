@@ -77,7 +77,7 @@
 | --- | --- | --- | --- |
 | 1 | 影片入库后 | `scrapeFileJob` 第 7 步 `enqueueItemActorScrape(itemId, detail.actors ?? [], settings.scrape.actorScrape, signal)` | 先把参演名单写进 `media_cast`，再按设置为「资料不全」（`scraped_at === 0` / 没有头像 / 没有生日）的演员排队；受设置 `scrape.actorScrape` 控制，走串行队列 |
 | 2 | 打开演员详情页 | `ActorDetailPage.vue` 在 `load()` 之后异步触发一次 | 受设置 `scrape.actorScrapeOnOpen`（默认开）控制；资料不全（没抓过 / 没头像 / 没生日）**且未锁定**才抓；同一演员一次会话内只试一次（会话级 `Set` 去重），静默执行、失败不打扰；没有启用的演员插件时直接跳过 |
-| 3 | 详情页「抓取资料」 | `ActorDetailPage.vue` 的 `onScrape` → `detail/modals/ActorScrapeDialog` | 手动：弹窗里**单选一个**演员信息插件（只列已启用且编译通过的，默认选中上次用过的 `vault-scrape:actor-scrape-plugin`），只把选中的那一个 ID 作为 `pluginIds` 传下去；只有它是空数组时主进程才会补成「全部启用的插件」，所以弹窗保证有选中项 |
+| 3 | 详情页「抓取资料」 | `ActorDetailPage.vue` 的 `onScrape` → `detail/modals/ActorScrapeDialog` | 手动：弹窗里**单选一个**演员信息插件（只列已启用且编译通过的，默认选中上次用过的 `actor-scrape-plugin`，经 useUiPref 落 core 配置目录），只把选中的那一个 ID 作为 `pluginIds` 传下去；只有它是空数组时主进程才会补成「全部启用的插件」，所以弹窗保证有选中项 |
 | 4 | 列表页「补全缺失资料」 | `actorIpc.ts` → `scrapeMissingActors(ACTOR_SCRAPE_MISSING_LIMIT)` | 批量补全，走串行队列 |
 
 四个入口共用同一条 `scrapeActor` 链路与同一套合并规则（上面 1–6 条）。

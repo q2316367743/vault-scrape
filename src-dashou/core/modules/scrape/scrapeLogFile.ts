@@ -3,7 +3,7 @@
  *
  * 契约：
  * - 开关关闭时全部是空操作，不建目录、不写文件；
- * - 开关开启时每次运行一个任务写一个文件：`<插件数据目录>/log/scrape/<任务名>-<时间戳>.log`；
+ * - 开关开启时每次运行一个任务写一个文件：`<插件日志目录>/scrape/<任务名>-<时间戳>.log`；
  * - 写文件失败只落到 console，**绝不**再写数据库日志（否则会递归触发写文件）；
  * - 数据库日志始终照写（appendLog），两者互不替代。
  */
@@ -11,7 +11,8 @@ import { appendFile, mkdir } from 'fs/promises'
 import { join } from 'path'
 import { appendLog } from '$/db/repo/logRepo'
 import { loadSetting } from '$/modules/setting/settingStore'
-import { dataPath } from '../../runtime/paths'
+import { log as hostLog } from '$/runtime/host'
+import { logPath } from '../../runtime/paths'
 
 export interface ScrapeRunLog {
   /** 本次运行的日志文件绝对路径；开关关闭时为空串 */
@@ -25,7 +26,7 @@ export interface ScrapeRunLog {
 }
 
 function logDir(): string {
-  return dataPath('log', 'scrape')
+  return logPath('scrape')
 }
 
 /** 任务名 → 安全的文件名片段（去掉路径分隔符与控制字符） */
@@ -71,7 +72,7 @@ export function createScrapeRunLog(taskName: string): ScrapeRunLog {
         }
         await appendFile(target, line, 'utf-8')
       } catch (error) {
-        console.error('[scrape] 日志写入文件失败', error)
+        hostLog(`[scrape] 日志写入文件失败：${String(error)}`, 'error')
       }
     })()
   }

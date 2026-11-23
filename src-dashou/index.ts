@@ -28,7 +28,14 @@ import { initPaths } from './core/runtime/paths'
 const plugin = definePluginApi({
   async onReady(ctx) {
     setHost(ctx)
-    initPaths(ctx.paths.data, ctx.paths.pluginRoot)
+    initPaths({
+      data: ctx.paths.data,
+      config: ctx.paths.config,
+      cache: ctx.paths.cache,
+      log: ctx.paths.log,
+      temp: ctx.paths.temp,
+      pluginRoot: ctx.paths.pluginRoot
+    })
 
     initDb()
     registerLongJobs()

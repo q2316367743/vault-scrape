@@ -14,6 +14,7 @@ import { request as httpsRequest } from 'node:https'
 import type { Readable } from 'node:stream'
 import { FileError } from '@common/types/file'
 import { readBoolean, readNumber, readString, toSource } from '@common/types/setting/shared'
+import { log } from '$/runtime/host'
 
 /** fs/list / fs/get 返回的文件对象（只取我们用得到的字段） */
 export interface OpenlistFsObject {
@@ -80,7 +81,7 @@ function envelopeError(code: number, message: string): FileError {
   if (code === 403) return new FileError('permissionDenied', '没有访问权限，请检查 OpenList 的账号权限或目录密码')
   if (code === 404 || NOT_FOUND_PATTERN.test(message)) return new FileError('notFound')
   if (code === 400) return new FileError('invalidArgument', '请求参数不被 OpenList 接受')
-  if (message.length > 0) console.warn(`[file] OpenList 响应错误（code=${code}）：${message}`)
+  if (message.length > 0) log(`[file] OpenList 响应错误（code=${code}）：${message}`, 'warn')
   return new FileError('network', 'OpenList 处理请求失败，请稍后重试')
 }
 

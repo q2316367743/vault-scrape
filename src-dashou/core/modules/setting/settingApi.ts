@@ -3,6 +3,7 @@
  */
 import { SETTING_GROUP_KEYS, type SettingGroupKey, type SettingSchema } from '@common/types/setting'
 import { loadSetting, saveSettingGroup } from './settingStore'
+import { loadUiPrefs, saveUiPref } from './uiPrefsStore'
 
 function readKey(value: unknown): SettingGroupKey {
   const key = typeof value === 'string' ? value : ''
@@ -23,5 +24,14 @@ export const settingApi = {
     const source = payload as { key?: unknown; value?: unknown } | undefined
     const key = readKey(source?.key)
     return saveSettingGroup(key, source?.value)
+  },
+
+  /** 窗口 UI 偏好：整树读 + 单键写（异步落盘，避免频繁写入阻塞） */
+  uiPrefsGetAll: (): Record<string, unknown> => loadUiPrefs(),
+
+  uiPrefsSet: (_ctx: unknown, payload: unknown): void => {
+    const source = payload as { key?: unknown; value?: unknown } | undefined
+    if (typeof source?.key !== 'string') throw new Error('偏好项名称不合法')
+    saveUiPref(source.key, source?.value)
   }
 }

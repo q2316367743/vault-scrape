@@ -1,7 +1,7 @@
 /**
  * 插件列表的多选状态：选中的 ID 集合、全选 / 反选、以及列表变化后的自动清理。
  *
- * 契约：纯 UI 状态，不落 localStorage——刷新或因删除而变短的列表里，
+ * 契约：纯 UI 状态，不落持久化存储——刷新或因删除而变短的列表里，
  * 已不存在的 ID 会被自动淘汰（批量删除后无需手动清空选中）。
  */
 import { computed, ref, watch, type ComputedRef, type Ref } from 'vue'

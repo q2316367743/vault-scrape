@@ -30,20 +30,20 @@
  * - 本组件不含操作按钮，取消 / 开始抓取由外壳 `ActorScrapeDialog.tsx` 的 footer 提供；
  * - 通过 `defineExpose` 暴露 `submit` / `saving` / `canSubmit`（ModalContentExpose）；
  * - 只列「启用且加载通过」的演员信息插件（与手动匹配同一口径）；
- * - 默认选中上次用过的插件（`localStorage` 持久化，纯 UI 偏好、不进设置文件），它被停用或删除后回落到第一个可用插件；
+ * - 默认选中上次用过的插件（存 core 配置目录，纯 UI 偏好、不进设置文件），它被停用或删除后回落到第一个可用插件；
  * - 只把选中的那一个插件 ID 交给 `actorApi.scrape`：主进程把空数组理解成「全部启用的插件」，
  *   所以没有选中项时不能提交；
  * - 抓取成功 `emit('success', 结果)`，由外壳关窗并把结果提示给用户。
  */
 import { computed, onMounted, ref } from 'vue'
-import { useLocalStorage } from '@vueuse/core'
 import { MessageUtil } from '@/utils/modal'
 import { actorApi, pluginApi } from '@/api'
+import { useUiPref } from '@/global/UiPrefs'
 import type { ActorScrapeResult } from '@common/types/actor'
 import type { PluginSummary } from '@common/types/plugin'
 
-/** 上次选中的演员抓取插件；键与其它渲染层偏好保持同一前缀 */
-const LAST_PLUGIN_KEY = 'vault-scrape:actor-scrape-plugin'
+/** 上次选中的演员抓取插件；键与其它窗口偏好保持同一前缀 */
+const LAST_PLUGIN_KEY = 'actor-scrape-plugin'
 
 const props = defineProps<{
   /** 演员 ID（`actor.actor_id`） */
@@ -61,7 +61,7 @@ const saving = ref(false)
 const failure = ref('')
 const plugins = ref<PluginSummary[]>([])
 const selectedId = ref('')
-const lastPluginId = useLocalStorage(LAST_PLUGIN_KEY, '')
+const lastPluginId = useUiPref(LAST_PLUGIN_KEY, '')
 
 const options = computed(() =>
   plugins.value.map((plugin) => ({ value: plugin.id, label: `${plugin.name} v${plugin.version}` }))

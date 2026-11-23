@@ -54,7 +54,7 @@
 
 - 打开时 `pluginApi.actor.list()`，只列 `enabled && loadError.length === 0` 的演员信息插件（与手动匹配同一口径），`t-select` 单选，选项文案 `名称 v版本`；
 - 没有任何可用插件时显示 `t-alert theme="warning"` 且主按钮不可提交；
-- **默认选中上次用过的插件**：`useLocalStorage('vault-scrape:actor-scrape-plugin', '')` 存插件 ID（纯 UI 偏好，不进设置文件）；记住的那个插件被停用或删除后回落到列表第一个；只有抓取成功才写回；
+- **默认选中上次用过的插件**：`useUiPref('actor-scrape-plugin', '')` 存插件 ID（纯 UI 偏好，落 core 配置目录的 `ui-prefs.json`，不进业务设置文件）；记住的那个插件被停用或删除后回落到列表第一个；只有抓取成功才写回；
 - 提交时只传选中的那一个：`actorApi.scrape({ actorId, pluginIds: [selectedId] })`——主进程把**空数组**理解成「全部启用的插件」，所以必须有选中项才能提交。
 
 ## 4. 编辑弹窗（`actor/modals/`）

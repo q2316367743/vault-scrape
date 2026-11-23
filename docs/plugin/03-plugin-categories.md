@@ -84,7 +84,7 @@ pages/plugin/
 ```
 
 - 路由：`/plugin` 重定向到 `/plugin/movie`，子路由名分别是「影片信息插件」「演员信息插件」「翻译插件」；
-- 「当前选中的插件」按类别分别持久化（`vault-scrape:plugin-active:<kind>`），工具箱搜索页与「影片信息插件」页共用同一份 movie 选择；
+- 「当前选中的插件」按类别分别持久化（经 `useUiPref`，key 为 `plugin-active:<kind>`，落 core 配置目录），工具箱搜索页与「影片信息插件」页共用同一份 movie 选择；
 - 类别专属面板（当前只有内置插件的「离线数据包」）通过 `PluginDetail` 的 `#extra` 插槽注入，共用组件不感知具体类别；
 - 批量启停 / 删除：左栏每行勾选框 + 面板头全选（`usePluginSelection` 只管多选与失效清理，不落 localStorage），有选中项时面板头下出现批量条；`PluginManagerView` 收到 ID 数组后自己映射摘要、弹确认框、剔除内置插件（内置插件主进程拒绝删除），`usePluginManager` 的 `setEnabledMany` / `removeMany` 串行逐个调用现有单条 IPC（`plugin:<类别>:setEnabled` / `:remove`），完成后再刷新一次列表——**没有新增 IPC 通道 / 主进程接口**；
 - 离线数据包面板跟着「影片信息」搬到 `pages/plugin/movie/`。

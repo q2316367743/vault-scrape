@@ -23,6 +23,7 @@ import { AbstractFileClient, type FileClientOptions, type TransferOptions } from
 import { isNotFoundError } from '../../fileErrorUtils'
 import type { PluginRegistry } from '../../../plugin/pluginRegistry'
 import { copyStreamToLocalFile } from '../../streamCopy'
+import { log } from '$/runtime/host'
 import { openDirectLinkStream } from './directLinkStream'
 
 /** list 单页最多 500 条（归一化层限制），游标翻页的页数上限 */
@@ -116,11 +117,11 @@ export class PluginFileClient extends AbstractFileClient {
       cursor = result.nextCursor
       pages += 1
       if (pages > LIST_PAGE_LIMIT) {
-        console.warn(`[file] ${this.label} 目录 ${remote} 翻页超过 ${LIST_PAGE_LIMIT} 页，已截断`)
+        log(`[file] ${this.label} 目录 ${remote} 翻页超过 ${LIST_PAGE_LIMIT} 页，已截断`, 'warn')
         break
       }
       if (entries.length >= LIST_ENTRY_LIMIT) {
-        console.warn(`[file] ${this.label} 目录 ${remote} 条目超过 ${LIST_ENTRY_LIMIT}，已截断`)
+        log(`[file] ${this.label} 目录 ${remote} 条目超过 ${LIST_ENTRY_LIMIT}，已截断`, 'warn')
         break
       }
     } while (cursor !== undefined && cursor.length > 0)

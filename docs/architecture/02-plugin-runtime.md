@@ -17,7 +17,7 @@
 
 `onReady(ctx)` 里按顺序做四件事，全部在宿主「上报 ready / 建窗」之前：
 
-1. `setHost(ctx)` + `initPaths(ctx.paths.data, ctx.paths.pluginRoot)`：后续模块用 `dataPath()` 拼数据目录；
+1. `setHost(ctx)` + `initPaths({ data, config, cache, log, temp, pluginRoot })`：后续模块用 `dataPath()` / `configPath()` / `cachePath()` / `logPath()` / `tempPath()` 按语义拼目录；
 2. `initDb()`：`node:sqlite` 打开 `db/vault-scrape.db`，执行 `assets/schema.sql`；
 3. `registerLongJobs()`：把可能超过 30s 的操作登记进长任务表；
 4. `await startMediaServer()`：起本机 HTTP 媒体服务，并把基地址写进 `@common` 的 `mediaBase`。
@@ -82,12 +82,36 @@ core 用 `emit` 广播（窗口不在时宿主丢弃），播放窗口换片用 
 
 ## 7. 数据与密钥
 
-- 所有可写数据在 `ctx.paths.data`：`db/`、`setting/`、`plugin/`、`file/`、`media/`、`cache/`、`log/`；
+可写数据按语义分到宿主给的六类目录，统一由 `core/runtime/paths.ts` 注入（`onReady` 里 `initPaths(ctx.paths.*)`），
+业务模块只调 `dataPath()` / `configPath()` / `cachePath()` / `logPath()` / `tempPath()`：
+
+| 目录 | 落盘内容 |
+| --- | --- |
+| `ctx.paths.data` | 系统库 `db/vault-scrape.db`、离线库 `db/r18.db*`、演员图片 `media/actor/`、用户导入的插件源码 `plugin/<kind>/<id>.js` |
+| `ctx.paths.config` | 设置 `settings.json`、连接配置 `connections.json`、插件索引 `plugin/<kind>/plugins.json`、窗口 UI 偏好 `ui-prefs.json`、密钥 `secret.key` |
+| `ctx.paths.cache` | 远端媒体 / 预览下载缓存 `media/` |
+| `ctx.paths.log` | 刮削任务文件日志 `scrape/` |
+| `ctx.paths.temp` | 刮削资源下载临时文件 `scrape/`（宿主启动时清理） |
+| `ctx.paths.pluginRoot` | 只读包内资源（`assets/schema.sql` 建表 SQL） |
+
+- 离线包（`r18.db.import` / `.old` / 下载包）整体留在 `data/db/`：换库靠同目录 `renameSync` 原子替换，
+  跨卷（data 与 temp 可能不同盘）会 EXDEV；下载包需跨会话保留，temp 启动即清。
+- 窗口偏好（主题档位、侧栏折叠、各页选中项）经 `uiPrefsGetAll` / `uiPrefsSet` 存 `config/ui-prefs.json`，
+  窗口侧 `src/global/UiPrefs.ts` 是 live computed + 异步落盘，不再用 localStorage（沙箱数据会被清理）。
 - 表结构 = `src-dashou/assets/schema.sql`；仓储在 `core/db/repo/`，统一用 `columns.ts` 的 camelCase 列清单；
 - 布尔列（`nsfw_protection` / `local_first` / `move_enabled` / `locked`）在 SQLite 里是 0/1，
   仓储映射时用 `boolOf()` 转成 boolean，写入时转回 0/1；
 - 敏感值（连接密码、插件环境变量）用 `utils/secretCodec.ts` 的 AES-256-GCM 加密，
-  密钥是数据目录里的 `secret.key`（首次运行生成，0600）。
+  密钥是配置目录里的 `secret.key`（首次运行生成，0600）。
+
+**ctx 能力 vs Node 内置的边界**（按搭手官方口径）：路径、窗口、对话框、事件、平台判断、日志这些
+「宿主可感知」的能力一律走 ctx——`ctx.paths` 六类目录、`ctx.window` / `ctx.dialog` / `ctx.event`，
+平台用 `await ctx.os.platform()`（core-base 声明 `os:allow-platform`），core 日志统一走 `ctx.log`
+（经 `core/runtime/host.ts` 的 `log()`，不走网关、无需权限），诊断用的 `process.versions.node` 保留。
+数据库、媒体流式传输、刮削 HTTP、本机媒体服务则继续用 core 的 Node 内置能力：`node:sqlite` 提供关系表 /
+事务 / WAL（`ctx.store` 是 ≤1MB 的 KV，无法表达），媒体文件靠 `createReadStream` 流式传输（`ctx.fs` 只有整包
+读写，大文件会爆内存），刮削请求需要跟随重定向 / http / 并发（`ctx.http` 仅 https、不跟随重定向、单包 8MB）。
+宿主文档明确 core 的 `fs` / `http` 是「便利 + 审计」而非安全边界，这些用法本身合规。
 
 ## 8. 已知边界
 
